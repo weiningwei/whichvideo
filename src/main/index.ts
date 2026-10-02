@@ -1,7 +1,7 @@
 /**
  * Electron 主进程入口：窗口、IPC、库与索引器的生命周期。
  */
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import {
@@ -18,6 +18,7 @@ import {
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
 import { LibraryDatabase } from './db'
+import { DATABASE_FILES, portableMarkerPath, resolveDataDir, type DataDirResolution } from './datadir'
 import { FrameSearchIndex, queryVectorFromImage } from './search'
 import { Indexer } from './indexer'
 import { FolderWatcher } from './watcher'
@@ -29,6 +30,80 @@ let searchIndex: FrameSearchIndex
 let indexer: Indexer
 let watcher: FolderWatcher
 let toolsReady = false
+
+/* ------------------------------------------------------------------ *
+ * 数据目录：绿色/便携模式
+ *
+ * 便携模式下数据（索引库、缓存）全部落在 exe 同级的 data/ 里，
+ * 换机器时整个目录拷走即可，不会在系统盘留下任何东西。
+ * 判定逻辑见 ./datadir.ts，这里只负责与 Electron 对接。
+ * ------------------------------------------------------------------ */
+
+/** 判断目录能否写入（不存在时尝试创建） */
+function isWritableDir(dir: string): boolean {
+  try {
+    mkdirSync(dir, { recursive: true })
+    const probe = join(dir, '.whichvideo-write-probe')
+    writeFileSync(probe, 'ok')
+    unlinkSync(probe)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 首次进入便携模式时，把系统盘里的旧索引库搬过来，避免用户白建一次索引 */
+function migrateLegacyDatabase(targetDir: string, legacyDir: string): void {
+  if (!legacyDir || resolve(legacyDir) === resolve(targetDir)) return
+  for (const name of DATABASE_FILES) {
+    const from = join(legacyDir, name)
+    const to = join(targetDir, name)
+    if (!existsSync(from)) continue
+    try {
+      copyFileSync(from, to)
+    } catch {
+      /* 迁移失败就让用户重新索引，不影响启动 */
+    }
+  }
+}
+
+/** 计算并应用数据目录（必须在 app ready 之前调用） */
+function setupDataDirectory(): DataDirResolution {
+  const legacyDir = app.getPath('userData')
+  const resolution = resolveDataDir({
+    legacyDir,
+    envDir: process.env.WHICHVIDEO_DATA_DIR,
+    portableDir: process.env.PORTABLE_EXECUTABLE_DIR,
+    exeDir: dirname(app.getPath('exe')),
+    isPackaged: app.isPackaged,
+    isWritable: isWritableDir
+  })
+
+  if (resolution.portable) {
+    mkdirSync(resolution.dir, { recursive: true })
+    try {
+      writeFileSync(
+        portableMarkerPath(resolution.dir),
+        `portable data directory\r\nbase: ${process.env.PORTABLE_EXECUTABLE_DIR ?? dirname(app.getPath('exe'))}\r\n`
+      )
+    } catch {
+      /* 标记文件写不了也不影响使用 */
+    }
+    if (!existsSync(join(resolution.dir, 'whichvideo.db'))) {
+      migrateLegacyDatabase(resolution.dir, legacyDir)
+    }
+    // 便携版启动器会把应用解压到临时目录，缓存必须挪出 temp
+    app.setPath('userData', resolution.dir)
+    app.setPath('sessionData', join(resolution.dir, 'session'))
+    app.commandLine.appendSwitch('disable-http-cache')
+  } else {
+    app.setPath('userData', legacyDir)
+  }
+
+  return resolution
+}
+
+const dataDir = setupDataDirectory()
 
 /* ------------------------------------------------------------------ *
  * 事件广播
@@ -132,6 +207,12 @@ function registerIpc(): void {
   ipcMain.handle(IPC.libraryStats, () => db.stats())
   ipcMain.handle(IPC.libraryStatus, () => indexer.status())
   ipcMain.handle(IPC.librarySettings, () => db.getSettings())
+  ipcMain.handle(IPC.libraryDataDir, () => ({
+    dir: dataDir.dir,
+    portable: dataDir.portable,
+    source: dataDir.source,
+    toolsReady
+  }))
   ipcMain.handle(IPC.libraryUpdateSettings, (_e, patch: Partial<AppSettings>) => {
     const updated = db.updateSettings(patch)
     void watcher.syncAll()
@@ -354,12 +435,20 @@ async function registerFoldersForFiles(files: string[]): Promise<void> {
  * ------------------------------------------------------------------ */
 
 function dbPath(): string {
-  return join(app.getPath('userData'), 'whichvideo.db')
+  return join(dataDir.dir, 'whichvideo.db')
 }
 
+/**
+ * ffmpeg 二进制目录。
+ * 便携模式额外支持把 ffmpeg.exe / ffprobe.exe 放在 exe 同级或 data/bin 里，
+ * 这样绿色版可以完全自包含。
+ */
 function resourceBinDir(): string | undefined {
+  const exeDir = dirname(app.getPath('exe'))
   const candidates = [
     process.env.WHICHVIDEO_BIN_DIR,
+    join(dataDir.dir, 'bin'),
+    app.isPackaged ? exeDir : undefined,
     process.resourcesPath ? join(process.resourcesPath, 'bin') : undefined,
     resolve(app.getAppPath(), 'resources', 'bin'),
     resolve(process.cwd(), 'resources', 'bin')
@@ -427,9 +516,16 @@ app.whenReady().then(async () => {
     type: 'notice',
     level: toolsReady ? 'info' : 'warn',
     message: toolsReady
-      ? '索引服务已就绪'
+      ? `索引服务已就绪（数据目录：${dataDir.dir}${dataDir.portable ? ' · 便携模式' : ''}）`
       : '未找到 ffmpeg / ffprobe：可以浏览与管理视频，但无法建立索引。请参考 README 安装。'
   })
+  if (dataDir.portable) {
+    broadcast({
+      type: 'notice',
+      level: 'info',
+      message: `便携模式：索引库与缓存都写在 ${dataDir.dir}，拷贝整个文件夹即可迁移`
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

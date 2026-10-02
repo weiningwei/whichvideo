@@ -71,6 +71,18 @@ export interface LibraryStats {
   watching: number
 }
 
+/** 运行时数据目录信息（便携模式相关） */
+export interface DataDirInfo {
+  /** 索引库、缓存、日志所在目录 */
+  dir: string
+  /** 是否便携模式（数据写在 exe 旁边，整个目录拷走即可迁移） */
+  portable: boolean
+  /** 便携模式的判定来源 */
+  source: 'env' | 'portable-launcher' | 'default'
+  /** ffmpeg 是否可用 */
+  toolsReady: boolean
+}
+
 /** 索引器（后台队列）实时状态 */
 export interface IndexerStatus {
   running: boolean
@@ -233,6 +245,7 @@ export interface WhichVideoApi {
     status(): Promise<IndexerStatus>
     settings(): Promise<AppSettings>
     updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+    dataDir(): Promise<DataDirInfo>
     openDatabaseFolder(): Promise<string>
     reset(): Promise<void>
   }
@@ -270,6 +283,7 @@ export const IPC = {
   libraryStats: 'library:stats',
   libraryStatus: 'library:status',
   librarySettings: 'library:settings',
+  libraryDataDir: 'library:data-dir',
   libraryUpdateSettings: 'library:update-settings',
   libraryOpenDb: 'library:open-database-folder',
   libraryReset: 'library:reset',

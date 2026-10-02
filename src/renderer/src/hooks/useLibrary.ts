@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type AppSettings,
+  type DataDirInfo,
   type ImportResult,
   type IndexerStatus,
   type LibraryEvent,
@@ -23,6 +24,7 @@ export interface LibraryState {
   status: IndexerStatus | null
   folders: WatchedFolder[]
   settings: AppSettings | null
+  dataDir: DataDirInfo | null
   videos: VideoRecord[]
   total: number
   notices: Notice[]
@@ -52,6 +54,7 @@ export function useLibrary() {
   const [status, setStatus] = useState<IndexerStatus | null>(null)
   const [folders, setFolders] = useState<WatchedFolder[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [dataDir, setDataDir] = useState<DataDirInfo | null>(null)
   const [videos, setVideos] = useState<VideoRecord[]>([])
   const [total, setTotal] = useState(0)
   const [notices, setNotices] = useState<Notice[]>([])
@@ -82,16 +85,18 @@ export function useLibrary() {
   }, [])
 
   const refreshAll = useCallback(async () => {
-    const [s, st, f, cfg] = await Promise.all([
+    const [s, st, f, cfg, dirInfo] = await Promise.all([
       window.whichvideo.library.stats(),
       window.whichvideo.library.status(),
       window.whichvideo.folders.list(),
-      window.whichvideo.library.settings()
+      window.whichvideo.library.settings(),
+      window.whichvideo.library.dataDir()
     ])
     setStats(s)
     setStatus(st)
     setFolders(f)
     setSettings(cfg)
+    setDataDir(dirInfo)
     await refreshVideos()
   }, [refreshVideos])
 
@@ -288,6 +293,7 @@ export function useLibrary() {
     status,
     folders,
     settings,
+    dataDir,
     videos,
     total,
     notices,

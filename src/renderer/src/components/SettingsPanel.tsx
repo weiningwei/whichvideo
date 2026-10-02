@@ -1,16 +1,26 @@
 import { useState } from 'react'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, DataDirInfo } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 interface Props {
   settings: AppSettings | null
+  dataDir: DataDirInfo | null
+  /** 初始是否展开（测试与深链用） */
+  initialOpen?: boolean
   onChange: (patch: Partial<AppSettings>) => void
   onReset: () => void
   onOpenDatabaseFolder: () => void
 }
 
-export function SettingsPanel({ settings, onChange, onReset, onOpenDatabaseFolder }: Props) {
-  const [open, setOpen] = useState(false)
+export function SettingsPanel({
+  settings,
+  dataDir,
+  initialOpen = false,
+  onChange,
+  onReset,
+  onOpenDatabaseFolder
+}: Props) {
+  const [open, setOpen] = useState(initialOpen)
   const [confirmReset, setConfirmReset] = useState(false)
   const value = settings ?? DEFAULT_SETTINGS
 
@@ -76,6 +86,29 @@ export function SettingsPanel({ settings, onChange, onReset, onOpenDatabaseFolde
             />
             文件被删除时自动从库中移除
           </label>
+
+          <div className="rounded-lg border border-line/70 bg-ink-900/60 px-2.5 py-2 text-[10.5px] leading-relaxed">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">数据目录</span>
+              {dataDir?.portable ? (
+                <span className="rounded border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok">
+                  便携模式{dataDir.source === 'env' ? '（环境变量）' : ''}
+                </span>
+              ) : (
+                <span className="rounded border border-line bg-ink-700/40 px-1.5 py-0.5 text-[10px] text-slate-400">
+                  默认（用户目录）
+                </span>
+              )}
+            </div>
+            <div className="mt-1 break-all font-mono text-[10px] text-slate-400" title={dataDir?.dir}>
+              {dataDir?.dir ?? '（读取中）'}
+            </div>
+            <div className="mt-1 text-slate-500">
+              便携模式下索引库与缓存都写在这个目录，整个文件夹拷走即可迁移；也可用环境变量
+              <span className="font-mono"> WHICHVIDEO_DATA_DIR </span>
+              指定其他位置。
+            </div>
+          </div>
 
           <div className="flex gap-2 pt-1">
             <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={onOpenDatabaseFolder}>

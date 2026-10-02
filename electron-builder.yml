@@ -38,5 +38,12 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: WhichVideo
 
+# 便携（绿色）模式：
+# 打包出的是单文件自解压 exe。运行时 electron-builder 会注入 PORTABLE_EXECUTABLE_DIR
+# 指向这个 exe 所在的真实目录，主进程据此把索引库/缓存写到 <exe 同级>/data 下，
+# 因此整个文件夹拷走即可迁移，不在系统盘留任何东西。
+# 也可以手动指定数据目录：set WHICHVIDEO_DATA_DIR=D:\WhichVideoData
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
+  # 启动时先解压到固定目录，避免每次运行都重新解压（缺点：exe 被移动后要重新解压一次）
+  unpackDirName: whichvideo-portable

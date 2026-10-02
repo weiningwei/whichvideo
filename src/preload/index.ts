@@ -7,6 +7,7 @@ const api: WhichVideoApi = {
     status: () => ipcRenderer.invoke(IPC.libraryStatus),
     settings: () => ipcRenderer.invoke(IPC.librarySettings),
     updateSettings: (patch) => ipcRenderer.invoke(IPC.libraryUpdateSettings, patch),
+    dataDir: () => ipcRenderer.invoke(IPC.libraryDataDir),
     openDatabaseFolder: () => ipcRenderer.invoke(IPC.libraryOpenDb),
     reset: () => ipcRenderer.invoke(IPC.libraryReset)
   },

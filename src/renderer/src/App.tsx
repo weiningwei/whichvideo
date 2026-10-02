@@ -71,6 +71,7 @@ export default function App() {
             <div className="w-[300px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">
               <SettingsPanel
                 settings={state.settings}
+                dataDir={state.dataDir}
                 onChange={(patch) => void actions.updateSettings(patch)}
                 onReset={() => void actions.resetLibrary()}
                 onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}

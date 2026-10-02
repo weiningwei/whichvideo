@@ -1,5 +1,13 @@
 {
-  "include": ["src/main/db.ts", "src/main/search.ts", "src/main/indexer.ts", "src/main/watcher.ts", "src/main/media.ts", "src/main/scan.ts"],
+  "include": [
+    "src/main/db.ts",
+    "src/main/search.ts",
+    "src/main/indexer.ts",
+    "src/main/watcher.ts",
+    "src/main/media.ts",
+    "src/main/scan.ts",
+    "src/main/datadir.ts"
+  ],
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",

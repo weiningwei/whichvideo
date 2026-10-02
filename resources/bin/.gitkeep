@@ -1,0 +1,10 @@
+# 这个目录用于放置随应用分发的 ffmpeg / ffprobe：
+#
+#   resources/bin/ffmpeg.exe
+#   resources/bin/ffprobe.exe
+#
+# 获取方式：pnpm fetch:ffmpeg
+# 打包时 electron-builder 会把整个 resources/bin 复制到安装目录的 resources/bin，
+# 主进程启动时优先从那里加载，因此终端用户不需要自己装 ffmpeg。
+#
+# 绿色版也可以把 ffmpeg.exe / ffprobe.exe 直接放在 exe 同级目录，或 <数据目录>/bin 下。

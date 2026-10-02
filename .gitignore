@@ -16,8 +16,10 @@ tmp/
 *.db-wal
 *.db-shm
 
-# ---- ffmpeg 本地二进制（体积大，不进版本库；用 scripts/fetch-ffmpeg.mjs 下载）----
-resources/bin/
+# ---- ffmpeg 本地二进制（体积大，不进版本库；用 pnpm fetch:ffmpeg 下载）----
+# 保留占位文件，保证 extraResources 的源目录存在
+resources/bin/*
+!resources/bin/.gitkeep
 
 # ---- Python（仓库保留了 Python 版忽略规则）----
 __pycache__/

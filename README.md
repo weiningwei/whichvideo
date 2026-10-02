@@ -44,6 +44,41 @@ ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `W
 
 ---
 
+## 便携（绿色）模式
+
+打包会同时产出 NSIS 安装包和单文件便携版：
+
+```bash
+pnpm fetch:ffmpeg      # 可选：把 ffmpeg 一起打包进去
+pnpm build:win         # → release/WhichVideo-0.1.0-x64.exe（安装包）
+                       # → release/WhichVideo-0.1.0-portable.exe（便携版）
+```
+
+便携版（`*-portable.exe`）双击即用，**数据写在 exe 同级的 `data\` 目录里**：
+
+```
+WhichVideo-0.1.0-portable.exe
+data\
+├─ whichvideo.db          # 索引库（视频元数据 + 帧指纹 + 缩略图 + 监听配置）
+├─ whichvideo.db-wal
+├─ session\               # Chromium 缓存
+└─ whichvideo.portable    # 便携模式标记
+```
+
+- 换机器只需把 exe 和 `data\` 一起拷走，不在 `%APPDATA%`、`%TEMP%` 留下任何东西
+- 首次进入便携模式时，如果系统盘里已有旧的索引库，会自动复制一份过去，不会白建一次索引
+- ffmpeg 可以放在 exe 同级、`data\bin\` 或随安装包分发（`resources/bin`）
+- 想固定数据位置（例如放到移动硬盘）：`set WHICHVIDEO_DATA_DIR=E:\WhichVideoData` 再启动
+- 安装版仍然使用标准位置 `%APPDATA%\WhichVideo`；界面「索引设置」里能看到当前用的是哪种
+
+> 便携版运行时会把程序本体解压到 `%TEMP%\whichvideo-portable`（固定目录，避免每次启动都重新解压）。
+> 因为目录名固定，**不要同时运行两个不同版本的便携版**，否则会互相覆盖解压内容；只需跑一个版本即可。
+
+数据目录判定优先级：`WHICHVIDEO_DATA_DIR` → 便携版启动器注入的 exe 所在目录 → 打包后 exe 所在目录（可写时）→ 默认用户目录。
+判定逻辑在 `src/main/datadir.ts`，有独立的单元测试 `pnpm test:portable` 覆盖各种组合。
+
+---
+
 ## 使用流程
 
 ### 1. 建库
@@ -120,9 +155,10 @@ ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `W
 
 | 命令 | 作用 |
 | --- | --- |
-| `pnpm test` | 跑下面两套自检 |
+| `pnpm test` | 依次跑下面三套自检 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
-| `pnpm test:ui` | 渲染端组件冒烟（44 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
+| `pnpm test:portable` | 便携模式数据目录判定（13 项）：环境变量 / 便携启动器 / 只读目录回退 / 迁移清单 |
+| `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
 | `node scripts/bench-hash.mjs` | 对比几种结构指纹方案的区分度（选型依据） |
 | `node scripts/bench-score.mjs` | 对比几种打分加权公式的排序边距 |
 | `node scripts/calibrate.mjs` | 校准"截图 ↔ 视频帧"的哈希距离量级 |

@@ -372,22 +372,41 @@ export default mod
   check('监听面板提示动态更新', libraryHtml.includes('索引会自动更新'))
 
   /* ---------- 7. 设置面板 ---------- */
+  const appSettings = {
+    framesPerVideo: 16,
+    concurrency: 2,
+    minHashScore: 0.6,
+    maxResults: 40,
+    awaitWriteMs: 1500,
+    pruneOnDelete: true
+  }
   const settingsHtml = render(
     jsx(SettingsPanel, {
-      settings: {
-        framesPerVideo: 16,
-        concurrency: 2,
-        minHashScore: 0.6,
-        maxResults: 40,
-        awaitWriteMs: 1500,
-        pruneOnDelete: true
-      },
+      settings: appSettings,
+      dataDir: { dir: 'C:\\Users\\me\\AppData\\Roaming\\WhichVideo', portable: false, source: 'default', toolsReady: true },
+      initialOpen: true,
       onChange: noop,
       onReset: noop,
       onOpenDatabaseFolder: noop
     })
   )
   check('设置面板有入口标题', settingsHtml.includes('索引设置'))
+  check('设置面板展示数据目录', settingsHtml.includes('数据目录') && settingsHtml.includes('AppData\\Roaming\\WhichVideo'))
+  check('默认模式标注为"默认（用户目录）"', settingsHtml.includes('默认（用户目录）'))
+
+  const portablePanelHtml = render(
+    jsx(SettingsPanel, {
+      settings: appSettings,
+      dataDir: { dir: 'E:\\WhichVideo\\data', portable: true, source: 'portable-launcher', toolsReady: true },
+      initialOpen: true,
+      onChange: noop,
+      onReset: noop,
+      onOpenDatabaseFolder: noop
+    })
+  )
+  check('便携模式在界面上标注出来', portablePanelHtml.includes('便携模式') && portablePanelHtml.includes('E:\\WhichVideo\\data'))
+  check('提示可整目录拷走迁移', portablePanelHtml.includes('整个文件夹拷走'))
+  check('提示可用环境变量指定位置', portablePanelHtml.includes('WHICHVIDEO_DATA_DIR'))
 
   /* ---------- 8. 纯函数 ---------- */
   check('formatDuration 处理时分秒', format.formatDuration(3725) === '1:02:05', format.formatDuration(3725))
