@@ -6,6 +6,13 @@ directories:
   output: release
   buildResources: build
 
+# 关闭打包前的原生模块重建。
+# 原因：better-sqlite3 v12+ 使用 Node-API 预编译二进制（prebuilds/win32-x64.node），
+# 同一份文件在 Node 与 Electron 下都能直接加载，不需要针对 Electron 重新编译。
+# 而 @electron/rebuild 会 fork 子进程，在某些环境/沙箱里直接失败（spawn EPERM），
+# 导致整个打包中断 —— 从而出现"看起来打包成功、实际是上一次的旧产物"这种坑。
+npmRebuild: false
+
 files:
   - out/**
   - package.json

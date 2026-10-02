@@ -54,6 +54,8 @@ function runBuilder(releaseDir, extraEnv = {}) {
         ...process.env,
         WHICHVIDEO_RELEASE_DIR: releaseDir,
         WHICHVIDEO_TEST_REPORT: reportPath,
+        // 自检不真的跑 electron-builder（耗时且需要 Electron 二进制）
+        WHICHVIDEO_SKIP_ELECTRON_BUILDER: '1',
         ...extraEnv
       },
       stdio: ['ignore', 'inherit', 'inherit']
@@ -189,6 +191,18 @@ function main() {
     } finally {
       if (hadPreload) renameSync(backup, source)
     }
+  }
+
+  console.log('\n=== 场景 5：必须校验"打包结果是否新鲜" ===')
+  {
+    // 这次踩的坑：electron-builder 那一步失败后，脚本因为目录里已经有 exe 就跳过打包，
+    // 结果发出去的绿色版装的是旧代码。这里检查脚本确实实现了重新打包 + 新鲜度校验。
+    const source = readFileSync(builder, 'utf8')
+    check('脚本会调用 electron-builder 重新打包', source.includes('runElectronBuilder()'))
+    check('脚本比较 app.asar 与 out/ 的时间戳', /app\.asar[\s\S]{0,300}mtimeMs/.test(source))
+    check('产物过期时明确失败并给出原因', source.includes('打包结果不新鲜'))
+    check('electron-builder 非零退出时先检查产物', /退出码为[\s\S]{0,160}检查产物/.test(source))
+    check('自检开关存在（正式路径默认不跳过打包）', source.includes('WHICHVIDEO_SKIP_ELECTRON_BUILDER'))
   }
 
   rmSync(work, { recursive: true, force: true })

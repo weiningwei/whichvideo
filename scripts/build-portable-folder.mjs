@@ -25,7 +25,7 @@ import {
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
@@ -254,6 +254,119 @@ function assertBuildOutput() {
   process.exit(1)
 }
 
+/**
+ * 用 electron-builder 产出 win-unpacked。
+ *
+ * 关键点：**每次都重新打包**，并且校验生成的 app.asar 确实比 out/ 新。
+ * 之前的版本看到 win-unpacked 里已有 WhichVideo.exe 就跳过打包，
+ * 结果 electron-builder 那次失败后（例如它内部的 @electron/rebuild 报错），
+ * 脚本仍然拿旧目录做出一个"看起来正常"的绿色版 —— 装的是旧代码。
+ */
+function runElectronBuilder() {
+  const packedAsar = join(unpackedDir, 'resources', 'app.asar')
+  const outMain = join(root, 'out', 'main', 'index.js')
+  const outMtime = statSync(outMain).mtimeMs
+  const staleBefore = !existsSync(packedAsar) || statSync(packedAsar).mtimeMs < outMtime
+
+  console.log('运行 electron-builder（--win dir）…')
+  const r = spawnSync(
+    process.execPath,
+    [join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'dir'],
+    { stdio: 'inherit', cwd: root }
+  )
+  if (r.status !== 0) {
+    // 不直接退出：有些环境里 electron-builder 会在"重建原生模块"阶段失败，
+    // 但产物其实已经写完。用时间戳判断到底有没有生成新包。
+    console.log(`\n  ⚠ electron-builder 退出码为 ${r.status}，检查产物是否已更新…`)
+  }
+
+  if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
+    console.error(`\n打包失败：没有生成 ${join(unpackedDir, 'WhichVideo.exe')}`)
+    console.error('常见原因：electron-builder 在 iOS/原生模块重建阶段中断（spawn EPERM 等）。')
+    console.error('可尝试： pnpm rebuild:native  或手动执行 npx electron-builder --win dir')
+    writeTestReport({ ok: false, reason: 'electron-builder-failed', exitCode: r.status })
+    process.exit(1)
+  }
+
+  const fresh = existsSync(packedAsar) && statSync(packedAsar).mtimeMs >= outMtime
+  if (!fresh) {
+    console.error('\n打包结果不新鲜：app.asar 比 out/ 里的产物旧，说明这次没有真正重新打包。')
+    console.error(
+      `  out/main/index.js      ${new Date(outMtime).toLocaleString('zh-CN')}\n` +
+        `  resources/app.asar     ${existsSync(packedAsar) ? new Date(statSync(packedAsar).mtimeMs).toLocaleString('zh-CN') : '不存在'}`
+    )
+    console.error('处理：删掉 release\\win-unpacked 后重跑，或查看上面的 electron-builder 报错。')
+    writeTestReport({ ok: false, reason: 'stale-package', exitCode: r.status })
+    process.exit(1)
+  }
+
+  console.log(`  ✓ 本次打包产物已更新（app.asar ${new Date(statSync(packedAsar).mtimeMs).toLocaleString('zh-CN')}）`)
+  void staleBefore
+  assertPackageFreshness()
+}
+
+/**
+ * 读取 asar 中某个文件的元信息（不依赖任何外部工具）。
+ * asar 结构：8 字节头部 + 4 字节 pickle 长度 + 4 字节 json 长度 + json + 内容
+ */
+function readAsarEntry(asarPath, entryPath) {
+  const buf = readFileSync(asarPath)
+  const headerSize = buf.readUInt32LE(12)
+  const header = JSON.parse(buf.subarray(16, 16 + headerSize).toString('utf8'))
+  const parts = entryPath.split('/')
+  let node = header
+  for (const part of parts) {
+    node = node?.files?.[part]
+    if (!node) return null
+  }
+  const start = 16 + headerSize + Number(node.offset)
+  return buf.subarray(start, start + node.size)
+}
+
+/**
+ * 校验打出来的包确实是这次的代码。
+ * 只比文件时间戳不够稳（拷贝、缓存都会影响），这里直接读 asar 里的主进程产物，
+ * 确认 it 包含本次的核心标志。
+ */
+function assertPackageFreshness() {
+  const packedAsar = join(unpackedDir, 'resources', 'app.asar')
+  if (!existsSync(packedAsar)) {
+    console.error(`\n打包失败：没有生成 ${packedAsar}`)
+    writeTestReport({ ok: false, reason: 'asar-missing' })
+    process.exit(1)
+  }
+
+  const mainInAsar = readAsarEntry(packedAsar, 'out/main/index.js')
+  if (!mainInAsar) {
+    console.error('\n打包结果异常：asar 里没有 out/main/index.js')
+    writeTestReport({ ok: false, reason: 'asar-missing-main' })
+    process.exit(1)
+  }
+
+  const sourceMain = readFileSync(join(root, 'out', 'main', 'index.js'), 'utf8')
+  const mismatches = []
+  if (mainInAsar.length !== Buffer.byteLength(sourceMain)) {
+    mismatches.push(`大小不一致（包内 ${mainInAsar.length} vs out/ ${Buffer.byteLength(sourceMain)}）`)
+  }
+  // 用只在较新代码里出现、且不会随压缩变化的字符串做指纹
+  for (const marker of ['未找到 preload 产物', '索引库已打开']) {
+    const inSource = sourceMain.includes(marker)
+    if (inSource && !mainInAsar.includes(Buffer.from(marker, 'utf8'))) {
+      mismatches.push(`缺少新代码标志：${marker}`)
+    }
+  }
+
+  if (mismatches.length) {
+    console.error('\n包内主进程产物与 out/ 不一致，说明这次没有真正重新打包：')
+    for (const item of mismatches) console.error(`  · ${item}`)
+    console.error('\n处理：删掉 release\\win-unpacked 与 release\\WhichVideo-portable 后重跑。')
+    writeTestReport({ ok: false, reason: 'stale-package', mismatches })
+    process.exit(1)
+  }
+
+  console.log('  ✓ 已校验包内 out/main/index.js 与本次编译产物一致')
+}
+
 function main() {
   // 手动排查入口：诊断某个目录被谁占用
   const whoIndex = argv.indexOf('--who-locks')
@@ -270,14 +383,10 @@ function main() {
     assertBuildOutput()
   }
 
-  if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
-    console.log('未找到 release/win-unpacked，先执行 electron-builder --win dir …')
-    const r = spawnSync(
-      process.execPath,
-      [join(root, 'node_modules', 'electron-builder', 'cli.js'), '--win', 'dir'],
-      { stdio: 'inherit', cwd: root }
-    )
-    if (r.status !== 0) throw new Error('electron-builder 打包失败')
+  // 每次都重新打包并校验新鲜度（旧版本会因为目录里已有 exe 而跳过，导致发布旧代码）
+  const skipPack = process.env.WHICHVIDEO_SKIP_ELECTRON_BUILDER === '1'
+  if (!skipPack) {
+    runElectronBuilder()
   }
 
   if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
@@ -335,25 +444,33 @@ function main() {
   })
 }
 
-try {
-  main()
-} catch (err) {
-  const message = err instanceof Error ? err.message : String(err)
-  if (/EPERM|EBUSY|ENOTEMPTY|resource busy|being used by another process/i.test(message)) {
-    const hints = describeHolders(targetDir)
-    const lines = [
-      '',
-      '打包失败：release 目录里的文件被占用（EPERM）。',
-      ...hints.map((hint) => `  · ${hint}`),
-      '',
-      '处理完占用后重新运行： pnpm build:portable'
-    ]
-    console.error(lines.join('\n'))
-    console.log(`BUILD_LOCKED ${targetDir}`)
-    writeTestReport({ ok: false, reason: 'copy-locked', error: message, hints })
-  } else {
-    console.error(`\n构建绿色版失败：${message}`)
-    writeTestReport({ ok: false, reason: 'error', error: message })
+/**
+ * 供自检复用的内部函数（正常打包不会用到导出）。
+ */
+export { readAsarEntry, assertPackageFreshness, runElectronBuilder }
+
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+if (isDirectRun) {
+  try {
+    main()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/EPERM|EBUSY|ENOTEMPTY|resource busy|being used by another process/i.test(message)) {
+      const hints = describeHolders(targetDir)
+      const lines = [
+        '',
+        '打包失败：release 目录里的文件被占用（EPERM）。',
+        ...hints.map((hint) => `  · ${hint}`),
+        '',
+        '处理完占用后重新运行： pnpm build:portable'
+      ]
+      console.error(lines.join('\n'))
+      console.log(`BUILD_LOCKED ${targetDir}`)
+      writeTestReport({ ok: false, reason: 'copy-locked', error: message, hints })
+    } else {
+      console.error(`\n构建绿色版失败：${message}`)
+      writeTestReport({ ok: false, reason: 'error', error: message })
+    }
+    process.exit(1)
   }
-  process.exit(1)
 }

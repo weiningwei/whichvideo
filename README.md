@@ -200,7 +200,8 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 | `pnpm test:startup` | 主进程启动自检（36 项）：打包前提（type 字段/preload 路径）、窗口创建与显示、日志落盘、便携目录、失败可见、单实例锁 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
 | `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
-| `pnpm test:pack` | 绿色版打包脚本自检（23 项）：重建覆盖、旧 data 清理、占用时改名挪开/自动换目录、产物不全时拒绝打包 |
+| `pnpm test:pack` | 绿色版打包脚本自检（28 项）：重建覆盖、旧 data 清理、占用时改名挪开/自动换目录、产物不全或过期时拒绝打包 |
+| `pnpm test:asar` | asar 解析与包新鲜度校验自检（7 项）：直接读包内 out/main/index.js 与本地产物比对 |
 | `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
 | `node scripts/bench-hash.mjs` | 对比几种结构指纹方案的区分度（选型依据） |
 | `node scripts/bench-score.mjs` | 对比几种打分加权公式的排序边距 |
@@ -322,6 +323,29 @@ node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
   缺了就报错并提示先跑 `pnpm build`，不会再产出"双击没反应"的包。
 - **preload 产物扩展名**：electron-vite 输出 ESM 时是 `index.mjs`，主进程现在会自动适配
   `.mjs`/`.js`/`.cjs`，不再写死 `index.js`。
+- **包里其实是旧代码**：见下面那条"打包成功但双击还是没反应"。
+
+**打包"成功"了，但双击还是没反应？**
+先确认包里装的是不是这次的代码 —— 这个坑真实发生过：`electron-builder` 那一步失败（它内部的
+`@electron/rebuild` 会 fork 子进程，某些环境直接 `spawn EPERM`），而打包脚本看到目录里已有旧的
+`win-unpacked` 就跳过了打包，于是绿色版一直是旧代码。
+
+现在加了三道保险：
+
+1. `electron-builder.yml` 设了 `npmRebuild: false` —— `better-sqlite3` 用 Node-API 预编译二进制，
+   Node 与 Electron 通用，本来就不需要重建；关掉后这一类失败不会再出现
+2. 打包脚本**每次都重新打包**，不再因为"目录里已有 exe"而跳过
+3. 打包后**直接读 asar 里的 `out/main/index.js`**，与本地编译产物比对大小与关键标记，
+   不一致就报错退出（不再产出"看起来正常"的旧包）
+
+排查与兜底：
+
+```bash
+node scripts/test-asar-check.mjs   # 校验 asar 解析逻辑（7 项）
+pnpm rebuild:native                # 需要时手动重建原生模块
+npx electron-builder --win dir     # 或绕过脚本直接打包，观察完整报错
+rm -rf release                     # 实在拿不准就整个删掉重来
+```
 
 排查自检：`pnpm test:startup`（36 项）会把编译后的主进程跑在 Node + Electron 桩上，
 覆盖"打包前提（type 字段 / 入口 / preload 路径）→ 窗口创建与显示 → 日志落盘 → 便携目录 →
