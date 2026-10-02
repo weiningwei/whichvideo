@@ -29,18 +29,20 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+# Python 打包产物的目录一律锚定到仓库根目录，
+# 否则 lib/ 这种规则会连 scripts/lib/ 一起忽略掉
+/build/
+/develop-eggs/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
