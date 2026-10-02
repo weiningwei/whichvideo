@@ -49,36 +49,77 @@ writeFileSync(
 )
 
 const logFile = join(work, 'probe.log')
-rmSync(logFile, { force: true })
 
-console.log('启动极简应用（最多等 30 秒）…\n')
-const r = spawnSync(electron, [work], {
-  cwd: work,
-  env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
-  encoding: 'utf8',
-  timeout: 30000,
-  stdio: ['ignore', 'pipe', 'pipe']
-})
+/**
+ * 逐个试不同的命令行开关。
+ * 已知 0x80000003（STATUS_BREAKPOINT）在 Windows 上常由 GPU 子进程/沙箱触发，
+ * 而这些开关可以逐个绕开，因此一次跑完就能看出是哪一类原因。
+ */
+const scenarios = [
+  { name: '默认（不加开关）', args: [] },
+  { name: '--disable-gpu-sandbox', args: ['--disable-gpu-sandbox'] },
+  { name: '--disable-gpu', args: ['--disable-gpu'] },
+  { name: '--disable-gpu --disable-gpu-sandbox', args: ['--disable-gpu', '--disable-gpu-sandbox'] },
+  { name: '--no-sandbox', args: ['--no-sandbox'] },
+  { name: '--no-sandbox --disable-gpu', args: ['--no-sandbox', '--disable-gpu'] },
+  { name: '--disable-crash-reporter --disable-breakpad', args: ['--disable-crash-reporter', '--disable-breakpad'] },
+  { name: '--in-process-gpu', args: ['--in-process-gpu', '--no-sandbox'] },
+  { name: '--single-process', args: ['--single-process', '--no-sandbox'] }
+]
 
-const code = r.status
-console.log('--- 结果 ---')
-console.log(`退出码     : ${code}${code !== null ? `  (0x${(code >>> 0).toString(16)})` : ''}`)
-if (r.signal) console.log(`信号       : ${r.signal}`)
-if (r.error) console.log(`启动错误   : ${r.error.message}`)
-console.log(`探针日志   : ${existsSync(logFile) ? readFileSync(logFile, 'utf8').trim() || '(空)' : '(文件未生成)'}`)
-const stderr = (r.stderr ?? '').trim()
-console.log(`stderr     : ${stderr ? stderr.split('\n').slice(0, 6).join('\n             ') : '(空)'}`)
-const stdout = (r.stdout ?? '').trim()
-console.log(`stdout     : ${stdout ? stdout.split('\n').slice(0, 6).join('\n             ') : '(空)'}`)
+console.log('Electron 二进制:', electron)
+console.log('版本信息        :', existsSync(join(dirname(electron), 'version')) ? readFileSync(join(dirname(electron), 'version'), 'utf8').trim() : '(未知)')
+console.log('')
+console.log('逐个试启动开关（每个最多等 25 秒）…')
+
+const results = []
+for (const scenario of scenarios) {
+  rmSync(logFile, { force: true })
+  const r = spawnSync(electron, [work, ...scenario.args], {
+    cwd: work,
+    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
+    encoding: 'utf8',
+    timeout: 25000,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  const log = existsSync(logFile) ? readFileSync(logFile, 'utf8').trim() : ''
+  const code = r.status
+  results.push({
+    name: scenario.name,
+    status: code,
+    hex: code !== null ? `0x${(code >>> 0).toString(16)}` : '(null)',
+    spawnError: r.error ? String(r.error.message).slice(0, 60) : '',
+    ready: log.includes('app ready'),
+    log: log || '(空)',
+    stderr: (r.stderr ?? '').trim().split('\n').slice(0, 3).join(' | ') || '(空)'
+  })
+}
 
 console.log('')
-const ready = existsSync(logFile) && readFileSync(logFile, 'utf8').includes('app ready')
-if (ready) {
-  console.log('结论：本机可以正常运行 Electron GUI —— 那么 WhichVideo 启动失败就出在应用自身。')
-} else if (code === -2147483645 || (code !== null && (code >>> 0) === 0x80000003)) {
-  console.log('结论：连极简 Electron 应用都以 STATUS_BREAKPOINT(0x80000003) 退出。')
-  console.log('      说明是"本机环境不允许运行 Electron GUI"，与 WhichVideo 代码无关。')
-  console.log('      常见原因：安全软件/EDR 拦截、应用控制策略、或在受限沙箱里执行。')
-} else {
-  console.log('结论：极简应用也起不来，但退出码不同。请把上面全部输出贴回来。')
+for (const r of results) {
+  const mark = r.ready ? '✓' : '✗'
+  console.log(`${mark} ${r.name}`)
+  console.log(`    退出码 ${r.status} (${r.hex})${r.spawnError ? `  启动错误 ${r.spawnError}` : ''}`)
+  console.log(`    日志 ${r.log}`)
 }
+
+const working = results.filter((r) => r.ready)
+console.log('')
+if (working.length === 0) {
+  if (results.every((r) => r.spawnError)) {
+    console.log('结论：所有组合都无法被创建（EPERM 等）—— 是当前会话禁止创建 Electron 进程。')
+    console.log('      请在一个全新的普通 PowerShell 窗口里重跑本脚本。')
+  } else {
+    const hexes = [...new Set(results.filter((r) => r.status !== null).map((r) => r.hex))]
+    console.log(`结论：所有开关组合都失败（退出码集合：${hexes.join(', ')}）。`)
+    if (hexes.includes('0x80000003')) {
+      console.log('      0x80000003 是 Chromium 的通用 CHECK 崩溃码。连极简应用也崩，')
+      console.log('      说明本机环境无法运行 Electron GUI，与 WhichVideo 代码无关。')
+      console.log('      可继续排查：安全软件/EDR、显卡驱动、系统版本与 Electron 版本兼容性。')
+    }
+  }
+} else {
+  console.log(`结论：以下组合可以正常启动 —— 应当把它加进应用的启动开关：`)
+  for (const w of working) console.log(`      ${w.name}  →  参数 ${scenarios.find((s) => s.name === w.name)?.args.join(' ') || '(无)'}`)
+}
+

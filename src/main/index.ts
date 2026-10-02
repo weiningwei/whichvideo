@@ -41,14 +41,30 @@ if (process.platform === 'win32') {
  * 这么做是为了让"启动早期就崩溃"也能留下记录 —— 之前正是缺这段日志才无法定位问题。
  */
 function bootstrapLogger(): void {
+  const candidates: string[] = []
+  if (process.env.WHICHVIDEO_DATA_DIR) candidates.push(process.env.WHICHVIDEO_DATA_DIR)
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    candidates.push(join(process.env.PORTABLE_EXECUTABLE_DIR, 'data'))
+  }
+  // app.getPath 在极早期理论上可能不可用，取不到就跳过（后面 relocateLogger 还会再初始化）
   try {
-    const earlyDir =
-      process.env.WHICHVIDEO_DATA_DIR ??
-      (process.env.PORTABLE_EXECUTABLE_DIR ? join(process.env.PORTABLE_EXECUTABLE_DIR, 'data') : null) ??
-      app.getPath('userData')
-    initLogger(earlyDir)
+    candidates.push(app.getPath('userData'))
   } catch {
-    /* 早期目录不可写时继续，setupDataDirectory 之后还会再初始化一次 */
+    /* ignore */
+  }
+  try {
+    candidates.push(join(dirname(process.execPath), 'data'))
+  } catch {
+    /* ignore */
+  }
+
+  for (const dir of candidates) {
+    try {
+      initLogger(dir)
+      return
+    } catch {
+      /* 换下一个候选目录 */
+    }
   }
 }
 
