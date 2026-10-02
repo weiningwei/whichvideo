@@ -22,10 +22,13 @@ extraResources:
 
 win:
   target:
+    # 安装包（数据写在 %APPDATA%）
     - target: nsis
       arch:
         - x64
-    - target: portable
+    # 免安装目录版：产出 release/win-unpacked，exe 就地运行，
+    # 数据写在 <exe 同级>\data —— 这就是绿色/便携形态（见 scripts/build-portable-folder.mjs）
+    - target: dir
       arch:
         - x64
   artifactName: ${productName}-${version}-${arch}.${ext}
@@ -38,12 +41,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: WhichVideo
 
-# 便携（绿色）模式：
-# 打包出的是单文件自解压 exe。运行时 electron-builder 会注入 PORTABLE_EXECUTABLE_DIR
-# 指向这个 exe 所在的真实目录，主进程据此把索引库/缓存写到 <exe 同级>/data 下，
-# 因此整个文件夹拷走即可迁移，不在系统盘留任何东西。
-# 也可以手动指定数据目录：set WHICHVIDEO_DATA_DIR=D:\WhichVideoData
-portable:
-  artifactName: ${productName}-${version}-portable.${ext}
-  # 启动时先解压到固定目录，避免每次运行都重新解压（缺点：exe 被移动后要重新解压一次）
-  unpackDirName: whichvideo-portable
+# 说明：这里刻意不使用 electron-builder 的 portable 目标（单文件自解压 exe）。
+# 那个形态每次启动都要把整个应用解压到 %TEMP% 并在退出时删除，
+# 启动慢、且无法同时运行两份。免安装目录版没有解压环节，启动即秒开。
+# 需要单文件分发时再临时加回 portable 目标即可。

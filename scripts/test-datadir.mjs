@@ -148,6 +148,20 @@ async function main() {
     check('便携目录也参与 ffmpeg 查找', source.includes("join(dataDir.dir, 'bin')"))
   }
 
+  /* ---------- 10. 打包配置走的是"免解压目录版" ---------- */
+  {
+    const yml = readFileSync(join(root, 'electron-builder.yml'), 'utf8')
+    check('打包配置包含 dir 目标（免安装目录版）', /-\s*target:\s*dir/.test(yml))
+    check('打包配置包含 nsis 目标（安装包）', /-\s*target:\s*nsis/.test(yml))
+    check(
+      '没有启用单文件自解压 portable 目标',
+      !/^\s*portable:/m.test(yml) && !/-\s*target:\s*portable/m.test(yml)
+    )
+    check('存在绿色版整理脚本', existsSync(join(root, 'scripts', 'build-portable-folder.mjs')))
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    check('提供 build:portable 脚本', typeof pkg.scripts['build:portable'] === 'string', pkg.scripts['build:portable'])
+  }
+
   rmSync(work, { recursive: true, force: true })
   console.log(`\n=== 便携数据目录：${passed}/${passed + failed} 通过 ===`)
   process.exit(failed ? 1 : 0)

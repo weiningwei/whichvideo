@@ -29,8 +29,9 @@ pnpm dev
 # 4. 类型检查 + 构建
 pnpm build
 
-# 5. 打包成 Windows 安装包 / 免安装版
-pnpm build:win
+# 5. 打包：绿色版目录 / NSIS 安装包
+pnpm build:portable    # → release/WhichVideo-portable/（免安装、免解压，数据写在同级 data\）
+pnpm build:win         # → release/WhichVideo-0.1.0-x64.exe（安装包，数据写在 %APPDATA%）
 ```
 
 ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `WHICHVIDEO_FFMPEG` → 系统 `PATH` → 常见安装目录（winget / scoop / chocolatey）。
@@ -46,33 +47,38 @@ ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `W
 
 ## 便携（绿色）模式
 
-打包会同时产出 NSIS 安装包和单文件便携版：
+绿色形态是**免安装目录版**（不是单文件自解压 exe），双击 exe 就地运行，没有解压环节：
 
 ```bash
-pnpm fetch:ffmpeg      # 可选：把 ffmpeg 一起打包进去
-pnpm build:win         # → release/WhichVideo-0.1.0-x64.exe（安装包）
-                       # → release/WhichVideo-0.1.0-portable.exe（便携版）
+pnpm fetch:ffmpeg       # 可选：把 ffmpeg 一起打包进去
+pnpm build:portable     # → release/WhichVideo-portable/  绿色版目录
+pnpm build:win          # → release/WhichVideo-0.1.0-x64.exe  安装包
 ```
 
-便携版（`*-portable.exe`）双击即用，**数据写在 exe 同级的 `data\` 目录里**：
-
 ```
-WhichVideo-0.1.0-portable.exe
-data\
-├─ whichvideo.db          # 索引库（视频元数据 + 帧指纹 + 缩略图 + 监听配置）
-├─ whichvideo.db-wal
-├─ session\               # Chromium 缓存
-└─ whichvideo.portable    # 便携模式标记
+WhichVideo-portable\          ← 拷走整个文件夹即可迁移
+├─ WhichVideo.exe
+├─ 便携版说明.txt
+├─ resources\                # app.asar、ffmpeg、原生模块
+├─ locales\ *.dll ...
+└─ data\                     # 首次运行自动创建
+   ├─ whichvideo.db          # 索引库（元数据 + 帧指纹 + 缩略图 + 监听配置）
+   ├─ whichvideo.db-wal
+   ├─ session\               # Chromium 缓存
+   └─ whichvideo.portable    # 便携模式标记
 ```
 
-- 换机器只需把 exe 和 `data\` 一起拷走，不在 `%APPDATA%`、`%TEMP%` 留下任何东西
+- 启动无解压开销（秒开），可以在不同盘符放多份互不干扰
+- 索引库、缓存全部写在 `data\`，不在 `%APPDATA%`、`%TEMP%` 留任何东西
 - 首次进入便携模式时，如果系统盘里已有旧的索引库，会自动复制一份过去，不会白建一次索引
-- ffmpeg 可以放在 exe 同级、`data\bin\` 或随安装包分发（`resources/bin`）
+- ffmpeg 可以放在 exe 同级、`data\bin\` 或随打包分发（`resources/bin`）
 - 想固定数据位置（例如放到移动硬盘）：`set WHICHVIDEO_DATA_DIR=E:\WhichVideoData` 再启动
 - 安装版仍然使用标准位置 `%APPDATA%\WhichVideo`；界面「索引设置」里能看到当前用的是哪种
+- ⚠️ 别把绿色版放进 `Program Files`：那里只读，检测不到可写就会退回默认数据目录
 
-> 便携版运行时会把程序本体解压到 `%TEMP%\whichvideo-portable`（固定目录，避免每次启动都重新解压）。
-> 因为目录名固定，**不要同时运行两个不同版本的便携版**，否则会互相覆盖解压内容；只需跑一个版本即可。
+> 没有采用 electron-builder 的单文件 `portable` 目标：那个形态每次启动都要把整个应用（约 250MB）
+> 解压到 `%TEMP%`、退出时再删除，启动慢且无法同时运行两份。需要单文件分发时，
+> 在 `electron-builder.yml` 的 `win.target` 里临时加回 `portable` 即可。
 
 数据目录判定优先级：`WHICHVIDEO_DATA_DIR` → 便携版启动器注入的 exe 所在目录 → 打包后 exe 所在目录（可写时）→ 默认用户目录。
 判定逻辑在 `src/main/datadir.ts`，有独立的单元测试 `pnpm test:portable` 覆盖各种组合。
@@ -200,7 +206,9 @@ src/
 | `pnpm dev` | 开发模式（渲染端热更新） |
 | `pnpm typecheck` | 主进程 + 渲染端类型检查 |
 | `pnpm build` | 类型检查并构建到 `out/` |
-| `pnpm build:win` | 打包 NSIS 安装包 + 免安装版到 `release/` |
+| `pnpm build:portable` | 打包绿色版目录 `release/WhichVideo-portable/`（免安装、免解压） |
+| `pnpm build:win` | 打包 NSIS 安装包 `release/WhichVideo-<版本>-x64.exe` |
+| `pnpm build:unpack` | 只出 `release/win-unpacked/`（不做安装包） |
 | `pnpm fetch:ffmpeg` | 下载 ffmpeg/ffprobe 到 `resources/bin` |
 
 ## 配置项
