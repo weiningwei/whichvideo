@@ -38,7 +38,9 @@ ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `W
 
 > `better-sqlite3` 使用 Node-API 预编译二进制，Electron 与 Node 都直接可用，无需重新编译。
 > 如果确实需要重建原生模块，运行 `pnpm rebuild:native`。
-> 受限环境（无法写入 pnpm 全局 store）可以这样安装：`pnpm install --store-dir .pnpm-store`。
+> 受限环境（无法写入 pnpm 全局 store）可以这样安装：`pnpm install --store-dir .pnpm-store`，
+> 之后 `pnpm run` 也要带上这个环境变量，例如
+> `set npm_config_store_dir=%CD%\.pnpm-store && pnpm test`。
 
 ---
 
