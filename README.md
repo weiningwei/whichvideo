@@ -18,9 +18,12 @@
 # 1. 安装依赖（node >= 22，pnpm >= 10）
 pnpm install
 
-# 2. 准备 ffmpeg（二选一）
-#    a) 系统已装 ffmpeg 并加入 PATH —— 直接跳过
-#    b) 让脚本下载到 resources/bin（打包时随应用分发）
+# 2. 准备 ffmpeg（三选一）
+#    a) 系统已装 ffmpeg 并加入 PATH —— 脚本会直接复制，不联网
+#    b) 从本机已有的安装/压缩包复制到 resources/bin
+pnpm fetch:ffmpeg --from "D:\program\ffmpeg\bin"
+pnpm fetch:ffmpeg --from "%USERPROFILE%\Downloads\ffmpeg-release-essentials.zip"
+#    c) 联网下载（默认多源自动回退，带进度与超时）
 pnpm fetch:ffmpeg
 
 # 3. 开发模式运行
@@ -36,6 +39,37 @@ pnpm build:win         # → release/WhichVideo-0.1.0-x64.exe（安装包，数�
 
 ffmpeg 查找顺序：`resources/bin` → 环境变量 `WHICHVIDEO_BIN_DIR` / `WHICHVIDEO_FFMPEG` → 系统 `PATH` → 常见安装目录（winget / scoop / chocolatey）。
 **找不到 ffmpeg 时程序仍可打开**，只是无法建立索引，界面会明确提示。
+
+### `pnpm fetch:ffmpeg` 下载不动怎么办
+
+`gyan.dev` 与 `github.com` 的连通性在不同网络下差异很大（实测同一条 URL 会时通时断）。脚本已做的处理：
+
+1. **优先复用本机 ffmpeg**：PATH 上有就直接复制，完全不联网
+2. **多源自动回退**：BtbN 直链 → BtbN release API → BtbN 固定 tag → xmake 镜像 → gyan.dev
+3. **有进度、有超时**：每秒打印进度与速度；默认 30s 收不到新数据就换源，不会无限挂着
+4. **缓存与续跑**：已下载的 zip 缓存在 `tmp/ffmpeg-download/`，重跑会复用；`--force` 可强制重下
+5. **校验**：检查 ZIP 文件头与体积，解压后确认两个二进制都在
+
+常用参数：
+
+```bash
+pnpm fetch:ffmpeg --from "D:\program\ffmpeg\bin"     # 用本机已有的
+pnpm fetch:ffmpeg --source btbn                      # 只用一个源
+pnpm fetch:ffmpeg --url "https://.../ffmpeg.zip"      # 自定义地址（内网镜像）
+pnpm fetch:ffmpeg --idle-timeout 120                 # 放宽空闲超时
+pnpm fetch:ffmpeg --force                            # 覆盖已有文件
+```
+
+走代理时注意：**Node 的 `fetch` 默认不读系统代理**，需要显式设环境变量（Node 24 还要开 `NODE_USE_ENV_PROXY`）：
+
+```bat
+set HTTPS_PROXY=http://127.0.0.1:7890
+set HTTP_PROXY=http://127.0.0.1:7890
+set NODE_USE_ENV_PROXY=1
+pnpm fetch:ffmpeg
+```
+
+实在不行就用浏览器下载 zip，再 `pnpm fetch:ffmpeg --from "<下载到的 zip 路径>"`。
 
 > `better-sqlite3` 使用 Node-API 预编译二进制，Electron 与 Node 都直接可用，无需重新编译。
 > 如果确实需要重建原生模块，运行 `pnpm rebuild:native`。
