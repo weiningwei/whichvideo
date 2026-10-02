@@ -18,7 +18,7 @@
  * 运行： node scripts/test-portable-builder.mjs
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -161,6 +161,34 @@ function main() {
     check('回到了首选目录', second.report?.reason === 'built', String(second.report?.reason))
     check('产物被替换成新的', readFileSync(join(target, 'resources', 'app.asar'), 'utf8') === 'fake asar v2')
     check('旧的 data\\ 已清掉', !existsSync(join(target, 'data', 'whichvideo.db')))
+  }
+
+  console.log('\n=== 场景 4：编译产物不全时必须拒绝打包（而不是产出坏包） ===')
+  {
+    const releaseDir = join(work, 'guard')
+    prepareLayout(releaseDir)
+    const preloadMjs = join(root, 'out', 'preload', 'index.mjs')
+    const preloadJs = join(root, 'out', 'preload', 'index.js')
+    const backup = join(work, 'preload-backup')
+    const source = existsSync(preloadMjs) ? preloadMjs : preloadJs
+    const hadPreload = existsSync(source)
+    if (hadPreload) renameSync(source, backup)
+    try {
+      const r = runBuilder(releaseDir)
+      check('产物缺失时打包失败', !r.ok, r.ok ? '却成功了' : '')
+      check(
+        '报告里说明是编译产物缺失',
+        r.report?.ok === false && r.report?.reason === 'missing-build-output',
+        JSON.stringify(r.report ?? {}).slice(0, 140)
+      )
+      check(
+        '报告列出了缺失的产物',
+        Array.isArray(r.report?.missing) && r.report.missing.some((m) => /preload/i.test(m)),
+        (r.report?.missing ?? []).join(' | ')
+      )
+    } finally {
+      if (hadPreload) renameSync(backup, source)
+    }
   }
 
   rmSync(work, { recursive: true, force: true })

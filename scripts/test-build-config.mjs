@@ -81,8 +81,17 @@ function main() {
     check(`入口存在：${label}`, existsSync(full))
   }
 
-  // 4) 不依赖 cwd
-  check('配置使用 __dirname 解析路径', config.includes('__dirname'), '避免"必须从仓库根目录执行"的隐性依赖')
+  // 4) 配置不从 __dirname / import.meta.dirname 取路径
+  //    electron-vite 会按 package.json 的 type 决定用 ESM 还是 CJS 解析配置，
+  //    两者混用会导致配置加载失败，所以统一用 process.cwd() 并显式校验工作目录。
+  const configCode = config
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n')
+  check('配置没有真的使用 __dirname', !configCode.includes('__dirname'))
+  check('配置没有真的使用 import.meta.dirname', !configCode.includes('import.meta.dirname'))
+  check('配置校验了工作目录', configCode.includes('process.cwd()') && configCode.includes('existsSync'))
 
   console.log(`\n=== 打包配置：${passed}/${passed + failed} 通过 ===`)
   process.exit(failed ? 1 : 0)

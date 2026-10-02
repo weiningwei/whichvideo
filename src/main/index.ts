@@ -535,6 +535,24 @@ function resourceBinDir(): string | undefined {
   return candidates.find((dir) => existsSync(dir))
 }
 
+/**
+ * 解析 preload 产物路径。
+ * electron-vite 输出的是 ESM 时文件名为 index.mjs、CJS 时为 index.js，
+ * 写死扩展名会导致 preload 静默加载失败（界面拿不到 window.whichvideo），
+ * 所以两种都试一下。
+ */
+function resolvePreloadPath(): string {
+  const candidates = [
+    join(__dirname, '../preload/index.mjs'),
+    join(__dirname, '../preload/index.js'),
+    join(__dirname, '../preload/index.cjs')
+  ]
+  const found = candidates.find((p) => existsSync(p))
+  if (found) return found
+  log(`[WARN] 未找到 preload 产物，已尝试：${candidates.join('、')}`)
+  return candidates[0]
+}
+
 function createWindow(): void {
   log('创建主窗口')
   mainWindow = new BrowserWindow({
@@ -547,7 +565,7 @@ function createWindow(): void {
     title: 'WhichVideo · 以图搜视频',
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: resolvePreloadPath(),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false

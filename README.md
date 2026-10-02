@@ -196,11 +196,11 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 | 命令 | 作用 |
 | --- | --- |
 | `pnpm test` | 依次跑下面五套自检 |
-| `pnpm test:config` | 打包配置校验（14 项）：别名声明、入口存在、路径不依赖 cwd |
-| `pnpm test:startup` | 主进程启动自检（28 项）：把编译产物跑在 Node + Electron 桩上，验证窗口创建/显示、日志、便携目录、失败可见、单实例锁 |
+| `pnpm test:config` | 打包配置校验（16 项）：别名声明、入口存在、不使用 __dirname、校验工作目录 |
+| `pnpm test:startup` | 主进程启动自检（36 项）：打包前提（type 字段/preload 路径）、窗口创建与显示、日志落盘、便携目录、失败可见、单实例锁 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
 | `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
-| `pnpm test:pack` | 绿色版打包脚本自检（20 项）：重建覆盖、旧 data 清理、目录被占用时改名挪开/自动换输出目录 |
+| `pnpm test:pack` | 绿色版打包脚本自检（23 项）：重建覆盖、旧 data 清理、占用时改名挪开/自动换目录、产物不全时拒绝打包 |
 | `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
 | `node scripts/bench-hash.mjs` | 对比几种结构指纹方案的区分度（选型依据） |
 | `node scripts/bench-score.mjs` | 对比几种打分加权公式的排序边距 |
@@ -309,6 +309,36 @@ node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
 想让它一直用首选目录名，就把占用源关掉（或退出编辑器）再跑一次。
 本仓库内置了 `.vscode/settings.json`，已经把 `release`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。
 用 Sublime 的话，把排除规则加进项目文件即可（`folder_exclude_patterns` 里加上 `release`、`out*`、`tmp`）。
+
+**双击 exe 没有任何反应，连 `data\` 目录和 log 都没生成？**
+这个组合（无窗口 + 无数据目录 + 无日志）说明**主进程的 JS 一行都没跑成功**——比初始化失败更早。
+最常见的原因是 Electron 没能加载主进程入口：
+
+- **`package.json` 里声明了 `type: module`**：Electron 会据此把主进程入口当 ESM 加载，
+  而 electron-vite 默认产出的是 CommonJS（含 `require`/`exports`），第一行就抛错退出。
+  本项目已移除该字段；如果你改动过它，`pnpm test:startup` 的场景 0 会直接失败。
+- **`out/` 产物不全**（构建中断、漏跑 `electron-vite build`）：`release` 里的 asar 会缺文件。
+  `pnpm build:portable` 现在会先校验 `out/main`、`out/preload`、`out/renderer` 是否齐全，
+  缺了就报错并提示先跑 `pnpm build`，不会再产出"双击没反应"的包。
+- **preload 产物扩展名**：electron-vite 输出 ESM 时是 `index.mjs`，主进程现在会自动适配
+  `.mjs`/`.js`/`.cjs`，不再写死 `index.js`。
+
+排查自检：`pnpm test:startup`（36 项）会把编译后的主进程跑在 Node + Electron 桩上，
+覆盖"打包前提（type 字段 / 入口 / preload 路径）→ 窗口创建与显示 → 日志落盘 → 便携目录 →
+初始化失败可见 → 单实例锁"。
+
+**日志文件支持便携模式吗？**
+支持。日志固定写在**当前数据目录**下，即 `<数据目录>\whichvideo.log`：
+
+| 形态 | 数据目录 | 日志路径 |
+| --- | --- | --- |
+| 绿色版（exe 同级可写） | `exe同级\data` | `exe同级\data\whichvideo.log` |
+| 绿色版放进只读目录 | `%APPDATA%\WhichVideo` | `%APPDATA%\WhichVideo\whichvideo.log` |
+| 安装版 | `%APPDATA%\WhichVideo` | `%APPDATA%\WhichVideo\whichvideo.log` |
+| `WHICHVIDEO_DATA_DIR` 指定 | 该目录 | `<该目录>\whichvideo.log` |
+
+界面「索引设置」里可以直接看到当前数据目录。**注意**：日志要等数据目录确定之后才会创建，
+所以"连日志都没有"本身就说明进程在更早的阶段就失败了（见上一条）。
 
 **`pnpm build` 报 `Failed to resolve import "@shared/..."`？**
 说明 `electron.vite.config.ts` 里某个构建目标漏配了别名（main / preload / renderer 三段各自需要 `resolve.alias`）。

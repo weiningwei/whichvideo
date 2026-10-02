@@ -6,7 +6,6 @@
   "author": "weiningwei",
   "license": "MIT",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",

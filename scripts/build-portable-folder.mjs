@@ -24,7 +24,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -220,6 +220,40 @@ function stamp() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
+/**
+ * 确认编译产物齐全。
+ * 打包前必须检查：electron-builder 会把 out/ 原样塞进 asar，
+ * 一旦 out/ 缺文件（构建没跑完/被中断），打出来的应用就会"双击没反应"且没有任何日志——
+ * 因为主进程 JS 压根没跑起来。
+ */
+function assertBuildOutput() {
+  const required = [
+    ['主进程', join(root, 'out', 'main', 'index.js')],
+    ['渲染页面', join(root, 'out', 'renderer', 'index.html')],
+    [
+      'preload',
+      [join(root, 'out', 'preload', 'index.mjs'), join(root, 'out', 'preload', 'index.js')].find((p) =>
+        existsSync(p)
+      ) ?? join(root, 'out', 'preload', 'index.mjs')
+    ]
+  ]
+  const missing = required.filter(([, file]) => !existsSync(file))
+  if (missing.length === 0) {
+    for (const [label, file] of required) {
+      console.log(`  ✓ 编译产物就绪：${label}（${relative(root, file)}）`)
+    }
+    return
+  }
+  const missingList = missing.map(([label, file]) => `${label}: ${relative(root, file)}`)
+  console.error('\n编译产物不完整，不能打包：')
+  for (const item of missingList) console.error(`  ✗ 缺少 ${item}`)
+  console.error('\n先执行完整构建再打包：')
+  console.error('  pnpm build          # typecheck + electron-vite build（产出 out/）')
+  console.error('  pnpm build:portable # 已经包含上一步，请确认它没有中途失败')
+  writeTestReport({ ok: false, reason: 'missing-build-output', missing: missingList })
+  process.exit(1)
+}
+
 function main() {
   // 手动排查入口：诊断某个目录被谁占用
   const whoIndex = argv.indexOf('--who-locks')
@@ -230,6 +264,11 @@ function main() {
   }
 
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+
+  const skipBuildCheck = process.env.WHICHVIDEO_SKIP_BUILD_CHECK === '1'
+  if (!skipBuildCheck && existsSync(join(root, 'out'))) {
+    assertBuildOutput()
+  }
 
   if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
     console.log('未找到 release/win-unpacked，先执行 electron-builder --win dir …')

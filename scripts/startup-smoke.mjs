@@ -72,6 +72,12 @@ async function runScenario(id, setup) {
   mkdirSync(join(paths.appRoot, 'renderer'), { recursive: true })
   const indexHtml = join(paths.appRoot, 'renderer', 'index.html')
   if (!existsSync(indexHtml)) writeFileSync(indexHtml, '<!doctype html><title>WhichVideo</title>')
+  // 主进程会在启动时寻找 preload 产物（index.mjs / index.js），放一个占位文件，
+  // 这样"preload 路径解析"也能被一起验证
+  const preloadDir = join(paths.appRoot, 'preload')
+  mkdirSync(preloadDir, { recursive: true })
+  const preloadJs = join(preloadDir, 'index.mjs')
+  if (!existsSync(preloadJs)) writeFileSync(preloadJs, 'export {}\n')
   mkdirSync(paths.userData, { recursive: true })
   mkdirSync(paths.exeDir, { recursive: true })
 
@@ -147,6 +153,40 @@ async function main() {
   rmSync(workBase, { recursive: true, force: true })
   mkdirSync(workBase, { recursive: true })
 
+  // 主进程从 __dirname（即 out-startup/main）往上一级找 preload 产物，
+  // 所以这里在 out-startup/preload 下放一个占位文件，模拟真实构建结果。
+  const stubPreloadDir = join(root, 'out-startup', 'preload')
+  mkdirSync(stubPreloadDir, { recursive: true })
+  writeFileSync(join(stubPreloadDir, 'index.mjs'), 'export {}\n')
+
+  /* ---------------- 打包配置层面的启动前提 ---------------- */
+  console.log('\n=== 场景 0：打包后能被 Electron 正确加载的前提 ===')
+  {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    // Electron 会按 package.json 的 type 决定如何加载主进程入口。
+    // 主进程产物是 CommonJS（electron-vite 默认），若这里声明 module，
+    // Electron 会当 ESM 解析并立刻抛错退出 —— 表现为"双击没反应、无日志、无数据目录"。
+    check(
+      'package.json 不声明 type: module（避免主进程被当 ESM 加载）',
+      pkg.type === undefined,
+      pkg.type === undefined ? '' : `type=${pkg.type}`
+    )
+    check('主进程入口指向 out/main/index.js', pkg.main === './out/main/index.js', String(pkg.main))
+
+    const config = readFileSync(join(root, 'electron.vite.config.ts'), 'utf8')
+    // 只看代码，忽略注释（注释里会提到 __dirname 说明为什么不用它）
+    const configCode = config
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n')
+    check('打包配置没有真的使用 __dirname', !configCode.includes('__dirname'))
+    check('打包配置没有真的使用 import.meta.dirname', !configCode.includes('import.meta.dirname'))
+
+    const mainSource = readFileSync(join(root, 'src', 'main', 'index.ts'), 'utf8')
+    check('主进程会自动解析 preload 扩展名', mainSource.includes('resolvePreloadPath'))
+  }
+
   /* ---------------- 场景 1：默认模式 ---------------- */
   console.log('\n=== 场景 1：默认模式（数据写入 userData） ===')
   {
@@ -163,6 +203,20 @@ async function main() {
     check('未误判为便携模式', r.log.includes('portable=false'))
     check('默认模式不启用禁用磁盘缓存开关', !r.api.state.switches.includes('disable-http-cache'))
     check('创建了索引库文件', r.dbExists)
+    const preloadOption = r.api.state.windows[0]?.options?.webPreferences?.preload
+    check(
+      'preload 路径指向真实存在的产物（自动适配 .mjs / .js）',
+      typeof preloadOption === 'string' &&
+        /index\.(mjs|js|cjs)$/.test(preloadOption) &&
+        existsSync(preloadOption),
+      String(preloadOption)
+    )
+    check(
+      'preload 解析到了 out-startup/preload 下',
+      typeof preloadOption === 'string' && preloadOption.includes(join('out-startup', 'preload')),
+      String(preloadOption)
+    )
+    check('没有出现找不到 preload 的警告', !r.log.includes('未找到 preload 产物'))
   }
 
   /* ---------------- 场景 2：便携模式 ---------------- */
