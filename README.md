@@ -293,11 +293,22 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，所以�
 2. **编辑器**：Sublime Text 的 `plugin_host-3.3.exe`、VS Code 的 `Code.exe` 等在索引本项目时会持有目录句柄
 3. **资源管理器停在那个目录**、或杀毒软件正在扫描刚生成的 exe
 
+> 注意：占用跟进程 exe 在哪**没有关系**。Sublime 装在 `D:\SublimeText`，但它的 `plugin_host`
+> 进程只要把项目目录当作当前工作目录（CWD）或扫描了 `release`，就会锁住这里。
+
+**想知道到底是谁占着？** 仓库带了一个诊断脚本，会读每个进程的真实工作目录并点名占用者：
+
+```bash
+node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
+# 或直接： pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
+```
+
 脚本的处理顺序是：**重试删除 → 改名成 `WhichVideo-portable.old-<时间戳>` 挪开 → 仍然不行就自动输出到 `WhichVideo-portable-<日期>-<时间>` 并继续打包**。
 也就是说占用不会让打包失败，只会换个目录名；你的旧 `data\` 会完整留在原处或 `.old-*` 里，不会被静默删掉。
 
 想让它一直用首选目录名，就把占用源关掉（或退出编辑器）再跑一次。
 本仓库内置了 `.vscode/settings.json`，已经把 `release`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。
+用 Sublime 的话，把排除规则加进项目文件即可（`folder_exclude_patterns` 里加上 `release`、`out*`、`tmp`）。
 
 **`pnpm build` 报 `Failed to resolve import "@shared/..."`？**
 说明 `electron.vite.config.ts` 里某个构建目标漏配了别名（main / preload / renderer 三段各自需要 `resolve.alias`）。

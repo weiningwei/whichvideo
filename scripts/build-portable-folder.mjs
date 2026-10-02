@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
+const argv = process.argv.slice(2)
 // WHICHVIDEO_RELEASE_DIR 主要给自检用（scripts/test-portable-builder.mjs），正常打包不需要设置
 const releaseDir = process.env.WHICHVIDEO_RELEASE_DIR
   ? resolve(process.env.WHICHVIDEO_RELEASE_DIR)
@@ -85,6 +86,40 @@ function countFiles(dir) {
 /** 提示可能是哪个进程占用了目录（探测失败也不能影响报错信息） */
 function describeHolders(dir) {
   const hints = []
+
+  // 用 PEB 读出每个进程的当前工作目录：CWD 停在该目录（或其上级）是 Windows 上
+  // 最常见的"目录既删不掉也改不了名"的原因，而且和进程 exe 在哪无关。
+  try {
+    const script = join(root, 'scripts', 'lib', 'who-locks-dir.ps1')
+    if (existsSync(script)) {
+      const shell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
+      const r = spawnSync(
+        shell,
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          // 本机执行策略可能禁止运行未签名脚本，这里只针对我们自己的诊断脚本放行
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          script,
+          '-Path',
+          dir,
+          '-Brief'
+        ],
+        { encoding: 'utf8', timeout: 25000, stdio: ['ignore', 'pipe', 'pipe'] }
+      )
+      const line = String(r.stdout ?? '')
+        .split(/\r?\n/)
+        .find((l) => l.startsWith('HOLDERS'))
+      if (line && !line.includes('无直接命中')) {
+        hints.push(line.replace(/^HOLDERS\s*/, '检测到占用线索 → '))
+      }
+    }
+  } catch {
+    /* 探测失败就只给通用提示 */
+  }
+
   try {
     const r = spawnSync('tasklist.exe', ['/FI', 'IMAGENAME eq WhichVideo.exe', '/FO', 'CSV', '/NH'], {
       encoding: 'utf8',
@@ -97,9 +132,27 @@ function describeHolders(dir) {
   } catch {
     /* 受限环境可能不允许启动子进程，忽略即可 */
   }
+
+  hints.push('编辑器（Sublime 的 plugin_host、VS Code 等）在索引本项目时会占用目录 —— 退出或关掉该项目窗口')
   hints.push(`资源管理器可能停在该目录 —— 换个目录再看（当前：${dir}）`)
   hints.push('杀毒软件/Defender 可能正在扫描刚生成的 exe —— 稍等十几秒重试')
   return hints
+}
+
+/**
+ * 诊断当前占有目录的进程（供手动排查）：
+ *   node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
+ */
+function runWhoLocks(dir) {
+  const script = join(root, 'scripts', 'lib', 'who-locks-dir.ps1')
+  const shell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
+  console.log(`诊断目录占用：${dir}\n`)
+  const r = spawnSync(
+    shell,
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Path', dir, '-All'],
+    { stdio: 'inherit' }
+  )
+  process.exit(r.status ?? 1)
 }
 
 /**
@@ -168,6 +221,14 @@ function stamp() {
 }
 
 function main() {
+  // 手动排查入口：诊断某个目录被谁占用
+  const whoIndex = argv.indexOf('--who-locks')
+  if (whoIndex >= 0) {
+    const target = argv[whoIndex + 1] ?? preferredTargetDir
+    runWhoLocks(resolve(target))
+    return
+  }
+
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
   if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
