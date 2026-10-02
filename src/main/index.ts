@@ -4,7 +4,7 @@
  * 打包后是 GUI 子系统程序，stdout 不出现在控制台，因此启动过程的关键节点
  * 都会写进 <数据目录>\whichvideo.log（见 ./logger.ts），方便排查"双击没反应"。
  */
-import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import {
@@ -20,11 +20,42 @@ import {
   type WatchedFolder
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
-import { getLogFile, initLogger, installCrashHandlers, log, logError } from './logger'
+import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
 
 installCrashHandlers()
+
+// Windows 上未签名的 Electron 应用有若干已知的启动崩溃，统一表现为
+// STATUS_BREAKPOINT（0x80000003 / 退出码 -2147483645）且**不产生任何日志**。
+// 其中 GPU 沙箱相关的一类可以靠命令开关规避，本应用完全不需要 GPU 渲染，代价接近于零，
+// 所以默认关掉 GPU 相关能力，宁可走软件渲染也要保证能启动。
+// （参考：Chromium 在部分 Windows 11 版本上 GPU 子进程启动即崩的问题）
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-sandbox')
+}
+
+/**
+ * 尽早把日志落到磁盘。
+ *
+ * 这里的目录是根据环境变量/便携标记**预先估算**出来的，可能与最终数据目录不同；
+ * 后面 setupDataDirectory() 确定真实目录时会重新初始化并迁移日志（见 relocateLogger）。
+ * 这么做是为了让"启动早期就崩溃"也能留下记录 —— 之前正是缺这段日志才无法定位问题。
+ */
+function bootstrapLogger(): void {
+  try {
+    const earlyDir =
+      process.env.WHICHVIDEO_DATA_DIR ??
+      (process.env.PORTABLE_EXECUTABLE_DIR ? join(process.env.PORTABLE_EXECUTABLE_DIR, 'data') : null) ??
+      app.getPath('userData')
+    initLogger(earlyDir)
+  } catch {
+    /* 早期目录不可写时继续，setupDataDirectory 之后还会再初始化一次 */
+  }
+}
+
+bootstrapLogger()
 log(`启动：electron ${process.versions.electron} / node ${process.versions.node} / packaged=${app.isPackaged}`)
 log(`exe=${process.execPath}`)
+log(`早期日志目录=${getLogFile() ?? '(未启用)'}`)
 
 // 单实例锁：重复启动时静默退出最容易被误认为"没反应"，这里显式记一笔并跳过后续初始化。
 // 注意 app.quit() 不保证立刻终止进程，必须用标志位把后续流程挡住，否则照样会弹窗。
@@ -179,8 +210,38 @@ function setupDataDirectory(): { dir: string; portable: boolean; source: string 
   return resolution
 }
 
+/**
+ * 把日志迁移到最终确定的数据目录。
+ *
+ * 启动早期为了尽快落盘，日志先写在"预估目录"里；真正的数据目录要等
+ * resolveDataDir 判断完可写性/便携标记才确定，可能与之不同。
+ * 这里把已写下的日志一并搬到新位置，避免排查时看漏最早的几行。
+ */
+function relocateLogger(finalDir: string): void {
+  const previous = getLogFile()
+  const target = join(finalDir, 'whichvideo.log')
+  if (previous === target) return
+  try {
+    mkdirSync(finalDir, { recursive: true })
+    if (previous && existsSync(previous)) {
+      const earlier = existsSync(target) ? readFileSync(target, 'utf8') : ''
+      const current = readFileSync(previous, 'utf8')
+      writeFileSync(target, earlier + current)
+      try {
+        unlinkSync(previous)
+      } catch {
+        /* 删不掉就留着，不影响 */
+      }
+    }
+  } catch {
+    /* 迁移失败时保留原日志位置 */
+  }
+  resetLogger()
+  initLogger(finalDir)
+}
+
 const dataDir = setupDataDirectory()
-initLogger(dataDir.dir)
+relocateLogger(dataDir.dir)
 log(`数据目录：${dataDir.dir}（portable=${dataDir.portable} source=${dataDir.source}）`)
 log(`日志文件：${getLogFile()}`)
 

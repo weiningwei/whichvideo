@@ -185,6 +185,26 @@ async function main() {
 
     const mainSource = readFileSync(join(root, 'src', 'main', 'index.ts'), 'utf8')
     check('主进程会自动解析 preload 扩展名', mainSource.includes('resolvePreloadPath'))
+    // 早期崩溃（例如 STATUS_BREAKPOINT）不产生任何日志，是最难查的一类问题；
+    // 因此日志初始化必须早于单实例锁与数据目录解析。
+    const bootIdx = mainSource.indexOf('bootstrapLogger()')
+    const lockIdx = mainSource.indexOf('app.requestSingleInstanceLock()')
+    const dataDirIdx = mainSource.indexOf('const dataDir = setupDataDirectory()')
+    check(
+      '日志初始化早于单实例锁',
+      bootIdx >= 0 && lockIdx >= 0 && bootIdx < lockIdx,
+      `boot=${bootIdx} lock=${lockIdx}`
+    )
+    check(
+      '日志初始化早于数据目录解析',
+      bootIdx >= 0 && dataDirIdx >= 0 && bootIdx < dataDirIdx,
+      `boot=${bootIdx} dataDir=${dataDirIdx}`
+    )
+    check('确定数据目录后会迁移早期日志', mainSource.includes('relocateLogger'))
+    check(
+      'Windows 上默认关闭 GPU 沙箱（已知启动崩溃来源之一）',
+      /disable-gpu-sandbox/.test(mainSource)
+    )
   }
 
   /* ---------------- 场景 1：默认模式 ---------------- */

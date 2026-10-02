@@ -91,17 +91,29 @@ try {
 }
 
 Section '7. 手动启动一次并抓取输出'
-Write-Output '  下面会用 ELECTRON_ENABLE_LOGGING 启动，5 秒后自动结束进程。'
+Write-Output '  下面会用 ELECTRON_ENABLE_LOGGING 启动，6 秒后自动结束进程。'
 Write-Output '  主进程加载失败的错误（例如 ESM/CJS 相关）会出现在“--- 输出 ---”里。'
 if (Test-Path $exe) {
   $env:ELECTRON_ENABLE_LOGGING = '1'
   $out = Join-Path $env:TEMP "whichvideo-launch-$([guid]::NewGuid().ToString('N')).log"
+  # 刻意不用 -WindowStyle Hidden：那会让 GUI 程序的窗口行为失真，尽量贴近真实双击
   $proc = Start-Process -FilePath $exe -WorkingDirectory $PortableDir -PassThru `
-    -RedirectStandardOutput $out -RedirectStandardError "$out.err" -WindowStyle Hidden
-  Start-Sleep -Seconds 5
+    -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+  Start-Sleep -Seconds 6
   $alive = -not $proc.HasExited
-  Write-Output "  启动后 5 秒仍在运行：$(if ($alive) { '是（进程没崩，可能是窗口问题）' } else { "否（已退出，退出码 $($proc.ExitCode)）" })"
-  if ($alive) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+  Write-Output "  启动后 6 秒仍在运行：$(if ($alive) { '是（进程没崩，问题在窗口/渲染层）' } else { '否（已退出）' })"
+  if (-not $alive) {
+    $code = $proc.ExitCode
+    $hex = if ($null -ne $code) { '0x' + ([uint32]$code).ToString('x8') } else { '(未知)' }
+    Write-Output "  退出码：$code  ($hex)"
+    if ($code -eq -2147483645) {
+      Write-Output '  ⚠ STATUS_BREAKPOINT (0x80000003)：Chromium 的通用 CHECK 崩溃码。'
+      Write-Output '     常见原因：GPU 子进程/沙箱、安全软件拦截、Chromium 与系统版本不兼容。'
+      Write-Output '     WhichVideo 已在 Windows 上默认加 --disable-gpu-sandbox；若仍为此码，可试 --disable-gpu。'
+    }
+  } else {
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+  }
   foreach ($f in $out, "$out.err") {
     if (Test-Path $f) {
       $content = Get-Content $f -Raw -ErrorAction SilentlyContinue

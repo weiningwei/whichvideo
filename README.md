@@ -197,7 +197,7 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 | --- | --- |
 | `pnpm test` | 依次跑下面五套自检 |
 | `pnpm test:config` | 打包配置校验（16 项）：别名声明、入口存在、不使用 __dirname、校验工作目录 |
-| `pnpm test:startup` | 主进程启动自检（36 项）：打包前提（type 字段/preload 路径）、窗口创建与显示、日志落盘、便携目录、失败可见、单实例锁 |
+| `pnpm test:startup` | 主进程启动自检（40 项）：打包前提、窗口创建与显示、**极早期日志**、便携目录、失败可见、单实例锁、GPU 沙箱规避 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
 | `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
 | `pnpm test:pack` | 绿色版打包脚本自检（28 项）：重建覆盖、旧 data 清理、占用时改名挪开/自动换目录、产物不全或过期时拒绝打包 |
@@ -313,17 +313,56 @@ node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
 
 **双击 exe 没有任何反应，连 `data\` 目录和 log 都没生成？**
 这个组合（无窗口 + 无数据目录 + 无日志）说明**主进程的 JS 一行都没跑成功**——比初始化失败更早。
-最常见的原因是 Electron 没能加载主进程入口：
+先看退出码，它能直接区分原因：
+
+| 退出码 | 含义 | 往哪查 |
+| --- | --- | --- |
+| `-2147483645`（`0x80000003`） | `STATUS_BREAKPOINT`，Chromium 的通用 `CHECK` 崩溃码，**不是应用特有** | 下面的「环境类崩溃」 |
+| 其他非零 | 代码执行到一半报错 | 此时应有 `<数据目录>\whichvideo.log`（现在极早期日志也会落盘） |
+| 没有退出码 | 进程像根本没启动 | 下面的「被拦截」 |
+
+再逐项排除代码/打包类原因：
 
 - **`package.json` 里声明了 `type: module`**：Electron 会据此把主进程入口当 ESM 加载，
-  而 electron-vite 默认产出的是 CommonJS（含 `require`/`exports`），第一行就抛错退出。
-  本项目已移除该字段；如果你改动过它，`pnpm test:startup` 的场景 0 会直接失败。
-- **`out/` 产物不全**（构建中断、漏跑 `electron-vite build`）：`release` 里的 asar 会缺文件。
-  `pnpm build:portable` 现在会先校验 `out/main`、`out/preload`、`out/renderer` 是否齐全，
-  缺了就报错并提示先跑 `pnpm build`，不会再产出"双击没反应"的包。
-- **preload 产物扩展名**：electron-vite 输出 ESM 时是 `index.mjs`，主进程现在会自动适配
-  `.mjs`/`.js`/`.cjs`，不再写死 `index.js`。
-- **包里其实是旧代码**：见下面那条"打包成功但双击还是没反应"。
+  而 electron-vite 默认产出 CommonJS（含 `require`/`exports`），第一行就抛错退出。
+  本项目已移除该字段；改动过的话 `pnpm test:startup` 的场景 0 会直接失败。
+- **`out/` 产物不全**（构建中断、漏跑 `electron-vite build`）：`pnpm build:portable` 会先校验
+  `out/main`、`out/preload`、`out/renderer` 是否齐全，缺了就报错，不会再产出"双击没反应"的包。
+- **preload 产物扩展名**：产物是 `index.mjs` 还是 `index.js` 都会自动适配，不再写死。
+- **包里是旧代码**：见下面那条"打包'成功'了，但双击还是没反应"。
+
+**环境类崩溃（退出码 `0x80000003` / `-2147483645`）**
+已知在部分 Windows 11（26100 / 26200）上，Electron 的 **GPU 子进程或 renderer 会在启动约 2 秒内以
+`STATUS_BREAKPOINT` 崩溃**，而且**不产生任何日志**（参考社区同类修复：orca 的 renderer 沙箱回退、
+hermes-agent 的 GPU 沙箱回退）。本项目已做两件事：
+
+1. Windows 上默认追加 `--disable-gpu-sandbox`（本应用不需要 GPU 渲染，代价接近零）
+2. **日志初始化提前到主进程第一行附近**，并在数据目录确定后迁移（`relocateLogger`），
+   保证"极早期崩溃"也有记录可查 —— 之前正是缺这段日志才迟迟定位不到
+
+若仍以该码退出，逐个试这些开关：
+
+```powershell
+.\WhichVideo.exe --disable-gpu
+.\WhichVideo.exe --disable-gpu-compositing
+.\WhichVideo.exe --no-sandbox
+.\WhichVideo.exe --disable-software-rasterizer
+```
+
+**先判断是不是环境问题**：用官方 Electron 二进制跑一个 3 行的极简应用。如果它也以
+`0x80000003` 退出，就说明是本机环境无法运行 Electron GUI，与本项目代码无关：
+
+```bash
+node scripts/probe-electron-startup.mjs
+```
+
+**被拦截（进程像根本没启动）**
+系统里查不到事件日志、没有崩溃转储、连 `CrashDumps` 目录都不存在时，多半是被安全策略拦下：
+
+- **智能应用控制 / WDAC / AppLocker**：`pwsh -File scripts/lib/check-app-control.ps1` 一次性检查
+- **杀毒软件**：240MB 未签名 exe 常被静默拦截，临时加白名单试一次
+- **Zone.Identifier**：右键 exe → 属性，若底部有「解除锁定」就勾选
+- **换目录**：复制到 `D:\test\` 或桌面再试（排除 E 盘权限 / OneDrive / 网络盘）
 
 **打包"成功"了，但双击还是没反应？**
 先确认包里装的是不是这次的代码 —— 这个坑真实发生过：`electron-builder` 那一步失败（它内部的

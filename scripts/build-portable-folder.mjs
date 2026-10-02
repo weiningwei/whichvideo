@@ -23,6 +23,7 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
