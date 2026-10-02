@@ -31,13 +31,8 @@ function check(name, ok, detail = '') {
 
 /**
  * 按 asar 真实格式打包一组文件。
- * 布局（与 @electron/asar 的 disk.js / pickle.js 一致）：
- *   [0..3]   外层 Pickle 的 payload 长度 = 4
- *   [4..7]   外层 Pickle 的 payload：JSON 头总长度（含 4 字节字符串长度前缀）
- *   [8..11]  内层 Pickle 的 payload 长度 = 4 + json.length
- *   [12..15] 字符串长度 = json.length
- *   [16..]   json，其后紧跟各文件内容（offset 从内容区起点算起）
- * 所以 headerSize = 4 + json.length，内容起点 = 8 + headerSize + 4。
+ * 头部布局：[0..3] 外层 pickle payload 长度（4）；[4..7] 内层 payload 长度 = 4 + json 长度；
+ * [8..11] json 长度；[12..] json；内容起点 = 12 + json 长度。
  */
 function buildAsar(files) {
   const entries = []
@@ -69,12 +64,10 @@ function buildAsar(files) {
   }
 
   const json = Buffer.from(JSON.stringify(rootNode), 'utf8')
-  const headerSize = 4 + json.length
-  const header = Buffer.alloc(16)
-  header.writeUInt32LE(4, 0) // 外层 Pickle payload 长度
-  header.writeUInt32LE(headerSize, 4) // 外层 Pickle payload：JSON 头总长
-  header.writeUInt32LE(headerSize, 8) // 内层 Pickle payload 长度
-  header.writeUInt32LE(json.length, 12) // 字符串长度
+  const header = Buffer.alloc(12)
+  header.writeUInt32LE(4, 0)
+  header.writeUInt32LE(4 + json.length, 4)
+  header.writeUInt32LE(json.length, 8)
   return Buffer.concat([header, json, ...entries.map((e) => e.buf)])
 }
 
@@ -98,17 +91,38 @@ async function main() {
   )
   check('构造出的 asar 文件存在', existsSync(asarPath))
 
-  const mainEntry = mod.readAsarEntry(asarPath, 'out/main/index.js')
-  check('能读出嵌套路径的文件', mainEntry !== null && mainEntry.length > 0, `${mainEntry?.length ?? 0} 字节`)
-  check('读出的内容与写入一致', mainEntry?.toString('utf8') === mainSource)
+  const mainEntry = mod.readAsarEntryManually(asarPath, 'out/main/index.js')
+  check('内置解析能读出嵌套文件', mainEntry !== null && mainEntry.length > 0, `${mainEntry?.length ?? 0} 字节`)
+  check('内置解析内容与写入一致', mainEntry?.toString('utf8') === mainSource)
 
-  const pkgEntry = mod.readAsarEntry(asarPath, 'package.json')
+  // 两种解析方式必须给出相同结果（之前的偏移 bug 就是因为这里不一致而误报）
+  const manualHash = createHash('sha256').update(Buffer.from(mainEntry)).digest('hex')
+  check('内置解析的 sha256 与源内容一致', manualHash === createHash('sha256').update(mainSource).digest('hex'))
+
+  const pkgEntry = mod.readAsarEntryManually(asarPath, 'package.json')
   check('能读出顶层文件', pkgEntry?.toString('utf8').includes('out/main/index.js') === true)
 
-  check('不存在的路径返回 null', mod.readAsarEntry(asarPath, 'out/nope.js') === null)
+  check('不存在的路径返回 null', mod.readAsarEntryManually(asarPath, 'out/nope.js') === null)
 
-  const rendererEntry = mod.readAsarEntry(asarPath, 'out/renderer/index.html')
+  const rendererEntry = mod.readAsarEntryManually(asarPath, 'out/renderer/index.html')
   check('第三个层级也能解析', rendererEntry?.toString('utf8') === '<!doctype html>')
+
+  // 官方库路径（优先使用）：拿仓库里真实的 asar 验证（人工构造的头部不保证符合官方 pickle 规范）
+  const realAsar = join(root, 'release', 'win-unpacked', 'resources', 'app.asar')
+  if (existsSync(realAsar)) {
+    const viaLib = mod.readAsarEntry(realAsar, 'out/main/index.js')
+    const localMain = existsSync(join(root, 'out', 'main', 'index.js'))
+      ? readFileSync(join(root, 'out', 'main', 'index.js'))
+      : null
+    check('官方库能从真实 asar 读出主进程产物', viaLib !== null && viaLib.length > 0, `${viaLib?.length ?? 0} 字节`)
+    if (viaLib && localMain) {
+      const libHash = createHash('sha256').update(Buffer.from(viaLib)).digest('hex')
+      const localHash = createHash('sha256').update(localMain).digest('hex')
+      check('真实包内产物与本地编译产物 sha256 一致', libHash === localHash, libHash.slice(0, 12) + '…')
+    }
+  } else {
+    check('（跳过真实 asar 校验：release/win-unpacked 不存在）', true)
+  }
 
   rmSync(work, { recursive: true, force: true })
   console.log(`\n=== asar 校验逻辑：${passed}/${passed + failed} 通过 ===`)

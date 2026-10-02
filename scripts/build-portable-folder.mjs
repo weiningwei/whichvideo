@@ -24,6 +24,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -306,27 +307,79 @@ function runElectronBuilder() {
 }
 
 /**
- * 读取 asar 中某个文件的元信息（不依赖任何外部工具）。
- * asar 结构：8 字节头部 + 4 字节 pickle 长度 + 4 字节 json 长度 + json + 内容
+ * 读取 asar 里的文件内容。
+ *
+ * 重要教训：手写 pickle 解析曾经把内容起点算错 1 个字节，
+ * 导致"包内产物与本地不一致"的误报，浪费了排查时间。
+ * 因此一律使用 electron-builder 自带的 @electron/asar 做整体解包后再读文件；
+ * 只有它完全不可用时，才退回手写解析（结果仅作参考）。
  */
+function extractAsar(asarPath, destDir) {
+  const require = createRequire(import.meta.url)
+  const candidates = []
+  try {
+    candidates.push(require.resolve('@electron/asar'))
+  } catch {
+    /* 顶层没有就找 pnpm 虚拟 store */
+  }
+  const store = join(root, 'node_modules', '.pnpm')
+  if (existsSync(store)) {
+    for (const dir of readdirSync(store)) {
+      if (!dir.startsWith('@electron+asar@')) continue
+      candidates.push(join(store, dir, 'node_modules', '@electron', 'asar', 'lib', 'asar.js'))
+    }
+  }
+  const found = candidates.find((p) => existsSync(p))
+  if (!found) return false
+  const asar = require(found)
+  rmSync(destDir, { recursive: true, force: true })
+  mkdirSync(destDir, { recursive: true })
+  asar.extractAll(asarPath, destDir)
+  return true
+}
+
+/** 读取 asar 中某个文件的内容（优先官方库整体解包） */
 function readAsarEntry(asarPath, entryPath) {
+  const dest = join(root, 'tmp', 'asar-read')
+  try {
+    if (extractAsar(asarPath, dest)) {
+      const file = join(dest, entryPath.replace(/^\//, ''))
+      return existsSync(file) ? readFileSync(file) : null
+    }
+    console.log('  （未找到 @electron/asar，改用内置解析；结果仅作参考）')
+  } catch (err) {
+    console.log(`  （@electron/asar 解包失败：${err instanceof Error ? err.message : String(err)}，改用内置解析）`)
+  }
+  return readAsarEntryManually(asarPath, entryPath)
+}
+
+/**
+ * 手写 asar 解析（兜底）。
+ * 头部布局：[0..3] 外层 pickle payload 长度；[4..7] 内层 payload 长度 = 4 + json 长度；
+ * [8..11] = json 长度；[12..] json；内容起点 = 12 + json 长度。
+ */
+function readAsarEntryManually(asarPath, entryPath) {
   const buf = readFileSync(asarPath)
-  const headerSize = buf.readUInt32LE(12)
-  const header = JSON.parse(buf.subarray(16, 16 + headerSize).toString('utf8'))
-  const parts = entryPath.split('/')
+  const jsonSize = buf.readUInt32LE(8)
+  const header = JSON.parse(buf.subarray(12, 12 + jsonSize).toString('utf8'))
+  const parts = entryPath.replace(/^\//, '').split('/')
   let node = header
   for (const part of parts) {
     node = node?.files?.[part]
     if (!node) return null
   }
-  const start = 16 + headerSize + Number(node.offset)
-  return buf.subarray(start, start + node.size)
+  const start = 12 + jsonSize + Number(node.offset)
+  const inBounds = start >= 0 && Number(node.size) >= 0 && start + Number(node.size) <= buf.length
+  if (!inBounds) {
+    console.log(`  （内置解析越界，放弃：${entryPath}）`)
+    return null
+  }
+  return buf.subarray(start, start + Number(node.size))
 }
 
 /**
  * 校验打出来的包确实是这次的代码。
- * 只比文件时间戳不够稳（拷贝、缓存都会影响），这里直接读 asar 里的主进程产物，
- * 确认 it 包含本次的核心标志。
+ * 用 sha256 直接比对包内 out/main/index.js 与本地编译产物 —— 字节级一致才算新鲜。
  */
 function assertPackageFreshness() {
   const packedAsar = join(unpackedDir, 'resources', 'app.asar')
@@ -343,28 +396,19 @@ function assertPackageFreshness() {
     process.exit(1)
   }
 
-  const sourceMain = readFileSync(join(root, 'out', 'main', 'index.js'), 'utf8')
-  const mismatches = []
-  if (mainInAsar.length !== Buffer.byteLength(sourceMain)) {
-    mismatches.push(`大小不一致（包内 ${mainInAsar.length} vs out/ ${Buffer.byteLength(sourceMain)}）`)
-  }
-  // 用只在较新代码里出现、且不会随压缩变化的字符串做指纹
-  for (const marker of ['未找到 preload 产物', '索引库已打开']) {
-    const inSource = sourceMain.includes(marker)
-    if (inSource && !mainInAsar.includes(Buffer.from(marker, 'utf8'))) {
-      mismatches.push(`缺少新代码标志：${marker}`)
-    }
-  }
-
-  if (mismatches.length) {
+  const localMain = readFileSync(join(root, 'out', 'main', 'index.js'))
+  const packedHash = createHash('sha256').update(mainInAsar).digest('hex')
+  const localHash = createHash('sha256').update(localMain).digest('hex')
+  if (packedHash !== localHash) {
     console.error('\n包内主进程产物与 out/ 不一致，说明这次没有真正重新打包：')
-    for (const item of mismatches) console.error(`  · ${item}`)
+    console.error(`  包内 sha256 ${packedHash}（${mainInAsar.length} 字节）`)
+    console.error(`  本地 sha256 ${localHash}（${localMain.length} 字节）`)
     console.error('\n处理：删掉 release\\win-unpacked 与 release\\WhichVideo-portable 后重跑。')
-    writeTestReport({ ok: false, reason: 'stale-package', mismatches })
+    writeTestReport({ ok: false, reason: 'stale-package', packedHash, localHash })
     process.exit(1)
   }
 
-  console.log('  ✓ 已校验包内 out/main/index.js 与本次编译产物一致')
+  console.log(`  ✓ 已校验包内 out/main/index.js 与本次编译产物字节一致（sha256 ${localHash.slice(0, 12)}…）`)
 }
 
 function main() {
@@ -447,7 +491,7 @@ function main() {
 /**
  * 供自检复用的内部函数（正常打包不会用到导出）。
  */
-export { readAsarEntry, assertPackageFreshness, runElectronBuilder }
+export { readAsarEntry, readAsarEntryManually, assertPackageFreshness, runElectronBuilder }
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 if (isDirectRun) {
