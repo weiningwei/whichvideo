@@ -195,8 +195,9 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 
 | 命令 | 作用 |
 | --- | --- |
-| `pnpm test` | 依次跑下面四套自检 |
+| `pnpm test` | 依次跑下面五套自检 |
 | `pnpm test:config` | 打包配置校验（14 项）：别名声明、入口存在、路径不依赖 cwd |
+| `pnpm test:startup` | 主进程启动自检（28 项）：把编译产物跑在 Node + Electron 桩上，验证窗口创建/显示、日志、便携目录、失败可见、单实例锁 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
 | `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
 | `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
@@ -266,6 +267,23 @@ src/
 **搜不到明明存在的画面？**
 先确认该视频状态是「已索引」。索引设置里把抽帧数调到 24~32、匹配阈值调到 0.65，再点「重建全部索引」。
 画面差异极大的情况（截图经过了裁剪、加字幕遮挡、强滤镜）会降低命中率，此时取视频中更完整的一帧作为查询图。
+
+**双击 exe 没有任何反应 / 终端里立刻回到提示符？**
+Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，所以启动阶段一旦出错就是"没反应"。
+现在启动过程会写日志：**`<数据目录>\whichvideo.log`**（便携模式是 `exe同级\data\whichvideo.log`，
+安装版是 `%APPDATA%\WhichVideo\whichvideo.log`）。打开它看最后几行即可定位。
+
+日志里会按顺序记录：启动参数 → 核心模块加载 → 数据目录 → 日志文件 → 窗口创建 → 界面加载 →
+索引库打开 → IPC 注册 → 初始化完成。缺在哪一步，问题就在那一步。
+
+常见原因：
+- **已经在运行**：日志会写"已有实例在运行，本次启动退出"，去任务栏找已打开的窗口
+- **界面文件缺失**：日志写"加载界面：…（存在=false）"，说明打包产物不完整 → 重新 `pnpm build:portable`
+- **索引库损坏/被占用**：日志写 `[ERROR] 初始化失败: file is not a database` 等，删掉 `data\whichvideo.db` 重启即可（会重新建索引）
+- **绿色版放进了 Program Files**：目录只读，数据会退回 `%APPDATA%`，日志里的"数据目录"会显示实际位置
+
+排查自检：`pnpm test:startup` 会把编译后的主进程跑在 Node + Electron 桩上，覆盖"窗口创建/显示、
+日志落盘、便携目录、初始化失败可见、单实例锁"这些启动路径。
 
 **`pnpm build` 报 `Failed to resolve import "@shared/..."`？**
 说明 `electron.vite.config.ts` 里某个构建目标漏配了别名（main / preload / renderer 三段各自需要 `resolve.alias`）。

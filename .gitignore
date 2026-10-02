@@ -5,6 +5,7 @@ node_modules/
 pnpm-workspace.yaml
 out/
 out-e2e/
+out-startup/
 dist/
 release/
 *.tsbuildinfo

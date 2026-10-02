@@ -1,5 +1,8 @@
 /**
  * Electron 主进程入口：窗口、IPC、库与索引器的生命周期。
+ *
+ * 打包后是 GUI 子系统程序，stdout 不出现在控制台，因此启动过程的关键节点
+ * 都会写进 <数据目录>\whichvideo.log（见 ./logger.ts），方便排查"双击没反应"。
  */
 import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -17,19 +20,80 @@ import {
   type WatchedFolder
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
-import { LibraryDatabase } from './db'
-import { DATABASE_FILES, portableMarkerPath, resolveDataDir, type DataDirResolution } from './datadir'
-import { FrameSearchIndex, queryVectorFromImage } from './search'
-import { Indexer } from './indexer'
-import { FolderWatcher } from './watcher'
-import { resolveTools } from './media'
+import { getLogFile, initLogger, installCrashHandlers, log, logError } from './logger'
+
+installCrashHandlers()
+log(`启动：electron ${process.versions.electron} / node ${process.versions.node} / packaged=${app.isPackaged}`)
+log(`exe=${process.execPath}`)
+
+// 单实例锁：重复启动时静默退出最容易被误认为"没反应"，这里显式记一笔并跳过后续初始化。
+// 注意 app.quit() 不保证立刻终止进程，必须用标志位把后续流程挡住，否则照样会弹窗。
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  log('已有实例在运行，本次启动退出（请查看已打开的那个窗口）')
+  app.quit()
+}
+
+/* ------------------------------------------------------------------ *
+ * 关键依赖：失败也要留下痕迹，不能静默退出
+ * ------------------------------------------------------------------ */
+
+interface CoreModules {
+  LibraryDatabase: typeof import('./db').LibraryDatabase
+  FrameSearchIndex: typeof import('./search').FrameSearchIndex
+  queryVectorFromImage: typeof import('./search').queryVectorFromImage
+  Indexer: typeof import('./indexer').Indexer
+  FolderWatcher: typeof import('./watcher').FolderWatcher
+  resolveTools: typeof import('./media').resolveTools
+  resolveDataDir: typeof import('./datadir').resolveDataDir
+  portableMarkerPath: typeof import('./datadir').portableMarkerPath
+  DATABASE_FILES: typeof import('./datadir').DATABASE_FILES
+  error: unknown
+}
+
+/**
+ * 用 require 惰性加载核心模块（打包产物是 CJS）：
+ * 任何模块级异常（原生模块加载失败、依赖缺失等）都能被捕获并写进日志，
+ * 否则会表现为"双击没反应"。
+ */
+function loadCoreModules(): CoreModules {
+  const core: Partial<CoreModules> = {}
+  try {
+    /* eslint-disable @typescript-eslint/no-var-requires */
+    const db = require('./db') as typeof import('./db')
+    const search = require('./search') as typeof import('./search')
+    const indexer = require('./indexer') as typeof import('./indexer')
+    const watcher = require('./watcher') as typeof import('./watcher')
+    const media = require('./media') as typeof import('./media')
+    const datadir = require('./datadir') as typeof import('./datadir')
+    core.LibraryDatabase = db.LibraryDatabase
+    core.FrameSearchIndex = search.FrameSearchIndex
+    core.queryVectorFromImage = search.queryVectorFromImage
+    core.Indexer = indexer.Indexer
+    core.FolderWatcher = watcher.FolderWatcher
+    core.resolveTools = media.resolveTools
+    core.resolveDataDir = datadir.resolveDataDir
+    core.portableMarkerPath = datadir.portableMarkerPath
+    core.DATABASE_FILES = datadir.DATABASE_FILES
+    log('核心模块加载完成')
+  } catch (err) {
+    core.error = err
+    logError('加载核心模块失败', err)
+  }
+  return core as CoreModules
+}
+
+const core = loadCoreModules()
 
 let mainWindow: BrowserWindow | null = null
-let db: LibraryDatabase
-let searchIndex: FrameSearchIndex
-let indexer: Indexer
-let watcher: FolderWatcher
+let db: InstanceType<CoreModules['LibraryDatabase']>
+let searchIndex: InstanceType<CoreModules['FrameSearchIndex']>
+let indexer: InstanceType<CoreModules['Indexer']>
+let watcher: InstanceType<CoreModules['FolderWatcher']>
 let toolsReady = false
+
+/** 已打开的数据库连接，便于退出/自检时统一关闭，避免文件锁残留 */
+const openDatabases: { close: () => void }[] = []
 
 /* ------------------------------------------------------------------ *
  * 数据目录：绿色/便携模式
@@ -55,7 +119,7 @@ function isWritableDir(dir: string): boolean {
 /** 首次进入便携模式时，把系统盘里的旧索引库搬过来，避免用户白建一次索引 */
 function migrateLegacyDatabase(targetDir: string, legacyDir: string): void {
   if (!legacyDir || resolve(legacyDir) === resolve(targetDir)) return
-  for (const name of DATABASE_FILES) {
+  for (const name of core.DATABASE_FILES ?? []) {
     const from = join(legacyDir, name)
     const to = join(targetDir, name)
     if (!existsSync(from)) continue
@@ -68,22 +132,34 @@ function migrateLegacyDatabase(targetDir: string, legacyDir: string): void {
 }
 
 /** 计算并应用数据目录（必须在 app ready 之前调用） */
-function setupDataDirectory(): DataDirResolution {
+function setupDataDirectory(): { dir: string; portable: boolean; source: string } {
   const legacyDir = app.getPath('userData')
-  const resolution = resolveDataDir({
-    legacyDir,
-    envDir: process.env.WHICHVIDEO_DATA_DIR,
-    portableDir: process.env.PORTABLE_EXECUTABLE_DIR,
-    exeDir: dirname(app.getPath('exe')),
-    isPackaged: app.isPackaged,
-    isWritable: isWritableDir
-  })
+
+  if (!core.resolveDataDir) {
+    // 核心模块没加载成功时，退回默认位置并写日志，至少让窗口能起来把错误显示出来
+    return { dir: legacyDir, portable: false, source: 'default' }
+  }
+
+  let resolution: { dir: string; portable: boolean; source: string }
+  try {
+    resolution = core.resolveDataDir({
+      legacyDir,
+      envDir: process.env.WHICHVIDEO_DATA_DIR,
+      portableDir: process.env.PORTABLE_EXECUTABLE_DIR,
+      exeDir: dirname(app.getPath('exe')),
+      isPackaged: app.isPackaged,
+      isWritable: isWritableDir
+    })
+  } catch (err) {
+    logError('解析数据目录失败，退回默认位置', err)
+    return { dir: legacyDir, portable: false, source: 'default' }
+  }
 
   if (resolution.portable) {
-    mkdirSync(resolution.dir, { recursive: true })
     try {
+      mkdirSync(resolution.dir, { recursive: true })
       writeFileSync(
-        portableMarkerPath(resolution.dir),
+        core.portableMarkerPath(resolution.dir),
         `portable data directory\r\nbase: ${process.env.PORTABLE_EXECUTABLE_DIR ?? dirname(app.getPath('exe'))}\r\n`
       )
     } catch {
@@ -92,7 +168,7 @@ function setupDataDirectory(): DataDirResolution {
     if (!existsSync(join(resolution.dir, 'whichvideo.db'))) {
       migrateLegacyDatabase(resolution.dir, legacyDir)
     }
-    // 便携版启动器会把应用解压到临时目录，缓存必须挪出 temp
+    // 便携模式下缓存也必须落在数据目录里，不能写 %TEMP%
     app.setPath('userData', resolution.dir)
     app.setPath('sessionData', join(resolution.dir, 'session'))
     app.commandLine.appendSwitch('disable-http-cache')
@@ -104,6 +180,9 @@ function setupDataDirectory(): DataDirResolution {
 }
 
 const dataDir = setupDataDirectory()
+initLogger(dataDir.dir)
+log(`数据目录：${dataDir.dir}（portable=${dataDir.portable} source=${dataDir.source}）`)
+log(`日志文件：${getLogFile()}`)
 
 /* ------------------------------------------------------------------ *
  * 事件广播
@@ -164,7 +243,7 @@ function performSearch(image: Electron.NativeImage): SearchResponse {
   const imageData = nativeImageToImageData(image)
   if (!imageData) return emptyResponse(size.width, size.height, started)
 
-  const vector = queryVectorFromImage(imageData)
+  const vector = core.queryVectorFromImage(imageData)
   const { results, comparedFrames } = searchIndex.search(vector, {
     minHashScore: settings.minHashScore,
     maxResults: settings.maxResults
@@ -457,6 +536,7 @@ function resourceBinDir(): string | undefined {
 }
 
 function createWindow(): void {
+  log('创建主窗口')
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -474,7 +554,25 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    log('窗口 ready-to-show，执行 show()')
+    mainWindow?.show()
+    mainWindow?.focus()
+  })
+  mainWindow.on('closed', () => {
+    log('窗口已关闭')
+    mainWindow = null
+  })
+  mainWindow.webContents.on('did-finish-load', () => log('渲染页面加载完成'))
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    logError('渲染页面加载失败', new Error(`${desc} (${code}) ${url}`))
+    // 页面加载失败也要让窗口可见，否则用户只看到"没反应"
+    showFatalInWindow(`界面加载失败：${desc} (${code})`)
+  })
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logError('渲染进程异常退出', new Error(JSON.stringify(details)))
+  })
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
@@ -483,21 +581,81 @@ function createWindow(): void {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    const indexHtml = join(__dirname, '../renderer/index.html')
+    log(`加载界面：${indexHtml}（存在=${existsSync(indexHtml)}）`)
+    void mainWindow.loadFile(indexHtml)
   }
+
+  // 兜底：即使 ready-to-show 没触发（渲染失败等），3 秒后也要把窗口显示出来
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      log('ready-to-show 未触发，兜底显示窗口')
+      mainWindow.show()
+    }
+  }, 3000)
+}
+
+/** 在窗口里直接显示致命错误，避免"双击没反应" */
+function showFatalInWindow(message: string): void {
+  // 极端情况下（窗口创建本身就失败）没有窗口可用，那就至少把错误写进日志，
+  // 并把窗口补出来，保证用户/我们都能看到失败原因。
+  if (!mainWindow) {
+    logError('需要展示错误页但没有可用窗口', new Error(message))
+    try {
+      mainWindow = new BrowserWindow({
+        width: 900,
+        height: 620,
+        backgroundColor: '#0b0f17',
+        title: 'WhichVideo 启动失败',
+        autoHideMenuBar: true,
+        webPreferences: { sandbox: false, contextIsolation: true, nodeIntegration: false }
+      })
+    } catch (err) {
+      logError('创建错误窗口失败', err)
+      return
+    }
+  }
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>WhichVideo 启动失败</title></head>
+<body style="margin:0;background:#0b0f17;color:#e2e8f0;font-family:'Segoe UI','Microsoft YaHei',system-ui;padding:32px">
+<h2 style="color:#f87171;margin:0 0 12px">WhichVideo 启动失败</h2>
+<pre style="white-space:pre-wrap;background:#141c2b;border:1px solid #223049;border-radius:10px;padding:16px;font-size:13px">${escapeHtml(
+    message
+  )}</pre>
+<p style="color:#94a3b8;font-size:13px">数据目录：${escapeHtml(dataDir.dir)}<br>日志文件：${escapeHtml(
+    getLogFile() ?? '（未初始化）'
+  )}</p>
+</body></html>`
+  void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+  if (!mainWindow.isVisible()) mainWindow.show()
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 }
 
 async function bootstrap(): Promise<void> {
-  db = new LibraryDatabase(dbPath())
-  searchIndex = new FrameSearchIndex(db)
-  indexer = new Indexer(db, searchIndex, () => db.getSettings(), broadcast)
-  watcher = new FolderWatcher(db, indexer, broadcast, () => db.getSettings().awaitWriteMs)
+  log('开始初始化：数据库 / 索引 / 监听')
+  if (core.error) {
+    throw new Error(`核心模块加载失败：${core.error instanceof Error ? core.error.message : String(core.error)}`)
+  }
 
-  toolsReady = !!resolveTools(resourceBinDir())
+  db = new core.LibraryDatabase(dbPath())
+  openDatabases.push(db)
+  log(`索引库已打开：${dbPath()}`)
+  searchIndex = new core.FrameSearchIndex(db)
+  log(`帧索引载入完成：${searchIndex.frameCount} 帧`)
+  indexer = new core.Indexer(db, searchIndex, () => db.getSettings(), broadcast)
+  watcher = new core.FolderWatcher(db, indexer, broadcast, () => db.getSettings().awaitWriteMs)
+
+  toolsReady = !!core.resolveTools(resourceBinDir())
+  log(`ffmpeg 可用：${toolsReady}`)
 
   registerIpc()
+  log('IPC 已注册')
   await watcher.syncAll()
+  log('文件夹监听已同步')
   indexer.resumePending()
+  log('初始化完成')
 
   if (app.isPackaged) {
     // 自动更新是可选能力：未安装 electron-updater 时静默跳过
@@ -508,8 +666,22 @@ async function bootstrap(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) {
+    log('未获得单实例锁，跳过窗口与索引初始化')
+    return
+  }
+  log('app ready')
   createWindow()
-  await bootstrap()
+  try {
+    await bootstrap()
+  } catch (err) {
+    logError('初始化失败', err)
+    showFatalInWindow(
+      `初始化失败：${err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err)}`
+    )
+    return
+  }
+
   broadcast({ type: 'stats', stats: db.stats() })
   broadcast({ type: 'status', status: indexer.status() })
   broadcast({
@@ -532,13 +704,42 @@ app.whenReady().then(async () => {
   })
 })
 
+app.on('second-instance', () => {
+  log('检测到第二次启动，聚焦已有窗口')
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
+
 app.on('window-all-closed', () => {
-  void watcher.stopAll().finally(() => {
-    db?.close()
+  log('所有窗口已关闭')
+  void watcher?.stopAll().finally(() => {
+    closeDatabases()
     if (process.platform !== 'darwin') app.quit()
   })
 })
 
+/** 统一关闭数据库连接（退出或启动自检清理时调用） */
+function closeDatabases(): void {
+  for (const handle of openDatabases.splice(0)) {
+    try {
+      handle.close()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// 供启动自检（scripts/startup-smoke.mjs）在进程内清理时调用
+;(module.exports as { closeDatabases?: () => void }).closeDatabases = closeDatabases
+
+// 兜底：初始化阶段出现未捕获异常时，把原因显示在窗口里并记入日志
 process.on('uncaughtException', (err) => {
-  broadcast({ type: 'notice', level: 'error', message: `主进程异常：${err.message}` })
+  logError('uncaughtException', err)
+  if (mainWindow) {
+    broadcast({ type: 'notice', level: 'error', message: `主进程异常：${err.message}` })
+  } else {
+    showFatalInWindow(`主进程异常：${err.message}\n\n${err.stack ?? ''}`)
+  }
 })
