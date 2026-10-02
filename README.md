@@ -267,6 +267,15 @@ src/
 先确认该视频状态是「已索引」。索引设置里把抽帧数调到 24~32、匹配阈值调到 0.65，再点「重建全部索引」。
 画面差异极大的情况（截图经过了裁剪、加字幕遮挡、强滤镜）会降低命中率，此时取视频中更完整的一帧作为查询图。
 
+**`pnpm build` 报 `Failed to resolve import "@shared/..."`？**
+说明 `electron.vite.config.ts` 里某个构建目标漏配了别名（main / preload / renderer 三段各自需要 `resolve.alias`）。
+跑 `pnpm test:config` 能立刻定位是哪个目标缺了哪个别名 —— 这类错误只在完整构建时才暴露。
+
+**clone 下来缺文件、渲染端报模块找不到？**
+检查是不是 `.gitignore` 把源码误伤了：Python 模板里的 `lib/`、`build/` 这类规则如果不写前导斜杠，
+会匹配任意层级（例如 `src/renderer/src/lib/`）。本项目已把这些规则统一锚定到仓库根目录。
+排查命令：`git status --ignored=matching --porcelain --untracked-files=all | findstr /v node_modules`。
+
 **为什么相似度普遍 70%~80%？**
 不同分辨率、不同压缩率的画面本身就会有几十个 bit 的结构差异，属正常范围。分数梯队（几乎确定 / 高度相似 / 可能匹配 / 弱匹配）比绝对值更有参考意义。
 
