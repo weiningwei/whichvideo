@@ -20,8 +20,9 @@
     "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "test:core": "node scripts/build-core.mjs && node scripts/e2e.mjs",
     "test:portable": "node scripts/build-core.mjs && node scripts/test-datadir.mjs",
+    "test:config": "node scripts/test-build-config.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run test:core && npm run test:portable && npm run test:ui",
+    "test": "npm run test:config && npm run test:core && npm run test:portable && npm run test:ui",
     "rebuild:native": "electron-builder install-app-deps"
   },
   "dependencies": {

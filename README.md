@@ -195,9 +195,10 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 
 | 命令 | 作用 |
 | --- | --- |
-| `pnpm test` | 依次跑下面三套自检 |
+| `pnpm test` | 依次跑下面四套自检 |
+| `pnpm test:config` | 打包配置校验（14 项）：别名声明、入口存在、路径不依赖 cwd |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
-| `pnpm test:portable` | 便携模式数据目录判定（13 项）：环境变量 / 便携启动器 / 只读目录回退 / 迁移清单 |
+| `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
 | `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
 | `node scripts/bench-hash.mjs` | 对比几种结构指纹方案的区分度（选型依据） |
 | `node scripts/bench-score.mjs` | 对比几种打分加权公式的排序边距 |
