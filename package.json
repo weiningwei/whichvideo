@@ -1,0 +1,46 @@
+{
+  "name": "whichvideo",
+  "version": "0.1.0",
+  "description": "本地视频库：导入视频/文件夹，以图搜帧，查看图片对应视频是否已下载，文件夹动态更新",
+  "main": "./out/main/index.js",
+  "author": "weiningwei",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "npm run typecheck && electron-vite build",
+    "build:win": "npm run build && electron-builder --win",
+    "build:unpack": "npm run build && electron-builder --dir",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "test:core": "node scripts/build-core.mjs && node scripts/e2e.mjs",
+    "test:ui": "node scripts/ui-smoke.mjs",
+    "test": "npm run test:core && npm run test:ui",
+    "rebuild:native": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^5.0.0",
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

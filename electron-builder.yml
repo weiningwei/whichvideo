@@ -1,0 +1,42 @@
+appId: com.weiningwei.whichvideo
+productName: WhichVideo
+copyright: Copyright © 2026 weiningwei
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  - LICENSE
+
+asarUnpack:
+  - node_modules/better-sqlite3/**
+
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - '**/*'
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: WhichVideo
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

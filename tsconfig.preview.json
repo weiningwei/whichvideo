@@ -1,0 +1,24 @@
+{
+  "_comment": "仅供 scripts/ui-smoke.mjs 使用：把渲染端转译成 Node 可加载的 ESM，用 React 服务端渲染做组件冒烟测试",
+  "include": ["src/renderer/src/**/*", "src/shared/**/*"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": false,
+    "outDir": "tmp/preview/js",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["src/renderer/src/*"],
+      "@shared/*": ["src/shared/*"]
+    }
+  }
+}

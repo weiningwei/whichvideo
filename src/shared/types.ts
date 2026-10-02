@@ -1,0 +1,295 @@
+/**
+ * 主进程 <-> 渲染进程共享的类型定义。
+ * 这里只放纯类型，不能 import electron / node 模块，渲染端也要用。
+ */
+
+/** 视频文件生命周期状态 */
+export type VideoStatus =
+  /** 已入库，等待抽帧建索引 */
+  | 'pending'
+  /** 正在抽帧建索引 */
+  | 'indexing'
+  /** 索引完成，可参与图片搜索 */
+  | 'ready'
+  /** 索引失败（解码错误等） */
+  | 'failed'
+
+export interface VideoRecord {
+  id: number
+  /** 绝对路径（Windows 反斜杠） */
+  path: string
+  /** 小写路径，用于去重比较 */
+  pathKey: string
+  name: string
+  dir: string
+  ext: string
+  size: number
+  mtimeMs: number
+  /** 秒，未知为 null */
+  duration: number | null
+  width: number | null
+  height: number | null
+  videoCodec: string | null
+  /** 已建立的帧指纹数量 */
+  frameCount: number
+  status: VideoStatus
+  error: string | null
+  /** 加入索引的时间 */
+  addedAt: number
+  indexedAt: number | null
+  /** 该文件来自哪个被监听的文件夹 */
+  folderId: number | null
+}
+
+/** 文件夹监听状态 */
+export type FolderWatchState = 'watching' | 'idle' | 'missing' | 'error'
+
+export interface WatchedFolder {
+  id: number
+  path: string
+  pathKey: string
+  name: string
+  /** 用户手动添加（true）还是递归扫描时自动登记（false） */
+  pinned: boolean
+  enabled: boolean
+  /** 是否递归监听子目录 */
+  recursive: boolean
+  watchState: FolderWatchState
+  message: string | null
+  addedAt: number
+  lastScanAt: number | null
+}
+
+export interface LibraryStats {
+  videos: number
+  indexedVideos: number
+  pendingVideos: number
+  failedVideos: number
+  frames: number
+  totalBytes: number
+  folders: number
+  watching: number
+}
+
+/** 索引器（后台队列）实时状态 */
+export interface IndexerStatus {
+  running: boolean
+  /** 当前并发中的任务数 */
+  active: number
+  /** 队列里等待的任务数 */
+  queued: number
+  total: number
+  done: number
+  failed: number
+  currentPath: string | null
+  startedAt: number | null
+  finishedAt: number | null
+  /** 最近一次失败原因 */
+  lastError: string | null
+}
+
+/** 一次搜索中命中的视频 */
+export interface SearchMatch {
+  video: VideoRecord
+  /** 0~1，越高越像 */
+  score: number
+  /** 0~1，感知哈希相似度（dHash/pHash 融合） */
+  hashScore: number
+  /** 0~1，颜色分布相似度 */
+  colorScore: number
+  /** 命中的帧在视频中的位置（秒） */
+  timeSeconds: number
+  /** 命中帧序号 */
+  frameIndex: number
+  /** 命中的是第几个关键帧（用于排序展示） */
+  hashDistance: number
+}
+
+export interface SearchResponse {
+  query: {
+    width: number
+    height: number
+    /** 查询图片整体主色，便于结果解释 */
+    colorScoreHint: number
+  }
+  matchCount: number
+  /** 参与比对的帧总数 */
+  comparedFrames: number
+  /** 耗时毫秒 */
+  elapsedMs: number
+  /** 是否存在分数可接受的匹配 */
+  found: boolean
+  matches: SearchMatch[]
+}
+
+export interface VideoQuery {
+  keyword?: string
+  folderId?: number | null
+  status?: VideoStatus | 'all'
+  limit?: number
+  offset?: number
+  sort?: 'added' | 'name' | 'size' | 'duration'
+  order?: 'asc' | 'desc'
+}
+
+export interface VideoPage {
+  total: number
+  items: VideoRecord[]
+}
+
+/** 每次索引进度变化都推给渲染端，UI 依赖它做“动态更新”提示 */
+export type LibraryEvent =
+  | { type: 'status'; status: IndexerStatus }
+  | { type: 'video-updated'; video: VideoRecord }
+  | { type: 'video-removed'; videoId: number; path: string }
+  | { type: 'folder-updated'; folder: WatchedFolder }
+  | { type: 'folder-removed'; folderId: number }
+  | { type: 'stats'; stats: LibraryStats }
+  | { type: 'notice'; level: 'info' | 'warn' | 'error'; message: string }
+
+export interface ImportResult {
+  added: number
+  duplicates: number
+  skipped: number
+  scanned: number
+  folders: number
+}
+
+export interface VideoProbeInfo {
+  duration: number | null
+  width: number | null
+  height: number | null
+  videoCodec: string | null
+}
+
+export interface AppSettings {
+  /** 每个视频抽取的关键帧数量上限 */
+  framesPerVideo: number
+  /** 抽帧并发数 */
+  concurrency: number
+  /** 单帧比对阈值：哈希相似度低于该值直接丢弃 */
+  minHashScore: number
+  /** 结果条数上限 */
+  maxResults: number
+  /** 新文件写入稳定后再入库的等待时间(ms) */
+  awaitWriteMs: number
+  /** 文件被删除后是否从库中清除 */
+  pruneOnDelete: boolean
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  framesPerVideo: 16,
+  concurrency: 2,
+  minHashScore: 0.6,
+  maxResults: 40,
+  awaitWriteMs: 1500,
+  pruneOnDelete: true
+}
+
+export const VIDEO_EXTENSIONS = [
+  '.mp4',
+  '.mkv',
+  '.avi',
+  '.mov',
+  '.wmv',
+  '.flv',
+  '.webm',
+  '.m4v',
+  '.mpg',
+  '.mpeg',
+  '.ts',
+  '.m2ts',
+  '.rmvb',
+  '.rm',
+  '.3gp'
+] as const
+
+export function isVideoFile(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.')
+  if (dot < 0) return false
+  return (VIDEO_EXTENSIONS as readonly string[]).includes(filePath.slice(dot).toLowerCase())
+}
+
+export const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.avif'] as const
+
+export function isImageFile(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.')
+  if (dot < 0) return false
+  return (IMAGE_EXTENSIONS as readonly string[]).includes(filePath.slice(dot).toLowerCase())
+}
+
+/** 把路径统一成 Windows 原生形式并生成比较用的 key */
+export function normalizePath(p: string): string {
+  return p.replace(/\//g, '\\').replace(/\\+$/, '')
+}
+
+export function pathKeyOf(p: string): string {
+  return normalizePath(p).toLowerCase()
+}
+
+export interface WhichVideoApi {
+  library: {
+    stats(): Promise<LibraryStats>
+    status(): Promise<IndexerStatus>
+    settings(): Promise<AppSettings>
+    updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+    openDatabaseFolder(): Promise<string>
+    reset(): Promise<void>
+  }
+  folders: {
+    list(): Promise<WatchedFolder[]>
+    addFromDialog(): Promise<WatchedFolder[]>
+    addPath(dirPath: string): Promise<WatchedFolder>
+    remove(folderId: number): Promise<void>
+    rescan(folderId?: number): Promise<ImportResult>
+    setEnabled(folderId: number, enabled: boolean): Promise<WatchedFolder>
+  }
+  videos: {
+    list(query: VideoQuery): Promise<VideoPage>
+    get(videoId: number): Promise<VideoRecord | null>
+    remove(videoId: number): Promise<void>
+    reindex(videoIds?: number[]): Promise<number>
+    importFiles(): Promise<ImportResult>
+    importImages(): Promise<string[]>
+    openFile(videoId: number): Promise<void>
+    revealFile(videoId: number): Promise<void>
+    thumbnail(videoId: number): Promise<string | null>
+  }
+  search: {
+    byPath(filePath: string): Promise<SearchResponse>
+    byDataUrl(dataUrl: string): Promise<SearchResponse>
+    byClipboard(): Promise<SearchResponse | null>
+  }
+  events: {
+    /** 订阅库变化事件；返回取消订阅函数 */
+    subscribe(listener: (event: LibraryEvent) => void): () => void
+  }
+}
+
+export const IPC = {
+  libraryStats: 'library:stats',
+  libraryStatus: 'library:status',
+  librarySettings: 'library:settings',
+  libraryUpdateSettings: 'library:update-settings',
+  libraryOpenDb: 'library:open-database-folder',
+  libraryReset: 'library:reset',
+  foldersList: 'folders:list',
+  foldersAddDialog: 'folders:add-dialog',
+  foldersAddPath: 'folders:add-path',
+  foldersRemove: 'folders:remove',
+  foldersRescan: 'folders:rescan',
+  foldersSetEnabled: 'folders:set-enabled',
+  videosList: 'videos:list',
+  videosGet: 'videos:get',
+  videosRemove: 'videos:remove',
+  videosReindex: 'videos:reindex',
+  videosImport: 'videos:import',
+  videosImportImages: 'videos:import-images',
+  videosOpen: 'videos:open',
+  videosReveal: 'videos:reveal',
+  videosThumbnail: 'videos:thumbnail',
+  searchPath: 'search:path',
+  searchDataUrl: 'search:data-url',
+  searchClipboard: 'search:clipboard',
+  eventChannel: 'library:event'
+} as const

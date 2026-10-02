@@ -1,0 +1,220 @@
+/**
+ * 内存帧索引 + 搜索打分。
+ *
+ * 帧指纹（8 字节 dHash + 64 字节结构 + 64 字节颜色 + 8 字节元信息）全量常驻内存，
+ * 图片搜索 = 纯内存扫描：先用 64bit dHash 剪枝，再做 512bit 结构距离与颜色相交。
+ *
+ * 打分公式（见 src/shared/hash.ts 的 combinedScore）：
+ *   颜色越鲜明的查询图，颜色直方图权重越高（0.3 → 0.7），
+ *   因为纯色/少色画面的结构指纹会退化，必须靠颜色区分。
+ */
+import type { LibraryDatabase } from './db'
+import {
+  COLOR_OFFSET,
+  DHASH_OFFSET,
+  FRAME_STRIDE,
+  META_OFFSET,
+  STRUCT_BYTES,
+  STRUCT_OFFSET,
+  quantizeColor,
+  quantizedColorfulness,
+  quantizedHistogramSimilarity
+} from '@shared/framepack'
+import {
+  COLOR_WEIGHT_MAX,
+  COLOR_WEIGHT_MIN,
+  computeSignature,
+  type ImageDataLike
+} from '@shared/hash'
+
+const STRUCT_BITS = STRUCT_BYTES * 8
+/** dHash 剪枝阈值：超过该距离的帧不可能成为好匹配 */
+const DHASH_PRUNE_BITS = 24
+/** 结构距离上限：超过则直接丢弃（512bit 中 224bit 不同） */
+const STRUCT_PRUNE_BITS = 224
+
+export interface FrameIndexInfo {
+  frames: number
+  videos: number
+  bytes: number
+  builtAt: number
+}
+
+export interface IndexedHit {
+  videoId: number
+  frameIndex: number
+  timeSeconds: number
+  score: number
+  hashScore: number
+  colorScore: number
+  hashDistance: number
+}
+
+export interface SearchOptions {
+  /** 结构相似度低于该值的帧直接丢弃 */
+  minHashScore: number
+  /** 返回条数上限 */
+  maxResults: number
+}
+
+export interface QueryVector {
+  dhash: number
+  /** 64 字节结构指纹 */
+  struct: Uint8Array
+  /** 64 字节量化颜色直方图 */
+  color: Uint8Array
+  /** 颜色鲜明度，决定结构与颜色的权重 */
+  colorfulness: number
+}
+
+/** 把一张图（Electron nativeImage 的位图或 ffmpeg 的 rgb24）转成查询向量 */
+export function queryVectorFromImage(img: ImageDataLike): QueryVector {
+  const signature = computeSignature(img)
+  const color = quantizeColor(signature.color)
+  return {
+    dhash: signature.dhash,
+    struct: signature.struct,
+    color,
+    colorfulness: quantizedColorfulness(color)
+  }
+}
+
+export class FrameSearchIndex {
+  private buffer: Uint8Array<ArrayBufferLike> = new Uint8Array(0)
+  private videoIds: Int32Array<ArrayBufferLike> = new Int32Array(0)
+  private view: DataView | null = null
+  private builtAt = 0
+
+  constructor(private readonly db: LibraryDatabase) {
+    this.rebuild()
+  }
+
+  get frameCount(): number {
+    return this.videoIds.length
+  }
+
+  get info(): FrameIndexInfo {
+    const seen = new Set<number>()
+    for (let i = 0; i < this.videoIds.length; i++) seen.add(this.videoIds[i])
+    return {
+      frames: this.videoIds.length,
+      videos: seen.size,
+      bytes: this.buffer.byteLength,
+      builtAt: this.builtAt
+    }
+  }
+
+  /** 全量重建（导入 / 删除 / 重索引之后调用） */
+  rebuild(): FrameIndexInfo {
+    const { buffer, videoIds } = this.db.loadFrameMatrix()
+    this.buffer = buffer
+    this.videoIds = videoIds
+    this.view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+    this.builtAt = Date.now()
+    return this.info
+  }
+
+  /**
+   * 视频级结果：
+   * score = 最佳帧(0.75) + 次佳帧(0.25)，避免单帧偶然命中把无关视频排到前面。
+   */
+  search(query: QueryVector, options: SearchOptions): { results: IndexedHit[]; comparedFrames: number } {
+    const view = this.view
+    const count = this.videoIds.length
+    if (!view || count === 0) return { results: [], comparedFrames: 0 }
+
+    const weight =
+      COLOR_WEIGHT_MIN + (COLOR_WEIGHT_MAX - COLOR_WEIGHT_MIN) * Math.min(1, Math.max(0, query.colorfulness))
+    const structWeight = 1 - weight
+    const qDhashHi = Number(BigInt.asUintN(32, BigInt(query.dhash) >> BigInt(32))) >>> 0
+    const qDhashLo = Number(BigInt.asUintN(32, BigInt(query.dhash))) >>> 0
+    const qStruct = query.struct
+    const qColor = query.color
+    const minHash = options.minHashScore
+    const best = new Map<number, IndexedHit & { secondBest: number }>()
+
+    for (let i = 0; i < count; i++) {
+      const off = i * FRAME_STRIDE
+      const dLo = view.getUint32(off + DHASH_OFFSET, true)
+      const dHi = view.getUint32(off + DHASH_OFFSET + 4, true)
+      const distD = popcount((qDhashLo ^ dLo) >>> 0) + popcount((qDhashHi ^ dHi) >>> 0)
+      if (distD > DHASH_PRUNE_BITS) continue
+
+      const structDistance = hammingInBuffer(qStruct, this.buffer, off + STRUCT_OFFSET)
+      if (structDistance > STRUCT_PRUNE_BITS) continue
+
+      const hashScore = 1 - structDistance / STRUCT_BITS
+      if (hashScore < minHash) continue
+
+      const colorScore = quantizedHistogramSimilarity(qColor, this.buffer, off + COLOR_OFFSET)
+      const score = hashScore * structWeight + colorScore * weight
+
+      const videoId = this.videoIds[i]
+      const current = best.get(videoId)
+      const frameIndex = view.getUint32(off + META_OFFSET, true)
+      const timeSeconds = view.getUint32(off + META_OFFSET + 4, true) / 1000
+      if (!current) {
+        best.set(videoId, {
+          videoId,
+          frameIndex,
+          timeSeconds,
+          score,
+          hashScore,
+          colorScore,
+          hashDistance: structDistance,
+          secondBest: 0
+        })
+      } else if (score > current.score) {
+        current.secondBest = current.score
+        current.frameIndex = frameIndex
+        current.timeSeconds = timeSeconds
+        current.score = score
+        current.hashScore = hashScore
+        current.colorScore = colorScore
+        current.hashDistance = structDistance
+      } else if (score > current.secondBest) {
+        current.secondBest = score
+      }
+    }
+
+    const results = [...best.values()]
+      .map((v) => ({
+        videoId: v.videoId,
+        frameIndex: v.frameIndex,
+        timeSeconds: v.timeSeconds,
+        score: v.score * 0.75 + v.secondBest * 0.25,
+        hashScore: v.hashScore,
+        colorScore: v.colorScore,
+        hashDistance: v.hashDistance
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, options.maxResults)
+
+    return { results, comparedFrames: count }
+  }
+}
+
+/** 结构指纹与内存缓冲区的汉明距离（64 字节） */
+function hammingInBuffer(a: Uint8Array, b: Uint8Array, bOffset: number): number {
+  let dist = 0
+  for (let i = 0; i < STRUCT_BYTES; i += 4) {
+    const av = (a[i] | (a[i + 1] << 8) | (a[i + 2] << 16) | (a[i + 3] << 24)) >>> 0
+    const bv =
+      (b[bOffset + i] |
+        (b[bOffset + i + 1] << 8) |
+        (b[bOffset + i + 2] << 16) |
+        (b[bOffset + i + 3] << 24)) >>>
+      0
+    dist += popcount((av ^ bv) >>> 0)
+  }
+  return dist
+}
+
+function popcount(x: number): number {
+  x = x - ((x >>> 1) & 0x55555555)
+  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333)
+  x = (x + (x >>> 4)) & 0x0f0f0f0f
+  return (x * 0x01010101) >>> 24
+}
+
+export { FRAME_STRIDE }
