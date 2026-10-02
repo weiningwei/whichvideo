@@ -7,17 +7,68 @@
  * 会把索引库与缓存写到同级的 data\ 里（见 src/main/datadir.ts）。
  *
  * 运行： node scripts/build-portable-folder.mjs
+ *
+ * 关于 EPERM：绿色版运行时 exe 会被占用，资源管理器停在该目录、杀毒软件扫描
+ * 刚生成的二进制也会短暂占用。所以这里不硬删目录，而是：
+ *   重试删除 → 重命名成 .old-<时间戳> 挪开 → 都不行才报错并给出可操作提示。
  */
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
-const releaseDir = join(root, 'release')
+// WHICHVIDEO_RELEASE_DIR 主要给自检用（scripts/test-portable-builder.mjs），正常打包不需要设置
+const releaseDir = process.env.WHICHVIDEO_RELEASE_DIR
+  ? resolve(process.env.WHICHVIDEO_RELEASE_DIR)
+  : join(root, 'release')
 const unpackedDir = join(releaseDir, 'win-unpacked')
 const targetDir = join(releaseDir, 'WhichVideo-portable')
+
+const sleepSync = (ms) => {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    /* 忙等：打包脚本不需要精细调度 */
+  }
+}
+
+/** 带重试的删除（Windows 上文件刚被释放时常见瞬时占用） */
+function removeWithRetry(dir, attempts = 5) {
+  // 自检用：模拟"目录被占用，删也删不掉"（scripts/test-portable-builder.mjs）
+  if (process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1') return false
+  for (let i = 0; i < attempts; i++) {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      return true
+    } catch {
+      sleepSync(200 * (i + 1))
+    }
+  }
+  return false
+}
+
+/** 判断目录能否直接删除（用重命名试探，能改名就一定能删） */
+function moveAside(dir) {
+  if (process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1') return null
+  const aside = `${dir}.old-${Date.now()}`
+  try {
+    renameSync(dir, aside)
+    return aside
+  } catch {
+    return null
+  }
+}
 
 function countFiles(dir) {
   let count = 0
@@ -27,6 +78,87 @@ function countFiles(dir) {
     else count++
   }
   return count
+}
+
+/** 提示可能是哪个进程占用了目录（探测失败也不能影响报错信息） */
+function describeHolders(dir) {
+  const hints = []
+  try {
+    const r = spawnSync('tasklist.exe', ['/FI', 'IMAGENAME eq WhichVideo.exe', '/FO', 'CSV', '/NH'], {
+      encoding: 'utf8',
+      timeout: 8000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    if (!r.error && r.status === 0 && /WhichVideo\.exe/i.test(String(r.stdout))) {
+      hints.push('检测到 WhichVideo.exe 正在运行 —— 请先退出应用再重新打包')
+    }
+  } catch {
+    /* 受限环境可能不允许启动子进程，忽略即可 */
+  }
+  hints.push(`资源管理器可能停在该目录 —— 换个目录再看（当前：${dir}）`)
+  hints.push('杀毒软件/Defender 可能正在扫描刚生成的 exe —— 稍等十几秒重试')
+  return hints
+}
+
+/**
+ * 自检用的结构化输出（仅当设置了 WHICHVIDEO_TEST_REPORT 时写，
+ * 因为受限环境可能抓不到子进程的 stdout）。
+ */
+function writeTestReport(report) {
+  const target = process.env.WHICHVIDEO_TEST_REPORT
+  if (!target) return
+  try {
+    writeFileSync(target, JSON.stringify(report, null, 2), 'utf8')
+  } catch {
+    /* 自检辅助，失败无所谓 */
+  }
+}
+
+/**
+ * 清空目标目录。
+ * 顺序：直接删 → 带重试删 → 改名挪开 → 都不行就报错并给出可操作提示。
+ * （自检会用 WHICHVIDEO_TEST_FORCE_LOCKED 模拟"删不掉且改不了名"）
+ */
+function clearTargetDirectory() {
+  const forcedLocked = process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1'
+  if (!existsSync(targetDir)) return
+
+  if (!forcedLocked) {
+    try {
+      rmSync(targetDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    } catch {
+      /* 交给下面的重试与改名 */
+    }
+    if (!existsSync(targetDir)) return
+  }
+
+  const removed = removeWithRetry(targetDir)
+  if (removed || !existsSync(targetDir)) return
+
+  console.log(`  目标目录被占用，尝试改名挪开：${targetDir}`)
+  const aside = moveAside(targetDir)
+  if (aside) {
+    console.log(`  已挪到 ${aside}（确认无用后可删除）`)
+    removeWithRetry(aside, 3)
+    return
+  }
+
+  // 删不掉也改不了名：说明目录被独占占用，给出可操作提示后退出
+  const reason = 'target-locked'
+  const hints = describeHolders(targetDir)
+  const lines = [
+    '',
+    '绿色版目录既删不掉也改不了名，说明它正被占用：',
+    `  ${targetDir}`,
+    '',
+    ...hints.map((hint) => `  · ${hint}`),
+    '',
+    '确认没有占用后重试；实在不行手动删掉这个目录再跑一次。'
+  ]
+  console.error(lines.join('\n'))
+  console.log(`BUILD_LOCKED ${targetDir}`)
+  writeTestReport({ ok: false, reason, targetDir, hints })
+  process.exit(1)
 }
 
 function main() {
@@ -46,8 +178,23 @@ function main() {
     throw new Error(`打包结果里没有 WhichVideo.exe：${unpackedDir}`)
   }
 
-  rmSync(targetDir, { recursive: true, force: true })
-  cpSync(unpackedDir, targetDir, { recursive: true })
+  // 清空目标目录：直接删 → 重试 → 改名挪开 → 报错并给出可操作提示
+  clearTargetDirectory()
+
+  mkdirSync(targetDir, { recursive: true })
+  // 复制也做重试：刚写完的产物可能被杀软/索引服务短暂占用
+  let copyError = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      cpSync(unpackedDir, targetDir, { recursive: true })
+      copyError = null
+      break
+    } catch (err) {
+      copyError = err
+      sleepSync(300 * (attempt + 1))
+    }
+  }
+  if (copyError) throw copyError
 
   // 放一份说明，避免用户把 data 目录当垃圾清掉
   writeFileSync(
@@ -62,6 +209,7 @@ function main() {
       '   %APPDATA%\\WhichVideo（界面的「索引设置」里可以看到实际位置）。',
       '4. 想固定数据位置：set WHICHVIDEO_DATA_DIR=E:\\WhichVideoData 后再启动。',
       '5. 需要 ffmpeg 时，可把 ffmpeg.exe / ffprobe.exe 放到本目录或 data\\bin\\ 下。',
+      '6. 重新打包前请先退出正在运行的 WhichVideo.exe，否则目录被占用会打包失败。',
       ''
     ].join('\r\n'),
     'utf8'
@@ -69,13 +217,31 @@ function main() {
 
   console.log(`\n绿色版目录已就绪：${targetDir}`)
   console.log(`  可执行文件：${join(targetDir, 'WhichVideo.exe')}`)
-  console.log(`  文件数量：${countFiles(targetDir)}`)
+  const fileCount = countFiles(targetDir)
+  console.log(`  文件数量：${fileCount}`)
   console.log('  拷走整个文件夹即可迁移；运行后会自动生成 data\\ 子目录。')
+  writeTestReport({ ok: true, reason: 'built', targetDir, fileCount })
 }
 
 try {
   main()
 } catch (err) {
-  console.error(`\n构建绿色版失败：${err instanceof Error ? err.message : String(err)}`)
+  const message = err instanceof Error ? err.message : String(err)
+  if (/EPERM|EBUSY|ENOTEMPTY|resource busy|being used by another process/i.test(message)) {
+    const hints = describeHolders(targetDir)
+    const lines = [
+      '',
+      '打包失败：release 目录里的文件被占用（EPERM）。',
+      ...hints.map((hint) => `  · ${hint}`),
+      '',
+      '处理完占用后重新运行： pnpm build:portable'
+    ]
+    console.error(lines.join('\n'))
+    console.log(`BUILD_LOCKED ${targetDir}`)
+    writeTestReport({ ok: false, reason: 'copy-locked', error: message, hints })
+  } else {
+    console.error(`\n构建绿色版失败：${message}`)
+    writeTestReport({ ok: false, reason: 'error', error: message })
+  }
   process.exit(1)
 }
