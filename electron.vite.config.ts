@@ -28,8 +28,18 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
+        // index.ts 用动态 require('./db') 等惰性加载核心模块（见 src/main/index.ts 的
+        // loadCoreModules），Rollup 不会把动态 require 纳入单入口产物，必须把这些模块
+        // 也列为入口，否则打包后 out/main 里只有 index.js，运行时报
+        // "Cannot find module './db'" —— 表现为窗口标题「启动失败」。
         input: {
-          index: pathOf('src', 'main', 'index.ts')
+          index: pathOf('src', 'main', 'index.ts'),
+          db: pathOf('src', 'main', 'db.ts'),
+          search: pathOf('src', 'main', 'search.ts'),
+          indexer: pathOf('src', 'main', 'indexer.ts'),
+          watcher: pathOf('src', 'main', 'watcher.ts'),
+          media: pathOf('src', 'main', 'media.ts'),
+          datadir: pathOf('src', 'main', 'datadir.ts')
         }
       }
     }
