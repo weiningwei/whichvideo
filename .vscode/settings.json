@@ -1,0 +1,30 @@
+{
+  // 构建产物目录动辄几百 MB、文件数量上千，而且每次打包都会被整体替换。
+  // 编辑器（Sublime / VS Code 等）去索引、监听这些目录时，会持有目录句柄，
+  // 导致 pnpm build:portable 无法删除 release\WhichVideo-portable（EPERM）。
+  // 这里把它们排除在文件监视与搜索之外，从根上避免这类占用。
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.pnpm-store/**": true,
+    "**/out/**": true,
+    "**/out-e2e/**": true,
+    "**/out-startup/**": true,
+    "**/release/**": true,
+    "**/tmp/**": true,
+    "**/.electron-cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.pnpm-store": true,
+    "**/out": true,
+    "**/out-e2e": true,
+    "**/out-startup": true,
+    "**/release": true,
+    "**/tmp": true,
+    "**/pnpm-lock.yaml": true
+  },
+  "files.exclude": {
+    "**/out-e2e": true,
+    "**/out-startup": true
+  }
+}

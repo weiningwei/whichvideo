@@ -127,19 +127,27 @@ function main() {
     const releaseDir = join(work, 'locked')
     const { target } = prepareLayout(releaseDir)
     const r = runBuilder(releaseDir, { WHICHVIDEO_TEST_FORCE_LOCKED: '1' })
-    check('脚本以失败退出', !r.ok, r.ok ? '却成功了' : '')
+    check('脚本仍然成功退出（自动换目录继续打包）', r.ok, r.ok ? '' : r.message)
     check(
-      '报告里说明了失败原因是目录被占用',
-      r.report?.ok === false && r.report?.reason === 'target-locked',
-      JSON.stringify(r.report ?? {}).slice(0, 100)
+      '报告里说明用了回退目录',
+      r.report?.ok === true && r.report?.reason === 'built-fallback',
+      JSON.stringify(r.report ?? {}).slice(0, 120)
     )
     check(
-      '给出了可操作的排查方向',
-      Array.isArray(r.report?.hints) && r.report.hints.some((h) => /资源管理器|杀毒软件|WhichVideo\.exe/.test(h)),
-      (r.report?.hints ?? []).join(' | ').slice(0, 120)
+      '回退目录名带时间戳',
+      typeof r.report?.targetDir === 'string' && /WhichVideo-portable-\d{8}-\d{4}$/.test(r.report.targetDir),
+      r.report?.targetDir ?? ''
     )
-    check('没有写入半成品（仍是旧 asar）', readFileSync(join(target, 'resources', 'app.asar'), 'utf8') === 'old asar')
+    check('被占用的旧目录没被破坏', readFileSync(join(target, 'resources', 'app.asar'), 'utf8') === 'old asar')
     check('旧数据仍然保留（不会静默丢）', existsSync(join(target, 'data', 'whichvideo.db')))
+    const fallbackDir = r.report?.targetDir
+    check(
+      '回退目录里是完整的新产物',
+      !!fallbackDir &&
+        existsSync(join(fallbackDir, 'WhichVideo.exe')) &&
+        readFileSync(join(fallbackDir, 'resources', 'app.asar'), 'utf8') === 'fake asar v2' &&
+        existsSync(join(fallbackDir, '便携版说明.txt'))
+    )
   }
 
   console.log('\n=== 场景 3：占用解除后重新打包 ===')
@@ -147,9 +155,10 @@ function main() {
     const releaseDir = join(work, 'retry')
     const { target } = prepareLayout(releaseDir)
     const first = runBuilder(releaseDir, { WHICHVIDEO_TEST_FORCE_LOCKED: '1' })
-    check('第一次（被占用）失败', !first.ok)
+    check('第一次（被占用）走了回退目录', first.ok && first.report?.reason === 'built-fallback')
     const second = runBuilder(releaseDir)
     check('解除占用后成功', second.ok, second.ok ? '' : second.message)
+    check('回到了首选目录', second.report?.reason === 'built', String(second.report?.reason))
     check('产物被替换成新的', readFileSync(join(target, 'resources', 'app.asar'), 'utf8') === 'fake asar v2')
     check('旧的 data\\ 已清掉', !existsSync(join(target, 'data', 'whichvideo.db')))
   }

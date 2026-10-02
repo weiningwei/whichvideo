@@ -34,7 +34,9 @@ const releaseDir = process.env.WHICHVIDEO_RELEASE_DIR
   ? resolve(process.env.WHICHVIDEO_RELEASE_DIR)
   : join(root, 'release')
 const unpackedDir = join(releaseDir, 'win-unpacked')
-const targetDir = join(releaseDir, 'WhichVideo-portable')
+const preferredTargetDir = join(releaseDir, 'WhichVideo-portable')
+// 首选目录被占用时，会自动退到这个带时间的目录继续打包（见 clearTargetDirectory）
+let targetDir = preferredTargetDir
 
 const sleepSync = (ms) => {
   const end = Date.now() + ms
@@ -116,8 +118,11 @@ function writeTestReport(report) {
 
 /**
  * 清空目标目录。
- * 顺序：直接删 → 带重试删 → 改名挪开 → 都不行就报错并给出可操作提示。
- * （自检会用 WHICHVIDEO_TEST_FORCE_LOCKED 模拟"删不掉且改不了名"）
+ * 顺序：直接删 → 带重试删 → 改名成 .old-<时间戳> 挪开 → 仍然不行就换一个输出目录继续。
+ *
+ * 换目录这条路是为了不让"某个程序恰好占着这个目录"（例如编辑器在索引本项目）挡死打包：
+ * 目标目录本来就是要被我们写入的，换个名字照样是干净的产物。
+ * （自检用 WHICHVIDEO_TEST_FORCE_LOCKED 模拟"删不掉且改不了名"）
  */
 function clearTargetDirectory() {
   const forcedLocked = process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1'
@@ -143,22 +148,23 @@ function clearTargetDirectory() {
     return
   }
 
-  // 删不掉也改不了名：说明目录被独占占用，给出可操作提示后退出
-  const reason = 'target-locked'
-  const hints = describeHolders(targetDir)
-  const lines = [
-    '',
-    '绿色版目录既删不掉也改不了名，说明它正被占用：',
-    `  ${targetDir}`,
-    '',
-    ...hints.map((hint) => `  · ${hint}`),
-    '',
-    '确认没有占用后重试；实在不行手动删掉这个目录再跑一次。'
-  ]
-  console.error(lines.join('\n'))
-  console.log(`BUILD_LOCKED ${targetDir}`)
-  writeTestReport({ ok: false, reason, targetDir, hints })
-  process.exit(1)
+  // 连改名都不行：换一个输出目录，让打包继续下去
+  const fallback = `${preferredTargetDir}-${stamp()}`
+  console.log('')
+  console.log('  ⚠ 目标目录被占用，删除和改名都失败，改为输出到新目录：')
+  console.log(`     ${fallback}`)
+  for (const hint of describeHolders(preferredTargetDir)) console.log(`     · ${hint}`)
+  console.log('')
+  targetDir = fallback
+  rmSync(targetDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  mkdirSync(targetDir, { recursive: true })
+}
+
+/** 形如 20261003-0217，用于回退目录名 */
+function stamp() {
+  const d = new Date()
+  const pad = (n, w = 2) => String(n).padStart(w, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
 function main() {
@@ -220,7 +226,13 @@ function main() {
   const fileCount = countFiles(targetDir)
   console.log(`  文件数量：${fileCount}`)
   console.log('  拷走整个文件夹即可迁移；运行后会自动生成 data\\ 子目录。')
-  writeTestReport({ ok: true, reason: 'built', targetDir, fileCount })
+  writeTestReport({
+    ok: true,
+    reason: targetDir === preferredTargetDir ? 'built' : 'built-fallback',
+    targetDir,
+    preferredTargetDir,
+    fileCount
+  })
 }
 
 try {

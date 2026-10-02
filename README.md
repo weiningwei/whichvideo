@@ -200,7 +200,7 @@ WhichVideo-portable\          ← 拷走整个文件夹即可迁移
 | `pnpm test:startup` | 主进程启动自检（28 项）：把编译产物跑在 Node + Electron 桩上，验证窗口创建/显示、日志、便携目录、失败可见、单实例锁 |
 | `pnpm test:core` | 端到端核心自检（26 项）：指纹精度、排序正确性、未下载判定、检索性能、库管理 |
 | `pnpm test:portable` | 便携模式数据目录判定（18 项）：环境变量 / 便携启动器 / 只读目录回退 / 打包目标 |
-| `pnpm test:pack` | 绿色版打包脚本自检（18 项）：重建覆盖、旧 data 清理、目录被占用时的提示与不丢数据 |
+| `pnpm test:pack` | 绿色版打包脚本自检（20 项）：重建覆盖、旧 data 清理、目录被占用时改名挪开/自动换输出目录 |
 | `pnpm test:ui` | 渲染端组件冒烟（49 项）：真实 React 组件服务端渲染后断言关键文案与状态 |
 | `node scripts/bench-hash.mjs` | 对比几种结构指纹方案的区分度（选型依据） |
 | `node scripts/bench-score.mjs` | 对比几种打分加权公式的排序边距 |
@@ -287,14 +287,17 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，所以�
 日志落盘、便携目录、初始化失败可见、单实例锁"这些启动路径。
 
 **`pnpm build:portable` 报 EPERM / Permission denied？**
-说明 `release\WhichVideo-portable` 里的文件正被占用，Windows 上删不掉也改不了名。按顺序排查：
+说明 `release\WhichVideo-portable` 里的文件正被占用，Windows 上删不掉也改不了名。常见占用者：
 
-1. **绿色版还在运行**：先退出 `WhichVideo.exe`（任务管理器确认进程没了）
-2. **资源管理器停在那个目录**：切到别的目录，或关掉那个窗口
-3. **杀毒软件/Defender 正在扫描刚生成的 exe**：等十几秒重试
+1. **绿色版还在运行**（最常见）：先退出 `WhichVideo.exe`，任务管理器确认进程没了
+2. **编辑器**：Sublime Text 的 `plugin_host-3.3.exe`、VS Code 的 `Code.exe` 等在索引本项目时会持有目录句柄
+3. **资源管理器停在那个目录**、或杀毒软件正在扫描刚生成的 exe
 
-脚本现在会自己重试、必要时把旧目录**改名成 `WhichVideo-portable.old-<时间戳>`** 挪开再继续（你的数据不会丢）；
-只有连改名都失败时才会报错，并打印上面这几条排查提示。手动兜底：删掉 `release` 目录再跑一次。
+脚本的处理顺序是：**重试删除 → 改名成 `WhichVideo-portable.old-<时间戳>` 挪开 → 仍然不行就自动输出到 `WhichVideo-portable-<日期>-<时间>` 并继续打包**。
+也就是说占用不会让打包失败，只会换个目录名；你的旧 `data\` 会完整留在原处或 `.old-*` 里，不会被静默删掉。
+
+想让它一直用首选目录名，就把占用源关掉（或退出编辑器）再跑一次。
+本仓库内置了 `.vscode/settings.json`，已经把 `release`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。
 
 **`pnpm build` 报 `Failed to resolve import "@shared/..."`？**
 说明 `electron.vite.config.ts` 里某个构建目标漏配了别名（main / preload / renderer 三段各自需要 `resolve.alias`）。

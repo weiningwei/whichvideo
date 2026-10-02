@@ -54,7 +54,10 @@ venv/
 ENV/
 
 # ---- 编辑器 / 系统 ----
-.vscode/
+# 允许入库 .vscode/settings.json：里面排除了 release/out/tmp，
+# 避免编辑器索引构建产物、占用 release 目录导致打包 EPERM
+.vscode/*
+!.vscode/settings.json
 .idea/
 .DS_Store
 Thumbs.db
