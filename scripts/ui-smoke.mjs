@@ -478,39 +478,47 @@ export default mod
     (visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length === 1,
     `可见文本中出现 ${(visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length} 次（应为 1）`
   )
+  // ---- 操作列：四个按钮全部平铺，文字精简到 2 字 ----
   check(
-    '行内操作收敛为「播放 + 更多」两个控件',
-    libraryHtml.includes('播放') && libraryHtml.includes('⋯') && libraryHtml.includes('更多操作'),
-    '低频操作收进 ⋯ 菜单'
+    '操作列四个按钮全部平铺显示',
+    ['播放', '定位', '索引', '移除'].every((t) => libraryHtml.includes(`>${t}</button>`)),
+    '播放 / 定位 / 索引 / 移除'
   )
-  // 菜单默认收起：SSR 输出里只有触发按钮（aria-expanded=false），没有菜单浮层本身。
-  // 这正是「默认不占位」的行为证据——绝对定位的浮层不参与表格列宽计算。
   check(
-    '更多菜单默认收起（不渲染浮层，不占列宽）',
-    libraryHtml.includes('aria-expanded="false"') &&
-      libraryHtml.includes('aria-haspopup="menu"') &&
+    '不再有「更多」菜单（⋯ 触发器与浮层都已移除）',
+    !libraryHtml.includes('⋯') && !libraryHtml.includes('aria-haspopup="menu"') &&
       !libraryHtml.includes('absolute right-0 top-full'),
-    '收起时只有触发按钮，无浮层元素'
+    'RowMenu 组件已删除'
   )
-  // 菜单项文案单独断言：直接对 RowMenu 的 items 定义做静态检查，
-  // 因为菜单默认收起，SSR 输出里不含菜单项。
   {
     const src = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    const codeNoComments = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '')
     check(
-      '更多菜单包含定位/重索引/移除三个操作',
-      ['定位文件', '重索引', '从库中移除'].every((t) => src.includes(`'${t}'`)),
-      '三个低频操作都在菜单定义里'
+      'RowMenu 组件已彻底移除（含外部点击/Esc 关闭逻辑）',
+      !codeNoComments.includes('function RowMenu') &&
+        !codeNoComments.includes("addEventListener('mousedown'"),
+      '不再有菜单状态与关闭逻辑'
+    )
+    // 按钮内边距收到 px-1.5 才有宽度预算容纳四个 2 字按钮（合计约 156px）
+    const btnCount = (codeNoComments.match(/btn px-1\.5 py-0\.5 text-\[11px\]/g) ?? []).length
+    check(
+      '操作按钮内边距收紧到 px-1.5（容纳四个 2 字按钮）',
+      btnCount === 3 && codeNoComments.includes('btn-danger px-1.5 py-0.5 text-[11px]'),
+      `3 个普通按钮 + 1 个危险按钮，均为 px-1.5`
     )
     check(
-      '菜单浮层绝对定位（展开后也不撑表格列宽）',
-      src.includes('absolute right-0 top-full'),
-      'right-0 top-full 绝对定位'
+      '每个操作按钮都有 title 说明完整语义',
+      src.includes('在资源管理器中定位该文件') &&
+        src.includes('重新抽帧并重建指纹') &&
+        src.includes('只从索引库移除记录，不会删除磁盘文件'),
+      '精简文字后靠 title 保留完整含义'
     )
     check(
-      'RowMenu 点击外部与 Esc 都会关闭',
-      src.includes("addEventListener('mousedown'") && src.includes("addEventListener('keydown'") &&
-        src.includes("e.key === 'Escape'"),
-      '菜单有外部点击与 Esc 两种关闭方式'
+      '操作列宽度已相应放宽到 180px',
+      src.includes('w-[180px]') && src.includes('min-w-[540px]'),
+      '列宽 180px，表格 min-w 540px'
     )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))

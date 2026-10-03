@@ -271,12 +271,13 @@ export function LibraryView(props: Props) {
         </div>
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[460px] border-separate border-spacing-0 text-[12px]">
+          {/* min-w 覆盖三列的下限：视频列至少 220 + 状态 96 + 操作 180 */}
+          <table className="w-full min-w-[540px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
-                <th className="w-28 px-3 py-2 text-right font-medium">操作</th>
+                <th className="w-[180px] px-3 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -583,101 +584,41 @@ function VideoRow({
         </span>
       </td>
       <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+        {/* 四个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 索引 / 移除）。
+            按钮内边距收到 px-1.5，四项合计约 156px，比原来的「播放+⋯」73px
+            多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
         <div className="flex items-center justify-end gap-1">
           <button
-            className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70"
+            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
             onClick={() => onOpen(video.id)}
             title="用系统播放器打开"
           >
             播放
           </button>
-          <RowMenu
-            onReveal={() => onReveal(video.id)}
-            onReindex={() => onReindex(video.id)}
-            onRemove={() => onRemove(video.id)}
-          />
+          <button
+            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+            onClick={() => onReveal(video.id)}
+            title="在资源管理器中定位该文件"
+          >
+            定位
+          </button>
+          <button
+            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+            onClick={() => onReindex(video.id)}
+            title="重新抽帧并重建指纹"
+          >
+            索引
+          </button>
+          <button
+            className="btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10"
+            onClick={() => onRemove(video.id)}
+            title="只从索引库移除记录，不会删除磁盘文件"
+          >
+            移除
+          </button>
         </div>
       </td>
     </tr>
-  )
-}
-
-/**
- * 行内「更多」菜单：把低频操作（定位 / 重索引 / 移除）收进一个浮层。
- *
- * 此前四个按钮平铺在操作列里，「操作」列的 min-content 约 250px，是表格里最宽
- * 的一列，也是导入首个视频后布局溢出的直接原因。折叠后只留「播放」一个主操作。
- */
-function RowMenu({
-  onReveal,
-  onReindex,
-  onRemove
-}: {
-  onReveal: () => void
-  onReindex: () => void
-  onRemove: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  // 点击外部或按 Esc 关闭
-  useEffect(() => {
-    if (!open) return
-    const onDocDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const items: { label: string; hint?: string; onClick: () => void; danger?: boolean }[] = [
-    { label: '定位文件', hint: '在资源管理器中选中', onClick: onReveal },
-    { label: '重索引', hint: '重新抽帧建立指纹', onClick: onReindex },
-    { label: '从库中移除', hint: '不会删除磁盘文件', onClick: onRemove, danger: true }
-  ]
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
-        onClick={() => setOpen((v) => !v)}
-        title="更多操作"
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        ⋯
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full z-30 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-ink-850 py-1 shadow-xl"
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              role="menuitem"
-              onClick={() => {
-                setOpen(false)
-                it.onClick()
-              }}
-              className={`flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left text-[12px] transition ${
-                it.danger ? 'text-bad hover:bg-bad/10' : 'text-slate-200 hover:bg-ink-700/70'
-              }`}
-            >
-              <span>{it.label}</span>
-              {it.hint && <span className="text-[10px] text-slate-500">{it.hint}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   )
 }
 
