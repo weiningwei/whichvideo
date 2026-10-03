@@ -1,7 +1,13 @@
-﻿<#
-  审计打包产物的 ACL：找出非法/未知 SID、Deny 条目、以及缺少读取权限的文件。
-  起因：release 目录树曾被沙箱 ACL 工具处理过（用户在该 exe 上看到未知账户
-  S-1-4-66101308-411491026），需要确认是否影响到关键文件的读取。
+<#
+  审计打包产物的 ACL：找出 Deny 条目、未知 SID、以及实际不可读的文件。
+
+  背景与结论（避免重复踩坑）：
+  release 目录树会带上 DSH 工作区的能力 ACL，包括
+    · 形如 S-1-4-x-y 的「能力 SID」——按工作区路径确定性派生，一个工作区一个
+    · Everyone 的 DeleteSubdirectoriesAndFiles 拒绝项
+  据 DSH 自身文档，这两者是**预期设计**，不是损坏或残留；而且**不构成程序打不开的原因**
+  （已实测：清掉 Deny 后仍然打不开）。DSH 自带的修复流程会先备份再回滚，
+  本脚本因此刻意**只读、不修改**，避免与其冲突。
 
   用法： pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/lib/audit-release-acl.ps1
 #>
