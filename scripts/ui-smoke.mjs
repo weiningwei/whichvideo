@@ -398,24 +398,61 @@ export default mod
   )
   check('视频库页显示视频行', libraryHtml.includes('Blue.Intro.1080p.mp4'))
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
-  // 表格已精简为 4 列（选择 / 视频 / 状态 / 操作），元信息合并进视频列第二行。
+  // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
   // 状态列仍需禁止换行：中文可逐字断行，列被压窄会竖排成多行。
   check(
     '状态列禁止换行（中文可逐字断行，列被压窄会竖排成多行）',
     /<td class="whitespace-nowrap px-2 py-1\.5"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
     libraryHtml.match(/<td class="[^"]*"><span[^>]*>已索引<\/span><\/td>/)?.[0] ?? '没找到状态单元格'
   )
-  // 体积与日期不再各占一列，而是合并进视频列的次要信息行（用 · 分隔）
-  // mock 数据 size=734003200 → "700 MB"，addedAt=今天 → 本地化日期
+  // 元信息合并进视频列第二行（用 · 分隔）；目录已由第一行的 title 提供，不再重复
+  // mock 数据 size=734003200 → "700 MB"
   check(
-    '体积/日期合并进视频列信息行（不再单独占列）',
-    /700 MB · \d+ 帧 ·/.test(libraryHtml),
-    (libraryHtml.match(/[^<>]*700 MB[^<>]*/)?.[0] ?? '没找到信息行').slice(0, 90)
+    '元信息合并进视频列信息行（时长 · 体积 · 帧数）',
+    /1:02:05 · 700 MB · 16 帧/.test(libraryHtml),
+    (libraryHtml.match(/[^<>]*1:02:05[^<>]*/)?.[0] ?? '没找到信息行').slice(0, 90)
   )
   check(
-    '表格已精简为 4 列（表头只有 选择/视频/状态/操作）',
-    /<th[^>]*>\s*<input[\s\S]*?视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml),
-    (libraryHtml.match(/<th[^>]*>(?:(?!<\/th>)[\s\S])*?<\/th>/g) ?? []).length + ' 个表头'
+    '表格已精简为 3 列（视频 / 状态 / 操作，「选择」列已移除）',
+    /视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml) &&
+      !/<th[^>]*>\s*<input[^>]*checkbox/.test(libraryHtml),
+    (libraryHtml.match(/<th[^>]*>(?:(?!<\/th>)[\s\S])*?<\/th>/g) ?? []).length + ' 个表头，无全选框'
+  )
+  // 选中态改为左侧竖条提示。竖条只在 isVideoSelected 为真时渲染，而 mock 的
+  // selectedVideoIds 是空集，SSR 走不到该分支，故静态检查源码。
+  {
+    const src = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    check(
+      '选中提示用左侧竖条（绝对定位，不占列宽）',
+      src.includes('w-[2px] bg-accent') && src.includes('absolute inset-y-0 left-0'),
+      '2px accent 竖条'
+    )
+    check(
+      '整行可点击切换选中（操作列 stopPropagation 避免误触）',
+      src.includes('cursor-pointer border-b border-line/40') &&
+        src.includes('onToggleSelect={() => toggleVideoSelection(video.id, false, false)}'),
+      '点击整行即切换'
+    )
+    check(
+      '分组标题选中态也改为竖条（不再是复选框）',
+      src.includes("groupSelected ? 'bg-accent'") && src.includes('groupPartial'),
+      '全选 / 部分选中两态'
+    )
+    const codeNoComments = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '')
+    check(
+      '移除复选框后不再需要 indeterminate 同步副作用',
+      !codeNoComments.includes('indeterminate') && !codeNoComments.includes('selectAllRef'),
+      '已清理表头/分组复选框的 indeterminate 逻辑'
+    )
+  }
+  // 目录不再重复显示文件名：可见文本里文件名只该出现一次（title 属性不计）
+  const visibleText = libraryHtml.replace(/\stitle="[^"]*"/g, '')
+  check(
+    '目录不再重复显示文件名（可见文本里文件名只出现一次）',
+    (visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length === 1,
+    `可见文本中出现 ${(visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length} 次（应为 1）`
   )
   check(
     '行内操作收敛为「播放 + 更多」两个控件',

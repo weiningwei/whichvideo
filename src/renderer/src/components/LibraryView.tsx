@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
 import type { VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
-import { formatBytes, formatDuration, shortPath } from '../lib/format'
+import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { SidePanel } from './SidePanel'
 
 interface Props {
@@ -64,23 +64,8 @@ export function LibraryView(props: Props) {
     return groups
   }, [videos, folders, groupByFolder])
 
-  const selectAllRef = useRef<HTMLInputElement>(null)
-  const folderHeaderRefs = useRef<Map<number, HTMLInputElement>>(new Map())
-
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = selectedVideoIds.size > 0 && selectedVideoIds.size < videos.length
-    }
-  }, [selectedVideoIds, videos.length])
-
-  useEffect(() => {
-    folderHeaderRefs.current.forEach((ref, folderId) => {
-      const folderVideos = groupedVideos?.get(folderId) ?? []
-      if (folderVideos.length > 0) {
-        ref.indeterminate = folderVideos.some(v => isVideoSelected(v.id)) && !folderVideos.every(v => isVideoSelected(v.id))
-      }
-    })
-  }, [selectedVideoIds, groupedVideos, isVideoSelected])
+  // 注：原先这里有两个 useEffect 用来同步表头/分组复选框的 indeterminate 态。
+  // 复选框已全部移除（选中改为竖条提示 + 整行点击），故不再需要这两个 ref。
 
   // 键盘导航
   useEffect(() => {
@@ -249,18 +234,9 @@ export function LibraryView(props: Props) {
         </div>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[560px] border-separate border-spacing-0 text-[12px]">
+          <table className="w-full min-w-[460px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
-                <th className="w-10 px-3 py-2 font-medium">
-                  <input
-                    ref={selectAllRef}
-                    type="checkbox"
-                    checked={videos.length > 0 && selectedVideoIds.size === videos.length}
-                    onChange={(e) => e.target.checked ? selectAll() : clearSelection()}
-                    className="w-4 h-4 rounded border-line bg-ink-900/70 text-accent focus:ring-accent"
-                  />
-                </th>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 <th className="w-28 px-3 py-2 text-right font-medium">操作</th>
@@ -273,9 +249,13 @@ export function LibraryView(props: Props) {
                   const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
                   const expanded = expandedFolderIds.has(folderId)
 
+                  const groupSelected = folderVideos.length > 0 && folderVideos.every((v) => isVideoSelected(v.id))
+                  const groupPartial =
+                    !groupSelected && folderVideos.some((v) => isVideoSelected(v.id))
+
                   const header = (
                     <tr key={`folder-header-${folderId}`} className="bg-ink-800/50 border-t border-line/40">
-                      <td colSpan={4} className="px-3 py-2">
+                      <td colSpan={3} className="px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
                           <span
                             className="cursor-pointer select-none transition-transform duration-150"
@@ -284,21 +264,26 @@ export function LibraryView(props: Props) {
                           >
                             ▼
                           </span>
-                          <input
-                            ref={(el) => { if (el) folderHeaderRefs.current.set(folderId, el) }}
-                            type="checkbox"
-                            checked={folderVideos.length > 0 && folderVideos.every(v => isVideoSelected(v.id))}
-                            onChange={(e) => {
-                              e.stopPropagation()
-                              if (e.target.checked) {
-                                folderVideos.forEach(v => !isVideoSelected(v.id) && toggleVideoSelection(v.id, false, false))
-                              } else {
-                                folderVideos.forEach(v => isVideoSelected(v.id) && toggleVideoSelection(v.id, false, false))
-                              }
-                            }}
-                            className="w-4 h-4 rounded border-line bg-ink-900/70 text-accent focus:ring-accent"
+                          {/* 分组选中态用竖条提示，不再放复选框 */}
+                          <span
+                            className={`h-3.5 w-[2px] shrink-0 rounded-full ${
+                              groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
+                            }`}
+                            title={groupSelected ? '已全选该组' : groupPartial ? '部分选中' : ''}
                           />
-                          <span className="font-medium">{displayName}</span>
+                          {/* 点击分组名即全选 / 取消该组 */}
+                          <span
+                            className="cursor-pointer truncate font-medium hover:text-slate-100"
+                            onClick={() => {
+                              const target = !groupSelected
+                              folderVideos.forEach((v) => {
+                                if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
+                              })
+                            }}
+                            title="点击全选 / 取消该组"
+                          >
+                            {displayName}
+                          </span>
                           <span className="ml-auto text-[11px] text-muted">
                             {folderVideos.length} 个视频
                           </span>
@@ -307,47 +292,6 @@ export function LibraryView(props: Props) {
                     </tr>
                   )
                   const rows = expanded ? folderVideos.map((video) => (
-                    <tr key={video.id} className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={isVideoSelected(video.id)}
-                          onChange={(e) => {
-                            e.stopPropagation()
-                            toggleVideoSelection(video.id, false, false)
-                          }}
-                          className="w-4 h-4 rounded border-line bg-ink-900/70 text-accent focus:ring-accent"
-                        />
-                      </td>
-                      <VideoRow
-                        key={video.id}
-                        video={video}
-                        roots={roots}
-                        onOpen={props.onOpen}
-                        onReveal={props.onReveal}
-                        onRemove={props.onRemoveVideo}
-                        onReindex={(id) => props.onReindex([id])}
-                        isVideoSelected={isVideoSelected}
-                      />
-                    </tr>
-                  )) : []
-
-                  return [header, ...rows]
-                })
-              ) : (
-                videos.map((video) => (
-                  <tr key={video.id} className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={isVideoSelected(video.id)}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          toggleVideoSelection(video.id, false, false)
-                        }}
-                        className="w-4 h-4 rounded border-line bg-ink-900/70 text-accent focus:ring-accent"
-                      />
-                    </td>
                     <VideoRow
                       key={video.id}
                       video={video}
@@ -357,8 +301,25 @@ export function LibraryView(props: Props) {
                       onRemove={props.onRemoveVideo}
                       onReindex={(id) => props.onReindex([id])}
                       isVideoSelected={isVideoSelected}
+                      onToggleSelect={() => toggleVideoSelection(video.id, false, false)}
                     />
-                  </tr>
+                  )) : []
+
+                  return [header, ...rows]
+                })
+              ) : (
+                videos.map((video) => (
+                  <VideoRow
+                    key={video.id}
+                    video={video}
+                    roots={roots}
+                    onOpen={props.onOpen}
+                    onReveal={props.onReveal}
+                    onRemove={props.onRemoveVideo}
+                    onReindex={(id) => props.onReindex([id])}
+                    isVideoSelected={isVideoSelected}
+                    onToggleSelect={() => toggleVideoSelection(video.id, false, false)}
+                  />
                 ))
               )}
             </tbody>
@@ -486,7 +447,8 @@ function VideoRow({
   onReveal,
   onRemove,
   onReindex,
-  isVideoSelected
+  isVideoSelected,
+  onToggleSelect
 }: {
   video: VideoRecord
   roots: string[]
@@ -495,6 +457,8 @@ function VideoRow({
   onRemove: (id: number) => void
   onReindex: (id: number) => void
   isVideoSelected: (videoId: number) => boolean
+  /** 点击整行切换选中（复选框已移除） */
+  onToggleSelect: () => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   useEffect(() => {
@@ -525,25 +489,38 @@ function VideoRow({
           : '待索引'
 
   return (
-    <tr className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-      <td className="px-3 py-1.5">
+    <tr
+      onClick={onToggleSelect}
+      className={`cursor-pointer border-b border-line/40 transition-colors ${
+        isVideoSelected(video.id) ? 'bg-accent/12' : 'hover:bg-ink-800/40'
+      }`}
+    >
+      <td className="relative px-3 py-1.5">
+        {/* 选中提示：左侧 2px 竖条（绝对定位，不占列宽），替代原先的复选框 */}
+        {isVideoSelected(video.id) && (
+          <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
+        )}
         <div className="flex items-center gap-2.5">
           <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-ink-950">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0">
-            <div className="truncate text-slate-100" title={video.path}>
+            <div
+              className={`truncate ${isVideoSelected(video.id) ? 'text-accent' : 'text-slate-100'}`}
+              title={video.path}
+            >
               {video.name}
             </div>
             <div className="truncate text-[10.5px] text-muted" title={video.path}>
-              {/* 位置、时长、体积、帧数、导入日期合并到一行，用 · 分隔 */}
+              {/* 目录（不含文件名，避免与上一行重复）· 时长 · 体积 · 帧数 */}
               {[
-                shortPath(video.path, roots),
+                shortDir(video.path, roots),
                 formatDuration(video.duration),
                 formatBytes(video.size),
-                `${video.frameCount} 帧`,
-                new Date(video.addedAt).toLocaleDateString('zh-CN')
-              ].join(' · ')}
+                `${video.frameCount} 帧`
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </div>
           </div>
         </div>
@@ -553,7 +530,7 @@ function VideoRow({
           {statusText}
         </span>
       </td>
-      <td className="px-3 py-1.5">
+      <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-1">
           <button
             className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70"
