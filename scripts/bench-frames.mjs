@@ -32,13 +32,15 @@ console.log('')
 
 // 预热
 const warm = makeFrame(width, height, 0)
-for (let i = 0; i < 10; i++) computeSignature({ data: warm, width, height })
+for (let i = 0; i < 10; i++) {
+  computeSignature({ data: warm, width, height, channels: 3, order: 'rgb' })
+}
 
 for (const count of counts) {
   const frames = Array.from({ length: count }, (_, i) => makeFrame(width, height, i))
   const start = performance.now()
   for (const frame of frames) {
-    computeSignature({ data: frame, width, height })
+    computeSignature({ data: frame, width, height, channels: 3, order: 'rgb' })
   }
   const elapsed = performance.now() - start
   const perFrame = elapsed / count
@@ -48,7 +50,8 @@ for (const count of counts) {
 }
 
 console.log('')
-console.log('说明：索引实际走 scan.ts 的"逐点 seek"路径，解码成本约 25 ms/帧（与时长无关），')
-console.log('      所以提高抽帧数会**同时**增加解码与这里的指纹成本（约 9.7 ms/帧）。')
-console.log('      作为对照，media.ts 的单次 fps 采样解码成本与帧数无关（600 秒约 1.1 秒），')
-console.log('      但帧数低于约 55 时反而比逐点 seek 慢。')
+console.log('说明：索引实际走 scan.ts 的抽帧路径，帧数超约 48 时改用"单次全片解码"，')
+console.log('      该路径的解码成本与视频时长相关、与帧数几乎无关（600 秒约 1.1 秒）；')
+console.log('      帧数较少时用"逐点 seek"，约 25 ms/帧，与时长无关。两者在约 48~55 帧处交叉。')
+console.log('指纹计算（就是上面测的这段）约 2.5 ms/帧，是三条路径都要付的固定成本。')
+console.log('      1 小时视频 240 帧 → 指纹约 0.6 秒。')

@@ -83,8 +83,8 @@ async function main() {
       shouldUseFullScan(plannedFrameCount(3600, DEFAULT_FRAME_BUDGET)),
     `${plannedFrameCount(1800, DEFAULT_FRAME_BUDGET)} / ${plannedFrameCount(3600, DEFAULT_FRAME_BUDGET)} 帧`
   )
-  // 提高上限不该线性拖慢索引：越过交叉点后每帧只付指纹成本（约 10.4ms）
-  const HASH_MS = 10.4
+  // 提高上限不该线性拖慢索引：越过交叉点后每帧只付指纹成本（约 2.5ms）
+  const HASH_MS = 2.5
   const cost = (n) => (shouldUseFullScan(n) ? 1100 : n * 25) + n * HASH_MS
   const cost96 = cost(96)
   const cost240 = cost(240)

@@ -23,6 +23,7 @@
     "test:pack": "node scripts/test-portable-builder.mjs",
     "test:asar": "node scripts/test-asar-check.mjs",
     "bench:frames": "node scripts/build-core.mjs && node scripts/bench-frames.mjs",
+    "bench:hash": "node scripts/build-core.mjs && node scripts/bench-hash-detail.mjs",
     "test:config": "node scripts/test-build-config.mjs",
     "test:frames": "node scripts/build-core.mjs && node scripts/test-frame-policy.mjs",
     "test:hash": "node scripts/build-core.mjs && node scripts/test-hash-coverage.mjs",
