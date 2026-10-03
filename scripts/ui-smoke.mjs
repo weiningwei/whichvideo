@@ -361,6 +361,10 @@ export default mod
   check('剪贴板搜索后展示命中结果', clipboardHtml.includes('已在本地库中找到'))
 
   /* ---------- 6. 视频库页 ---------- */
+  const emptySelected = new Set()
+  const emptyExpanded = new Set()
+  const noopSel = () => {}
+  const noopBool = () => false
   const libraryHtml = render(
     jsx(LibraryView, {
       folders: [folder],
@@ -376,7 +380,19 @@ export default mod
       onOpen: noop,
       onReveal: noop,
       onRemoveVideo: noop,
-      onReindex: noop
+      onReindex: noop,
+      groupByFolder: false,
+      onToggleGroupByFolder: noop,
+      selectedVideoIds: emptySelected,
+      expandedFolderIds: emptyExpanded,
+      isVideoSelected: noopBool,
+      isFolderExpanded: noopBool,
+      toggleVideoSelection: noopSel,
+      clearSelection: noopSel,
+      selectAll: noopSel,
+      toggleFolderExpanded: noopSel,
+      expandAllFolders: noopSel,
+      collapseAllFolders: noopSel
     })
   )
   check('视频库页显示视频行', libraryHtml.includes('Blue.Intro.1080p.mp4'))

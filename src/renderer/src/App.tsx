@@ -9,8 +9,9 @@ import { SettingsPanel } from './components/SettingsPanel'
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
   const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice } = useLibrary()
-  const { hasIndexedFrames, groupByFolder } = state
-  const { reSearch, toggleGroupByFolder } = actions
+  const { hasIndexedFrames, groupByFolder, selectedVideoIds, expandedFolderIds } = state
+  const { reSearch, toggleGroupByFolder, toggleVideoSelection, clearSelection, selectAll,
+    toggleFolderExpanded, expandAllFolders, collapseAllFolders, isVideoSelected, isFolderExpanded } = actions
 
   // G 键切换分组/平铺（仅在库页面）
   useEffect(() => {
@@ -85,6 +86,16 @@ export default function App() {
                 onReindex={(ids) => void actions.reindex(ids)}
                 groupByFolder={groupByFolder}
                 onToggleGroupByFolder={toggleGroupByFolder}
+                selectedVideoIds={selectedVideoIds}
+                expandedFolderIds={expandedFolderIds}
+                isVideoSelected={isVideoSelected}
+                isFolderExpanded={isFolderExpanded}
+                toggleVideoSelection={toggleVideoSelection}
+                clearSelection={clearSelection}
+                selectAll={selectAll}
+                toggleFolderExpanded={toggleFolderExpanded}
+                expandAllFolders={expandAllFolders}
+                collapseAllFolders={collapseAllFolders}
               />
             </div>
             <div className="w-[300px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">

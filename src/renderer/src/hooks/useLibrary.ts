@@ -36,6 +36,8 @@ export interface LibraryState {
   queryLabel: string | null
   hasIndexedFrames: boolean
   groupByFolder: boolean
+  selectedVideoIds: Set<number>
+  expandedFolderIds: Set<number>
 }
 
 const EMPTY_STATS: LibraryStats = {
@@ -69,10 +71,65 @@ export function useLibrary() {
   const [lastSearchInput, setLastSearchInput] = useState<{ path?: string; dataUrl?: string; label?: string; dataUrlPreview?: string } | null>(null)
   const [videoQuery, setVideoQuery] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
   const [groupByFolder, setGroupByFolder] = useState(false)
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set())
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<number>>(new Set())
+  const [lastSelectedVideoId, setLastSelectedVideoId] = useState<number | null>(null)
 
   const toggleGroupByFolder = useCallback(() => {
     setGroupByFolder((v) => !v)
   }, [])
+
+  const toggleVideoSelection = useCallback((videoId: number, shiftKey: boolean = false, ctrlKey: boolean = false) => {
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev)
+      if (shiftKey && lastSelectedVideoId !== null) {
+        // Range selection
+        const allIds = videos.map(v => v.id)
+        const start = allIds.indexOf(lastSelectedVideoId)
+        const end = allIds.indexOf(videoId)
+        const [min, max] = start < end ? [start, end] : [end, start]
+        for (let i = min; i <= max; i++) next.add(allIds[i])
+      } else if (ctrlKey) {
+        if (next.has(videoId)) next.delete(videoId)
+        else next.add(videoId)
+      } else {
+        next.clear()
+        next.add(videoId)
+      }
+      return next
+    })
+    setLastSelectedVideoId(videoId)
+  }, [videos])
+
+  const clearSelection = useCallback(() => {
+    setSelectedVideoIds(new Set())
+    setLastSelectedVideoId(null)
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedVideoIds(new Set(videos.map(v => v.id)))
+  }, [videos])
+
+  const toggleFolderExpanded = useCallback((folderId: number) => {
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(folderId)) next.delete(folderId)
+      else next.add(folderId)
+      return next
+    })
+  }, [])
+
+  const expandAllFolders = useCallback(() => {
+    const allFolderIds = new Set(videos.map(v => v.folderId ?? -1))
+    setExpandedFolderIds(allFolderIds)
+  }, [videos])
+
+  const collapseAllFolders = useCallback(() => {
+    setExpandedFolderIds(new Set())
+  }, [])
+
+  const isVideoSelected = useCallback((videoId: number) => selectedVideoIds.has(videoId), [selectedVideoIds])
+  const isFolderExpanded = useCallback((folderId: number) => expandedFolderIds.has(folderId), [expandedFolderIds])
 
   const pushNotice = useCallback((level: Notice['level'], message: string) => {
     setNotices((prev) => {
@@ -332,7 +389,9 @@ export function useLibrary() {
     queryImage,
     queryLabel,
     hasIndexedFrames: (stats?.frames ?? 0) > 0,
-    groupByFolder
+    groupByFolder,
+    selectedVideoIds,
+    expandedFolderIds
   }
 
   return {
@@ -341,7 +400,15 @@ export function useLibrary() {
     actions: {
       ...actions,
       reSearch,
-      toggleGroupByFolder
+      toggleGroupByFolder,
+      toggleVideoSelection,
+      clearSelection,
+      selectAll,
+      toggleFolderExpanded,
+      expandAllFolders,
+      collapseAllFolders,
+      isVideoSelected,
+      isFolderExpanded
     },
     runSearch,
     clearSearch,
