@@ -98,11 +98,11 @@ export function LibraryView(props: Props) {
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
                 <th className="px-4 py-2 font-medium">视频</th>
-                <th className="px-2 py-2 font-medium">状态</th>
-                <th className="px-2 py-2 font-medium">时长</th>
-                <th className="px-2 py-2 font-medium">体积</th>
-                <th className="px-2 py-2 font-medium">帧</th>
-                <th className="px-2 py-2 font-medium">位置</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">状态</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">时长</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">体积</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">帧</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">位置</th>
                 <th className="px-4 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
@@ -304,15 +304,20 @@ function VideoRow({
           </div>
         </div>
       </td>
-      <td className="px-2 py-2">
+      {/* 状态列必须 nowrap：中文可以逐字断行，列一被压缩，"已索引"就会竖着排。
+          时长/体积/日期同理（"1.5 GB"、"2026/10/3" 都有断点）。
+          剩余空间全部让给「视频」列，由它 truncate。 */}
+      <td className="whitespace-nowrap px-2 py-2">
         <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
           {statusText}
         </span>
       </td>
-      <td className="px-2 py-2 text-slate-300">{formatDuration(video.duration)}</td>
-      <td className="px-2 py-2 text-slate-300">{formatBytes(video.size)}</td>
-      <td className="px-2 py-2 text-slate-300">{video.frameCount}</td>
-      <td className="px-2 py-2 text-slate-400">{new Date(video.addedAt).toLocaleDateString('zh-CN')}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{formatDuration(video.duration)}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{formatBytes(video.size)}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{video.frameCount}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-slate-400">
+        {new Date(video.addedAt).toLocaleDateString('zh-CN')}
+      </td>
       <td className="px-4 py-2">
         <div className="flex justify-end gap-1.5">
           <button className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70" onClick={() => onOpen(video.id)}>

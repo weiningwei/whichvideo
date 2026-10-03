@@ -381,6 +381,16 @@ export default mod
   )
   check('视频库页显示视频行', libraryHtml.includes('Blue.Intro.1080p.mp4'))
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
+  check(
+    '状态列禁止换行（中文可逐字断行，列被压窄会竖排成多行）',
+    /<td class="whitespace-nowrap px-2 py-2"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
+    libraryHtml.match(/<td class="[^"]*"><span[^>]*>已索引<\/span><\/td>/)?.[0] ?? '没找到状态单元格'
+  )
+  check(
+    '体积/日期列也禁止换行（"1.5 GB"、"2026/10/3" 都有断点）',
+    (libraryHtml.match(/whitespace-nowrap px-2 py-2/g) ?? []).length >= 5,
+    `命中 ${(libraryHtml.match(/whitespace-nowrap px-2 py-2/g) ?? []).length} 处`
+  )
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
   check('视频库页显示监听中状态', libraryHtml.includes('监听中'))
   check('视频库页显示手动标记', libraryHtml.includes('手动'))
