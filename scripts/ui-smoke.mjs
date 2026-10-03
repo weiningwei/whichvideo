@@ -392,28 +392,73 @@ export default mod
       selectAll: noopSel,
       toggleFolderExpanded: noopSel,
       expandAllFolders: noopSel,
-      collapseAllFolders: noopSel
+      collapseAllFolders: noopSel,
+      sideSettings: null
     })
   )
   check('视频库页显示视频行', libraryHtml.includes('Blue.Intro.1080p.mp4'))
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
+  // 表格已精简为 4 列（选择 / 视频 / 状态 / 操作），元信息合并进视频列第二行。
+  // 状态列仍需禁止换行：中文可逐字断行，列被压窄会竖排成多行。
   check(
     '状态列禁止换行（中文可逐字断行，列被压窄会竖排成多行）',
-    /<td class="whitespace-nowrap px-2 py-2"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
+    /<td class="whitespace-nowrap px-2 py-1\.5"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
     libraryHtml.match(/<td class="[^"]*"><span[^>]*>已索引<\/span><\/td>/)?.[0] ?? '没找到状态单元格'
   )
+  // 体积与日期不再各占一列，而是合并进视频列的次要信息行（用 · 分隔）
+  // mock 数据 size=734003200 → "700 MB"，addedAt=今天 → 本地化日期
   check(
-    '体积/日期列也禁止换行（"1.5 GB"、"2026/10/3" 都有断点）',
-    (libraryHtml.match(/whitespace-nowrap px-2 py-2/g) ?? []).length >= 5,
-    `命中 ${(libraryHtml.match(/whitespace-nowrap px-2 py-2/g) ?? []).length} 处`
+    '体积/日期合并进视频列信息行（不再单独占列）',
+    /700 MB · \d+ 帧 ·/.test(libraryHtml),
+    (libraryHtml.match(/[^<>]*700 MB[^<>]*/)?.[0] ?? '没找到信息行').slice(0, 90)
   )
+  check(
+    '表格已精简为 4 列（表头只有 选择/视频/状态/操作）',
+    /<th[^>]*>\s*<input[\s\S]*?视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml),
+    (libraryHtml.match(/<th[^>]*>(?:(?!<\/th>)[\s\S])*?<\/th>/g) ?? []).length + ' 个表头'
+  )
+  check(
+    '行内操作收敛为「播放 + 更多」两个控件',
+    libraryHtml.includes('播放') && libraryHtml.includes('⋯') && libraryHtml.includes('更多操作'),
+    '低频操作收进 ⋯ 菜单'
+  )
+  // 菜单默认收起：SSR 输出里只有触发按钮（aria-expanded=false），没有菜单浮层本身。
+  // 这正是「默认不占位」的行为证据——绝对定位的浮层不参与表格列宽计算。
+  check(
+    '更多菜单默认收起（不渲染浮层，不占列宽）',
+    libraryHtml.includes('aria-expanded="false"') &&
+      libraryHtml.includes('aria-haspopup="menu"') &&
+      !libraryHtml.includes('absolute right-0 top-full'),
+    '收起时只有触发按钮，无浮层元素'
+  )
+  // 菜单项文案单独断言：直接对 RowMenu 的 items 定义做静态检查，
+  // 因为菜单默认收起，SSR 输出里不含菜单项。
+  {
+    const src = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    check(
+      '更多菜单包含定位/重索引/移除三个操作',
+      ['定位文件', '重索引', '从库中移除'].every((t) => src.includes(`'${t}'`)),
+      '三个低频操作都在菜单定义里'
+    )
+    check(
+      '菜单浮层绝对定位（展开后也不撑表格列宽）',
+      src.includes('absolute right-0 top-full'),
+      'right-0 top-full 绝对定位'
+    )
+    check(
+      'RowMenu 点击外部与 Esc 都会关闭',
+      src.includes("addEventListener('mousedown'") && src.includes("addEventListener('keydown'") &&
+        src.includes("e.key === 'Escape'"),
+      '菜单有外部点击与 Esc 两种关闭方式'
+    )
+  }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
   check('视频库页显示监听中状态', libraryHtml.includes('监听中'))
   check('视频库页显示手动标记', libraryHtml.includes('手动'))
   check('视频库页有筛选控件', libraryHtml.includes('全部监听目录') && libraryHtml.includes('全部状态'))
   check('视频库页有重建/重扫按钮', libraryHtml.includes('重建全部索引') && libraryHtml.includes('重新扫描目录'))
   check('视频库页有暂停与停止监听按钮', libraryHtml.includes('暂停监听') && libraryHtml.includes('停止监听'))
-  check('监听面板提示动态更新', libraryHtml.includes('索引会自动更新'))
+  check('右栏为单层面板（监听/索引设置 标签切换）', libraryHtml.includes('索引设置') && libraryHtml.includes('监听'))
 
   /* ---------- 7. 设置面板 ---------- */
   const appSettings = {
@@ -434,7 +479,8 @@ export default mod
       onOpenDatabaseFolder: noop
     })
   )
-  check('设置面板有入口标题', settingsHtml.includes('索引设置'))
+  // 设置面板现在嵌在右栏的「索引设置」标签页内，自身标题改为「抽帧与匹配参数」
+  check('设置面板有入口标题', settingsHtml.includes('抽帧与匹配参数'))
   check('设置面板展示数据目录', settingsHtml.includes('数据目录') && settingsHtml.includes('AppData\\Roaming\\WhichVideo'))
   check('默认模式标注为"默认（用户目录）"', settingsHtml.includes('默认（用户目录）'))
 

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
 import type { VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { formatBytes, formatDuration, shortPath } from '../lib/format'
+import { SidePanel } from './SidePanel'
 
 interface Props {
   folders: WatchedFolder[]
@@ -29,6 +30,8 @@ interface Props {
   toggleFolderExpanded: (folderId: number) => void
   expandAllFolders: () => void
   collapseAllFolders: () => void
+  /** 右侧「索引设置」页的内容（由 App 传入，合并到同一栏切换） */
+  sideSettings: ReactNode
 }
 
 const STATE_STYLE: Record<string, { text: string; cls: string }> = {
@@ -179,12 +182,12 @@ export function LibraryView(props: Props) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line/70 px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line/70 px-3 py-2.5">
           <input
             value={query.keyword ?? ''}
             onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
             placeholder="按文件名 / 目录筛选"
-            className="w-56 rounded-lg border border-line bg-ink-900/70 px-3 py-1.5 text-[12.5px] outline-none placeholder:text-slate-600 focus:border-accent/60"
+            className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-slate-600 focus:border-accent/60"
           />
           <select
             value={String(query.folderId ?? '')}
@@ -246,10 +249,10 @@ export function LibraryView(props: Props) {
         </div>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[880px] border-separate border-spacing-0 text-[12px]">
+          <table className="w-full min-w-[560px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
-                <th className="px-4 py-2 font-medium">
+                <th className="w-10 px-3 py-2 font-medium">
                   <input
                     ref={selectAllRef}
                     type="checkbox"
@@ -258,13 +261,9 @@ export function LibraryView(props: Props) {
                     className="w-4 h-4 rounded border-line bg-ink-900/70 text-accent focus:ring-accent"
                   />
                 </th>
-                <th className="px-4 py-2 font-medium">视频</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">状态</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">时长</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">体积</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">帧</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">位置</th>
-                <th className="px-4 py-2 text-right font-medium">操作</th>
+                <th className="px-3 py-2 font-medium">视频</th>
+                <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
+                <th className="w-28 px-3 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -276,7 +275,7 @@ export function LibraryView(props: Props) {
 
                   const header = (
                     <tr key={`folder-header-${folderId}`} className="bg-ink-800/50 border-t border-line/40">
-                      <td colSpan={8} className="px-4 py-2">
+                      <td colSpan={4} className="px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
                           <span
                             className="cursor-pointer select-none transition-transform duration-150"
@@ -309,7 +308,7 @@ export function LibraryView(props: Props) {
                   )
                   const rows = expanded ? folderVideos.map((video) => (
                     <tr key={video.id} className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-                      <td className="px-4 py-2">
+                      <td className="px-3 py-2">
                         <input
                           type="checkbox"
                           checked={isVideoSelected(video.id)}
@@ -338,7 +337,7 @@ export function LibraryView(props: Props) {
               ) : (
                 videos.map((video) => (
                   <tr key={video.id} className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-                    <td className="px-4 py-2">
+                    <td className="px-3 py-2">
                       <input
                         type="checkbox"
                         checked={isVideoSelected(video.id)}
@@ -372,53 +371,45 @@ export function LibraryView(props: Props) {
         </div>
       </section>
 
-      <aside className="flex w-[360px] min-w-[280px] shrink-0 flex-col">
-        <div className="border-b border-line/70 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[13px] font-semibold text-slate-200">监听文件夹</div>
-            <button className="btn text-[12px] hover:bg-ink-700/70" onClick={props.onAddFolder}>
-              + 添加
-            </button>
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted">
-            被监听的目录里新增、覆盖或删除视频时，索引会自动更新，无需手动重新扫描。
-          </p>
-        </div>
-
-        <div
-          className={`min-h-0 flex-1 overflow-y-auto p-3 ${folderDrop ? 'bg-accent/5' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault()
-            setFolderDrop(true)
-          }}
-          onDragLeave={() => setFolderDrop(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setFolderDrop(false)
-            const dir = extractDroppedDir(e.dataTransfer)
-            if (dir) props.onAddFolderPath(dir)
-          }}
-        >
-          {folders.length === 0 && (
-            <div className="rounded-xl border border-dashed border-line/80 p-4 text-center text-[11.5px] text-muted">
-              还没有监听目录。
-              <br />
-              可以点「+ 添加」，也可以把文件夹直接拖到这里。
+      <SidePanel
+        onAddFolder={props.onAddFolder}
+        folderCount={folders.length}
+        folderDrop={folderDrop}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setFolderDrop(true)
+        }}
+        onDragLeave={() => setFolderDrop(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setFolderDrop(false)
+          const dir = extractDroppedDir(e.dataTransfer)
+          if (dir) props.onAddFolderPath(dir)
+        }}
+        folders={
+          <>
+            {folders.length === 0 && (
+              <div className="rounded-xl border border-dashed border-line/80 p-4 text-center text-[11.5px] text-muted">
+                还没有监听目录。
+                <br />
+                可以点「+ 添加」，也可以把文件夹直接拖到这里。
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              {folders.map((folder) => (
+                <FolderCard
+                  key={folder.id}
+                  folder={folder}
+                  onRemove={props.onRemoveFolder}
+                  onRescan={props.onRescan}
+                  onToggle={props.onToggleFolder}
+                />
+              ))}
             </div>
-          )}
-          <div className="flex flex-col gap-2">
-            {folders.map((folder) => (
-              <FolderCard
-                key={folder.id}
-                folder={folder}
-                onRemove={props.onRemoveFolder}
-                onRescan={props.onRescan}
-                onToggle={props.onToggleFolder}
-              />
-            ))}
-          </div>
-        </div>
-      </aside>
+          </>
+        }
+        settings={props.sideSettings}
+      />
     </div>
   )
 }
@@ -535,8 +526,8 @@ function VideoRow({
 
   return (
     <tr className={`border-b border-line/40 hover:bg-ink-800/50 ${isVideoSelected(video.id) ? 'bg-accent/10' : ''}`}>
-      <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
+      <td className="px-3 py-1.5">
+        <div className="flex items-center gap-2.5">
           <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-ink-950">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
@@ -545,45 +536,119 @@ function VideoRow({
               {video.name}
             </div>
             <div className="truncate text-[10.5px] text-muted" title={video.path}>
-              {shortPath(video.path, roots)}
+              {/* 位置、时长、体积、帧数、导入日期合并到一行，用 · 分隔 */}
+              {[
+                shortPath(video.path, roots),
+                formatDuration(video.duration),
+                formatBytes(video.size),
+                `${video.frameCount} 帧`,
+                new Date(video.addedAt).toLocaleDateString('zh-CN')
+              ].join(' · ')}
             </div>
           </div>
         </div>
       </td>
-      <td className="whitespace-nowrap px-2 py-2">
+      <td className="whitespace-nowrap px-2 py-1.5">
         <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
           {statusText}
         </span>
       </td>
-      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{formatDuration(video.duration)}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{formatBytes(video.size)}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-slate-300">{video.frameCount}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-slate-400">{new Date(video.addedAt).toLocaleDateString('zh-CN')}</td>
-      <td className="px-4 py-2">
-        <div className="flex justify-end gap-1.5">
-          <button className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70" onClick={() => onOpen(video.id)}>
-            播放
-          </button>
-          <button className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70" onClick={() => onReveal(video.id)}>
-            定位
-          </button>
+      <td className="px-3 py-1.5">
+        <div className="flex items-center justify-end gap-1">
           <button
             className="btn px-2 py-0.5 text-[11px] hover:bg-ink-700/70"
-            onClick={() => onReindex(video.id)}
-            title="重新抽帧建立指纹"
+            onClick={() => onOpen(video.id)}
+            title="用系统播放器打开"
           >
-            重索引
+            播放
           </button>
-          <button
-            className="btn btn-danger px-2 py-0.5 text-[11px] hover:bg-bad/10"
-            onClick={() => onRemove(video.id)}
-            title="只从索引库移除记录，不会删除磁盘文件"
-          >
-            移除
-          </button>
+          <RowMenu
+            onReveal={() => onReveal(video.id)}
+            onReindex={() => onReindex(video.id)}
+            onRemove={() => onRemove(video.id)}
+          />
         </div>
       </td>
     </tr>
+  )
+}
+
+/**
+ * 行内「更多」菜单：把低频操作（定位 / 重索引 / 移除）收进一个浮层。
+ *
+ * 此前四个按钮平铺在操作列里，「操作」列的 min-content 约 250px，是表格里最宽
+ * 的一列，也是导入首个视频后布局溢出的直接原因。折叠后只留「播放」一个主操作。
+ */
+function RowMenu({
+  onReveal,
+  onReindex,
+  onRemove
+}: {
+  onReveal: () => void
+  onReindex: () => void
+  onRemove: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // 点击外部或按 Esc 关闭
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const items: { label: string; hint?: string; onClick: () => void; danger?: boolean }[] = [
+    { label: '定位文件', hint: '在资源管理器中选中', onClick: onReveal },
+    { label: '重索引', hint: '重新抽帧建立指纹', onClick: onReindex },
+    { label: '从库中移除', hint: '不会删除磁盘文件', onClick: onRemove, danger: true }
+  ]
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+        onClick={() => setOpen((v) => !v)}
+        title="更多操作"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-ink-850 py-1 shadow-xl"
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                it.onClick()
+              }}
+              className={`flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left text-[12px] transition ${
+                it.danger ? 'text-bad hover:bg-bad/10' : 'text-slate-200 hover:bg-ink-700/70'
+              }`}
+            >
+              <span>{it.label}</span>
+              {it.hint && <span className="text-[10px] text-slate-500">{it.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

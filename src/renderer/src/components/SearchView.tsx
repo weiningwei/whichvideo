@@ -96,9 +96,9 @@ export function SearchView(props: Props) {
       }}
       onDrop={handleDrop}
     >
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex min-w-0 flex-col gap-3 p-4">
         <div
-          className={`card relative flex items-center gap-4 p-4 transition ${
+          className={`card relative flex min-w-0 items-center gap-4 p-4 transition ${
             dragging ? 'border-accent/70 bg-accent/10' : ''
           }`}
         >

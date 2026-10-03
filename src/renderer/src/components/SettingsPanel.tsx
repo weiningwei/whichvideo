@@ -25,12 +25,12 @@ export function SettingsPanel({
   const value = settings ?? DEFAULT_SETTINGS
 
   return (
-    <div className="border-t border-line/70">
+    <div className="flex flex-col">
       <button
         className="flex w-full items-center justify-between px-4 py-2.5 text-[12.5px] text-slate-300 hover:bg-ink-800/40"
         onClick={() => setOpen((v) => !v)}
       >
-        <span>索引设置</span>
+        <span>抽帧与匹配参数</span>
         <span className="text-slate-500">{open ? '收起' : '展开'}</span>
       </button>
 

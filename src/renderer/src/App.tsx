@@ -68,45 +68,43 @@ export default function App() {
           />
         ) : (
           <div className="flex min-h-0 min-w-0 flex-1">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <LibraryView
-                folders={state.folders}
-                videos={state.videos}
-                total={state.total}
-                query={videoQuery}
-                onSetQuery={actions.setVideoQuery}
-                onAddFolder={() => void actions.importFolder()}
-                onAddFolderPath={(p) => void actions.addFolderPath(p)}
-                onRemoveFolder={(id) => void actions.removeFolder(id)}
-                onRescan={(id) => void actions.rescan(id)}
-                onToggleFolder={(id, enabled) => void actions.toggleFolder(id, enabled)}
-                onOpen={(id) => void actions.openVideo(id)}
-                onReveal={(id) => void actions.revealVideo(id)}
-                onRemoveVideo={(id) => void actions.removeVideo(id)}
-                onReindex={(ids) => void actions.reindex(ids)}
-                groupByFolder={groupByFolder}
-                onToggleGroupByFolder={toggleGroupByFolder}
-                selectedVideoIds={selectedVideoIds}
-                expandedFolderIds={expandedFolderIds}
-                isVideoSelected={isVideoSelected}
-                isFolderExpanded={isFolderExpanded}
-                toggleVideoSelection={toggleVideoSelection}
-                clearSelection={clearSelection}
-                selectAll={selectAll}
-                toggleFolderExpanded={toggleFolderExpanded}
-                expandAllFolders={expandAllFolders}
-                collapseAllFolders={collapseAllFolders}
-              />
-            </div>
-            <div className="w-[300px] min-w-[240px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">
-              <SettingsPanel
-                settings={state.settings}
-                dataDir={state.dataDir}
-                onChange={(patch) => void actions.updateSettings(patch)}
-                onReset={() => void actions.resetLibrary()}
-                onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}
-              />
-            </div>
+            <LibraryView
+              folders={state.folders}
+              videos={state.videos}
+              total={state.total}
+              query={videoQuery}
+              onSetQuery={actions.setVideoQuery}
+              onAddFolder={() => void actions.importFolder()}
+              onAddFolderPath={(p) => void actions.addFolderPath(p)}
+              onRemoveFolder={(id) => void actions.removeFolder(id)}
+              onRescan={(id) => void actions.rescan(id)}
+              onToggleFolder={(id, enabled) => void actions.toggleFolder(id, enabled)}
+              onOpen={(id) => void actions.openVideo(id)}
+              onReveal={(id) => void actions.revealVideo(id)}
+              onRemoveVideo={(id) => void actions.removeVideo(id)}
+              onReindex={(ids) => void actions.reindex(ids)}
+              groupByFolder={groupByFolder}
+              onToggleGroupByFolder={toggleGroupByFolder}
+              selectedVideoIds={selectedVideoIds}
+              expandedFolderIds={expandedFolderIds}
+              isVideoSelected={isVideoSelected}
+              isFolderExpanded={isFolderExpanded}
+              toggleVideoSelection={toggleVideoSelection}
+              clearSelection={clearSelection}
+              selectAll={selectAll}
+              toggleFolderExpanded={toggleFolderExpanded}
+              expandAllFolders={expandAllFolders}
+              collapseAllFolders={collapseAllFolders}
+              sideSettings={
+                <SettingsPanel
+                  settings={state.settings}
+                  dataDir={state.dataDir}
+                  onChange={(patch) => void actions.updateSettings(patch)}
+                  onReset={() => void actions.resetLibrary()}
+                  onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}
+                />
+              }
+            />
           </div>
         )}
       </main>
