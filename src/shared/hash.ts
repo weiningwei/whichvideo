@@ -39,7 +39,7 @@ export const STRUCT_BYTES = 64
 export const DHASH_BYTES = 8
 export const FAST_HASH_BYTES = DHASH_BYTES + STRUCT_BYTES
 
-/** 结构指纹网格：16x16 × 4 通道 = 1024 个比较，只取前 512 个比特 */
+/** 结构指纹网格：16x16 × 4 通道 = 1024 个格子，每通道等距抽样 128 个共 512 bit */
 const STRUCT_GRID = 16
 const STRUCT_BITS = STRUCT_BYTES * 8
 const CHANNELS_IN_HASH = 4
@@ -178,6 +178,12 @@ function cellGrid(
  * 把单个通道的分块网格编码成比特：格子均值 ≥ 全局均值 → 1。
  * 纯色画面的格子均值彼此相等，会全部记为 1；有内容的画面则 0/1 混杂，
  * 因此该指纹天然能把"纯色"与"有画面"分开。
+ *
+ * 网格有 STRUCT_GRID² 个格子（256），但每通道只分配 128 bit，必须**等距抽样**
+ * 而不是顺序截取。顺序填满会在 bit 达到 maxBits 时停在网格前半部分
+ * （16 行只用到前 8 行），导致画面下半部分完全不参与指纹——字幕条、
+ * 下三分之一构图这类内容会因此被系统性低估相似度。
+ * 这里按下标 `floor(bit * grid.length / maxBits)` 均匀取样，覆盖全部 16 行。
  */
 function encodeChannel(
   grid: Float32Array,
@@ -188,14 +194,16 @@ function encodeChannel(
   let sum = 0
   for (let i = 0; i < grid.length; i++) sum += grid[i]
   const mean = grid.length ? sum / grid.length : 0
-  let bit = 0
-  for (let i = 0; i < grid.length && bit < maxBits; i++, bit++) {
+  const bits = Math.min(maxBits, grid.length)
+  for (let bit = 0; bit < bits; bit++) {
+    // 等距抽样：256 格取 128 格时步长为 2，均匀落在网格各处
+    const i = grid.length === bits ? bit : Math.floor((bit * grid.length) / bits)
     if (grid[i] >= mean) {
       const pos = bitOffset + bit
       out[pos >> 3] |= 1 << (pos & 7)
     }
   }
-  return bit
+  return bits
 }
 
 export function computeStructHash(img: ImageDataLike): Uint8Array {
