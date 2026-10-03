@@ -187,7 +187,11 @@ export interface VideoProbeInfo {
 }
 
 export interface AppSettings {
-  /** 每个视频抽取的关键帧数量上限 */
+  /**
+   * 每个视频抽取的关键帧数量**上限**。
+   * 实际帧数按时长策略决定（见 src/main/media.ts 的 framesForDuration）：
+   * 短视频少抽、长视频多抽，再与本值取小。填 16 会把 15 分钟以上的视频压到 16 帧。
+   */
   framesPerVideo: number
   /** 抽帧并发数 */
   concurrency: number
@@ -202,7 +206,10 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  framesPerVideo: 16,
+  // 默认值从 16 提到 64：实测解码耗时与帧数几乎无关（600 秒视频抽 16 帧与 64 帧
+  // 都是约 1.1 秒），真正随帧数增长的是指纹计算（约 9.8 ms/帧），64 帧约 0.6 秒。
+  // 16 帧对 15 分钟以上的视频太稀疏，会导致长视频搜不到。
+  framesPerVideo: 64,
   concurrency: 2,
   minHashScore: 0.6,
   maxResults: 40,

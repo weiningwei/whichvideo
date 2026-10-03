@@ -22,11 +22,13 @@
     "test:clipboard": "node scripts/build-core.mjs && node scripts/test-clipboard.mjs",
     "test:pack": "node scripts/test-portable-builder.mjs",
     "test:asar": "node scripts/test-asar-check.mjs",
+    "bench:frames": "node scripts/build-core.mjs && node scripts/bench-frames.mjs",
     "test:config": "node scripts/test-build-config.mjs",
+    "test:frames": "node scripts/build-core.mjs && node scripts/test-frame-policy.mjs",
     "test:output": "node scripts/build-core.mjs && node scripts/test-build-output.mjs",
     "test:startup": "node scripts/build-core.mjs && node scripts/startup-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run test:config && npm run test:output && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
+    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
     "rebuild:native": "electron-builder install-app-deps"
   },
   "dependencies": {

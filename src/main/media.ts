@@ -183,15 +183,71 @@ export async function probeVideo(filePath: string, tools?: ToolPaths): Promise<V
 
 export const PROBE_MAX_WIDTH = 320
 
-/** 根据时长决定抽帧时间点（秒） */
+/**
+ * 每视频抽帧数：按时长插值的分档表。
+ *
+ * 为什么不再用"固定帧数"：
+ * 固定 16 帧对 1 小时的视频等于每 3.75 分钟才一帧，基本搜不到东西；而实测表明
+ * **解码耗时只与视频时长有关，与帧数几乎无关**（600 秒视频抽 16 帧与 128 帧都是
+ * 约 1.2 秒），所以长视频"省帧"省不到时间，却显著牺牲召回。
+ *
+ * 为什么仍要封顶：
+ * 真正随帧数增长的是指纹计算（实测约 9.8 ms/帧）。这个表把上限控制在 64 帧，
+ * 即每个视频的指纹成本不超过约 0.6 秒。
+ *
+ * 表是"时长(秒) → 帧数"的折点，之间线性插值，再取整到偶数。
+ */
+export const FRAME_COUNT_TABLE: ReadonlyArray<readonly [seconds: number, frames: number]> = [
+  [0, 8],
+  [30, 10],
+  [60, 12],
+  [300, 20],
+  [900, 32],
+  [1800, 44],
+  [3600, 56],
+  [7200, 64]
+]
+
+export const DEFAULT_FRAME_BUDGET = 64
+
+/** 按视频时长得出的建议抽帧数（未与用户设置取小） */
+export function framesForDuration(durationSeconds: number | null): number {
+  if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return FRAME_COUNT_TABLE[0][1]
+  }
+  const table = FRAME_COUNT_TABLE
+  if (durationSeconds >= table[table.length - 1][0]) return table[table.length - 1][1]
+  for (let i = 1; i < table.length; i++) {
+    const [t1, f1] = table[i]
+    if (durationSeconds > t1) continue
+    const [t0, f0] = table[i - 1]
+    const ratio = t1 === t0 ? 0 : (durationSeconds - t0) / (t1 - t0)
+    const value = f0 + (f1 - f0) * ratio
+    return Math.max(2, Math.round(value / 2) * 2)
+  }
+  return table[table.length - 1][1]
+}
+
+/**
+ * 计划抽帧用的帧数：策略值与用户设置（作为上限）取小。
+ * 用户把"每视频帧数"调大也不会超过时长策略，避免短视频被抽过多帧。
+ */
+export function plannedFrameCount(durationSeconds: number | null, budget: number): number {
+  const policy = framesForDuration(durationSeconds)
+  const cap = Number.isFinite(budget) && budget > 0 ? Math.floor(budget) : DEFAULT_FRAME_BUDGET
+  return Math.max(1, Math.min(policy, cap))
+}
+
+/** 根据时长与帧数决定抽帧时间点（秒），取每段中点以避开片头片尾黑场 */
 export function planTimestamps(duration: number | null, frameBudget: number): number[] {
   if (!duration || !Number.isFinite(duration) || duration <= 0.5) {
     return [0]
   }
-  const count = Math.max(1, Math.min(frameBudget, Math.ceil(duration / 2)))
+  const count = plannedFrameCount(duration, frameBudget)
+  if (count <= 1) return [duration / 2]
+
   const list: number[] = []
   for (let i = 0; i < count; i++) {
-    // 取每段的中点，避开片头片尾黑场与转场
     const t = duration * ((i + 0.5) / count)
     list.push(Math.min(Math.max(t, 0.05), Math.max(duration - 0.05, 0.05)))
   }
@@ -213,36 +269,38 @@ function even(n: number): number {
 }
 
 /**
- * 抽帧：一次 ffmpeg 调用内对多个时间点做 seek，输出 RGB24 原始像素。
- * 缩放宽度限制到 PROBE_MAX_WIDTH，缩放后的宽高写入 stderr 供解析。
+ * 简明抽帧接口：**单次 ffmpeg 调用**用 `fps=N/时长` 均匀采出 N 帧，输出 RGB24 裸像素。
+ *
+ * 与索引实际使用的 scan.ts::extractAndHash 的区别（两者都已实测，按帧数取长补短）：
+ *   · scan.ts 用"每个时间点一个 `-ss` 精确跳转"，成本约 25 ms/帧，**与视频时长无关**
+ *   · 本函数单次从头解码全片，成本约等于"时长对应的解码时间"，**与帧数无关**
+ * 实测 600 秒视频：48 帧时两者都要约 1.1 秒；帧数低于约 55 时逐点 seek 更快，
+ * 高于该点则本函数更快（128 帧时 4.5 秒 vs 1.1 秒）。
+ * 索引走的是 scan.ts 那条路径，所以当前策略（封顶 64 帧）不必切换实现。
  */
 export async function extractFrames(
   filePath: string,
   timestamps: number[],
   tools?: ToolPaths,
-  options: { maxWidth?: number; timeoutMs?: number } = {}
+  options: { maxWidth?: number; timeoutMs?: number; durationSeconds?: number } = {}
 ): Promise<ExtractedFrame[]> {
   if (timestamps.length === 0) return []
   const t = tools ?? requireTools()
   const maxWidth = options.maxWidth ?? PROBE_MAX_WIDTH
 
-  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
-  for (const ts of timestamps) {
-    args.push('-ss', ts.toFixed(3))
-    args.push('-i', filePath)
-  }
-  const filter = `scale=w='min(${maxWidth},iw)':h=-2`
+  // fps 采样率必须用真实时长算，否则帧数与时间点会对不上
+  const duration = options.durationSeconds ?? (timestamps[timestamps.length - 1] * 2 || 1)
+  const rate = timestamps.length / Math.max(duration, 0.001)
+
+  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin', '-i', filePath]
+  const filter = `fps=${rate.toFixed(8)},scale=w='min(${maxWidth},iw)':h=-2`
   args.push(
-    '-map',
-    '0:v:0',
-    '-frames:v',
-    '1',
     '-vf',
     filter,
+    '-frames:v',
+    String(timestamps.length),
     '-pix_fmt',
     'rgb24',
-    '-fps_mode',
-    'passthrough',
     '-f',
     'rawvideo',
     '-an',
