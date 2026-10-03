@@ -8,11 +8,13 @@ interface Props {
   error: string | null
   queryImage: string | null
   queryLabel: string | null
+  hasIndexedFrames: boolean
   roots: string[]
   onPickImageFile: () => Promise<string[]>
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
   onSearchClipboard: () => void
+  onReSearch: () => void
   onClear: () => void
   onOpen: (videoId: number) => void
   onReveal: (videoId: number) => void
@@ -28,11 +30,13 @@ export function SearchView(props: Props) {
     error,
     queryImage,
     queryLabel,
+    hasIndexedFrames,
     roots,
     onPickImageFile,
     onSearchPath,
     onSearchDataUrl,
     onSearchClipboard,
+    onReSearch,
     onClear
   } = props
 
@@ -129,6 +133,16 @@ export function SearchView(props: Props) {
               <button className="btn hover:bg-ink-700/70" disabled={searching} onClick={onSearchClipboard}>
                 使用剪贴板图片
               </button>
+              {queryImage && (hasIndexedFrames || error) && (
+                <button
+                  className="btn hover:bg-ink-700/70"
+                  disabled={searching}
+                  onClick={onReSearch}
+                  title="用同一张图片重新搜索"
+                >
+                  重新搜索
+                </button>
+              )}
               {(search || error) && (
                 <button className="btn hover:bg-ink-700/70" onClick={onClear}>
                   清除结果

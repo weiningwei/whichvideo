@@ -34,6 +34,7 @@ export interface LibraryState {
   searchError: string | null
   queryImage: string | null
   queryLabel: string | null
+  hasIndexedFrames: boolean
 }
 
 const EMPTY_STATS: LibraryStats = {
@@ -64,6 +65,7 @@ export function useLibrary() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [queryImage, setQueryImage] = useState<string | null>(null)
   const [queryLabel, setQueryLabel] = useState<string | null>(null)
+  const [lastSearchInput, setLastSearchInput] = useState<{ path?: string; dataUrl?: string; label?: string; dataUrlPreview?: string } | null>(null)
   const [videoQuery, setVideoQuery] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
 
   const pushNotice = useCallback((level: Notice['level'], message: string) => {
@@ -156,6 +158,7 @@ export function useLibrary() {
 
   const runSearch = useCallback(
     async (input: { path?: string; dataUrl?: string; label?: string; dataUrlPreview?: string }) => {
+      setLastSearchInput(input)
       setSearching(true)
       setSearchError(null)
       try {
@@ -189,6 +192,12 @@ export function useLibrary() {
     },
     []
   )
+
+  const reSearch = useCallback(async () => {
+    if (lastSearchInput) {
+      await runSearch(lastSearchInput)
+    }
+  }, [lastSearchInput, runSearch])
 
   const clearSearch = useCallback(() => {
     setSearch(null)
@@ -312,13 +321,17 @@ export function useLibrary() {
     searching,
     searchError,
     queryImage,
-    queryLabel
+    queryLabel,
+    hasIndexedFrames: (stats?.frames ?? 0) > 0
   }
 
   return {
     state,
     videoQuery,
-    actions,
+    actions: {
+      ...actions,
+      reSearch
+    },
     runSearch,
     clearSearch,
     refreshAll,

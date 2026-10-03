@@ -9,6 +9,8 @@ import { SettingsPanel } from './components/SettingsPanel'
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
   const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice } = useLibrary()
+  const { hasIndexedFrames } = state
+  const { reSearch } = actions
 
   return (
     <div className="relative flex h-full flex-col">
@@ -36,6 +38,8 @@ export default function App() {
             error={state.searchError}
             queryImage={state.queryImage}
             queryLabel={state.queryLabel}
+            hasIndexedFrames={hasIndexedFrames}
+            onReSearch={reSearch}
             roots={state.folders.map((f) => f.path)}
             onPickImageFile={() => window.whichvideo.videos.importImages()}
             onSearchPath={(path) => void runSearch({ path })}
