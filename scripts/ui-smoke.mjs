@@ -268,14 +268,20 @@ export default mod
     busy: null
   }
   const headerHtml = render(jsx(Header, { ...headerBase, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop }))
-  // 品牌标识用 WV 字母标 + tagline，不再重复写产品名：
-  // 窗口标题栏与任务栏已经显示 WhichVideo，界内再写一遍是同一句话说三次。
-  check('顶栏用 WV 字母标作为品牌标识', headerHtml.includes('WV'))
-  check('顶栏显示 tagline（产品做什么）', headerHtml.includes('以图搜帧') && headerHtml.includes('本地视频库'))
+  // 品牌区只有 WV 字母标，不放任何文字：
+  //  · 产品名 WhichVideo —— 窗口标题栏与任务栏已有，界内再写是重复
+  //  · tagline「以图搜帧 本地视频库」—— 与右侧「图片搜索」tab 语义几乎相同且紧挨着，
+  //    同一句话在同一行出现两次（曾试过保留 tagline，结果更重复）
+  check('顶栏用 WV 字母标作为唯一品牌标识', headerHtml.includes('WV'))
   check(
-    '顶栏不重复产品全名（字母标已足够标识）',
+    '顶栏不重复产品全名（标题栏与任务栏已有）',
     !headerHtml.includes('WhichVideo'),
-    '界面内只说 tagline，不重复产品名'
+    '界面内不出现产品名'
+  )
+  check(
+    '品牌区不与 tab 语义重复（无 tagline）',
+    !headerHtml.includes('以图搜帧') && !headerHtml.includes('本地视频库'),
+    '「以图搜帧」与「图片搜索」tab 不同时出现'
   )
   check('顶栏渲染统计（监听 1/1）', /1\/1/.test(headerHtml), headerHtml.match(/监听[\s\S]{0,40}/)?.[0] ?? '')
   check('顶栏渲染帧指纹数量', headerHtml.includes('16'))

@@ -44,20 +44,16 @@ export function Header({
   const running = status?.running ?? false
   return (
     <header className="flex items-center gap-4 border-b border-line/80 bg-ink-900/70 px-5 py-3 backdrop-blur">
-      <div className="flex items-center gap-3">
-        {/* 「WV」文字色刻意固定：它压在 accent 渐变方块上，深浅两套主题下都必须是深色。
-            用语义 token 会跟着主题变，浅色主题下就变成浅字压浅底。
-            这条例外记在 scripts/test-theme.mjs 的 HEX_EXCEPTIONS 里。 */}
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-accent to-accent-strong text-[15px] font-bold text-[#042C53]">
-          WV
-        </div>
-        {/* 只留 tagline，不再重复产品名：WV 字母标已经是品牌标识，窗口标题栏与
-            任务栏也都写着 WhichVideo，界内再写一遍是同一句话说三次。
-            tagline 提为视觉主标识，说的却是产品做的事而非叫什么。 */}
-        <div className="text-[13px] font-semibold leading-tight text-secondary">
-          以图搜帧
-          <span className="ml-1.5 text-[11px] font-normal text-muted">本地视频库</span>
-        </div>
+      {/* 品牌区只有字母标，不放任何文字。
+          产品名：窗口标题栏与任务栏已经写着 WhichVideo，界内再写是重复。
+          tagline：以图搜帧 与右侧「图片搜索」tab 语义几乎相同，且紧挨着，
+          同一句话在同一行出现两次。之前试过保留它，反而更重复，所以整个去掉。
+
+          「WV」文字色刻意固定为 #042C53：它压在 accent 渐变方块上，深浅两套
+          主题下都必须是深色。用语义 token 会跟着主题变，浅色主题下就变成浅字压浅底。
+          这条例外记在 scripts/test-theme.mjs 的 HEX_EXCEPTIONS 里。 */}
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-accent to-accent-strong text-[15px] font-bold text-[#042C53]">
+        WV
       </div>
 
       <div className="ml-2 flex items-center gap-1 rounded-xl border border-line/80 bg-ink-850/60 p-1">
