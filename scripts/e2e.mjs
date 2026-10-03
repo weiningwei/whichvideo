@@ -366,8 +366,10 @@ async function main() {
 
   let pipeWorks = true
   let pipeError = ''
+  let extractedFrames = 0
   try {
     const frames = await extractAndHash(videoA, planTimestamps(6, 6), db.getSettings())
+    extractedFrames = frames.length
     pipeWorks = frames.length > 0
     if (!pipeWorks) pipeError = '抽到的帧数为 0'
   } catch (err) {
@@ -375,7 +377,12 @@ async function main() {
     pipeError = err instanceof Error ? err.message : String(err)
   }
 
-  check('抽帧结果帧数与计划一致（若可用）', !pipeWorks || true, pipeWorks ? '管道可用' : `管道不可用：${pipeError}`)
+  const plannedFrames = planTimestamps(6, 6).length
+  check(
+    '抽帧结果帧数与计划一致',
+    !pipeWorks ? true : extractedFrames === plannedFrames,
+    pipeWorks ? `抽到 ${extractedFrames}/${plannedFrames} 帧` : `管道不可用：${pipeError}`
+  )
 
   if (pipeWorks) {
     const probe = await probeVideo(videoA)
