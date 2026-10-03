@@ -446,6 +446,30 @@ export default mod
       !codeNoComments.includes('indeterminate') && !codeNoComments.includes('selectAllRef'),
       '已清理表头/分组复选框的 indeterminate 逻辑'
     )
+
+    // ---- 键盘导航 ----
+    check(
+      '焦点以 video.id 派生（focusedVideoId）',
+      src.includes('const focusedVideoId = useMemo') &&
+        src.includes('focused={focusedVideoId === video.id}'),
+      '渲染时直接比 id，不按下标反查'
+    )
+    check(
+      '焦点移动时自动滚进可视区',
+      src.includes('scrollRef') && src.includes('querySelector<HTMLElement>') &&
+        src.includes('data-video-id=') && src.includes('box.scrollTop'),
+      '按 [data-video-id] 定位后调整 scrollTop'
+    )
+    check(
+      '键盘焦点有独立视觉提示（淡灰竖条，与选中蓝条区分）',
+      src.includes('w-[2px] bg-slate-500/60') && src.includes('bg-ink-800/70'),
+      '焦点灰条 / 选中蓝条'
+    )
+    check(
+      '工具条提示键盘快捷键',
+      libraryHtml.includes('↑↓ 移动 · Enter 选中'),
+      'lg 以上显示'
+    )
   }
   // 目录不再重复显示文件名：可见文本里文件名只该出现一次（title 属性不计）
   const visibleText = libraryHtml.replace(/\stitle="[^"]*"/g, '')

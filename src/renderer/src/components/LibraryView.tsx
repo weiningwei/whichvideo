@@ -133,6 +133,18 @@ export function LibraryView(props: Props) {
 
   const [focusedIndex, setFocusedIndex] = useState(0)
 
+  /**
+   * 焦点所在行的 videoId。
+   *
+   * 之前焦点只存下标，渲染时再 `focusedIndex === idx` 反查，分组视图下要写
+   * `navigableItems.findIndex(...)` 那种绕的匹配，既难读又容易错。改为直接从
+   * navigableItems 派生 video.id，渲染时只需 `focusedVideoId === video.id`。
+   */
+  const focusedVideoId = useMemo(() => {
+    const item = navigableItems[focusedIndex]
+    return item && item.type === 'video' ? item.video?.id ?? null : null
+  }, [navigableItems, focusedIndex])
+
   const moveSelection = (delta: number) => {
     if (navigableItems.length === 0) return
     const next = Math.max(0, Math.min(navigableItems.length - 1, focusedIndex + delta))
@@ -163,6 +175,25 @@ export function LibraryView(props: Props) {
   useEffect(() => {
     setFocusedIndex(0)
   }, [groupByFolder, groupedVideos, videos])
+
+  // 滚动容器：↑/↓ 移动焦点时要把焦点行滚进可视区，否则焦点移出屏幕就看不见了
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (focusedVideoId === null || !scrollRef.current) return
+    const box = scrollRef.current
+    const row = box.querySelector<HTMLElement>(`[data-video-id="${focusedVideoId}"]`)
+    if (!row) return
+    const rowTop = row.offsetTop
+    const rowBottom = rowTop + row.offsetHeight
+    const viewTop = box.scrollTop
+    const viewBottom = viewTop + box.clientHeight
+    const margin = 28 // 留点余量，别让行贴着上下边缘
+    if (rowTop < viewTop + margin) {
+      box.scrollTop = Math.max(0, rowTop - margin)
+    } else if (rowBottom > viewBottom - margin) {
+      box.scrollTop = rowBottom - box.clientHeight + margin
+    }
+  }, [focusedVideoId])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -216,6 +247,12 @@ export function LibraryView(props: Props) {
           <span className="text-[11.5px] text-muted">
             显示 {videos.length} / {total}
           </span>
+          <span
+            className="hidden text-[11px] text-slate-600 lg:inline"
+            title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
+          >
+            ↑↓ 移动 · Enter 选中
+          </span>
           <div className="ml-auto flex gap-2">
             <button
               className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
@@ -233,7 +270,7 @@ export function LibraryView(props: Props) {
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full min-w-[460px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
@@ -296,6 +333,7 @@ export function LibraryView(props: Props) {
                       key={video.id}
                       video={video}
                       roots={roots}
+                      focused={focusedVideoId === video.id}
                       onOpen={props.onOpen}
                       onReveal={props.onReveal}
                       onRemove={props.onRemoveVideo}
@@ -313,6 +351,7 @@ export function LibraryView(props: Props) {
                     key={video.id}
                     video={video}
                     roots={roots}
+                    focused={focusedVideoId === video.id}
                     onOpen={props.onOpen}
                     onReveal={props.onReveal}
                     onRemove={props.onRemoveVideo}
@@ -443,6 +482,7 @@ function FolderCard({
 function VideoRow({
   video,
   roots,
+  focused,
   onOpen,
   onReveal,
   onRemove,
@@ -452,6 +492,8 @@ function VideoRow({
 }: {
   video: VideoRecord
   roots: string[]
+  /** 键盘焦点所在行（↑/↓ 移动），用于显示淡灰焦点条 */
+  focused: boolean
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
@@ -488,25 +530,35 @@ function VideoRow({
           ? '索引中'
           : '待索引'
 
+  const selected = isVideoSelected(video.id)
+
   return (
     <tr
+      data-video-id={video.id}
       onClick={onToggleSelect}
       className={`cursor-pointer border-b border-line/40 transition-colors ${
-        isVideoSelected(video.id) ? 'bg-accent/12' : 'hover:bg-ink-800/40'
+        selected
+          ? 'bg-accent/12'
+          : focused
+            ? 'bg-ink-800/70'
+            : 'hover:bg-ink-800/40'
       }`}
     >
       <td className="relative px-3 py-1.5">
-        {/* 选中提示：左侧 2px 竖条（绝对定位，不占列宽），替代原先的复选框 */}
-        {isVideoSelected(video.id) && (
+        {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
+            选中 = accent 蓝条；仅键盘焦点 = 淡灰条。两者同时存在时以选中为准。 */}
+        {selected ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
-        )}
+        ) : focused ? (
+          <span className="absolute inset-y-0 left-0 w-[2px] bg-slate-500/60" />
+        ) : null}
         <div className="flex items-center gap-2.5">
           <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-ink-950">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0">
             <div
-              className={`truncate ${isVideoSelected(video.id) ? 'text-accent' : 'text-slate-100'}`}
+              className={`truncate ${selected ? 'text-accent' : 'text-slate-100'}`}
               title={video.path}
             >
               {video.name}
