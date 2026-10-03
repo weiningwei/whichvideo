@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLibrary } from './hooks/useLibrary'
 import { Header } from './components/Header'
 import { StatusBar } from './components/StatusBar'
@@ -9,8 +9,21 @@ import { SettingsPanel } from './components/SettingsPanel'
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
   const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice } = useLibrary()
-  const { hasIndexedFrames } = state
-  const { reSearch } = actions
+  const { hasIndexedFrames, groupByFolder } = state
+  const { reSearch, toggleGroupByFolder } = actions
+
+  // G 键切换分组/平铺（仅在库页面）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'g' || e.key === 'G') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
+        e.preventDefault()
+        toggleGroupByFolder()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleGroupByFolder])
 
   return (
     <div className="relative flex h-full flex-col">
@@ -70,6 +83,8 @@ export default function App() {
                 onReveal={(id) => void actions.revealVideo(id)}
                 onRemoveVideo={(id) => void actions.removeVideo(id)}
                 onReindex={(ids) => void actions.reindex(ids)}
+                groupByFolder={groupByFolder}
+                onToggleGroupByFolder={toggleGroupByFolder}
               />
             </div>
             <div className="w-[300px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">

@@ -17,6 +17,8 @@ interface Props {
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
   onReindex: (videoIds?: number[]) => void
+  groupByFolder: boolean
+  onToggleGroupByFolder: () => void
 }
 
 const STATE_STYLE: Record<string, { text: string; cls: string }> = {
@@ -27,9 +29,29 @@ const STATE_STYLE: Record<string, { text: string; cls: string }> = {
 }
 
 export function LibraryView(props: Props) {
-  const { folders, videos, total, query, onSetQuery } = props
+  const { folders, videos, total, query, onSetQuery, groupByFolder, onToggleGroupByFolder } = props
   const [folderDrop, setFolderDrop] = useState(false)
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
+
+  // 分组视图：按 folderId 聚合，null folderId 归为"未分类"
+  const groupedVideos = useMemo(() => {
+    if (!groupByFolder) return null
+    const groups = new Map<number, VideoRecord[]>()
+    for (const v of videos) {
+      const key = v.folderId ?? -1  // null folderId 归为 -1 ("未分类")
+      const arr = groups.get(key) ?? []
+      arr.push(v)
+      groups.set(key, arr)
+    }
+    // 按文件夹名称排序，未分类放最后
+    return Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === -1) return 1
+      if (b[0] === -1) return -1
+      const fa = folders.find((f) => f.id === a[0])
+      const fb = folders.find((f) => f.id === b[0])
+      return (fa?.name ?? '').localeCompare(fb?.name ?? '')
+    })
+  }, [videos, folders, groupByFolder])
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -84,6 +106,13 @@ export function LibraryView(props: Props) {
             显示 {videos.length} / {total}
           </span>
           <div className="ml-auto flex gap-2">
+            <button
+              className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
+              onClick={onToggleGroupByFolder}
+              title="按文件夹分组/平铺 (G)"
+            >
+              {groupByFolder ? '📁 分组' : '📋 平铺'}
+            </button>
             <button className="btn text-[12px] hover:bg-ink-700/70" onClick={() => props.onReindex()}>
               重建全部索引
             </button>
@@ -106,18 +135,51 @@ export function LibraryView(props: Props) {
                 <th className="px-4 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
-            <tbody>
-              {videos.map((video) => (
-                <VideoRow
-                  key={video.id}
-                  video={video}
-                  roots={roots}
-                  onOpen={props.onOpen}
-                  onReveal={props.onReveal}
-                  onRemove={props.onRemoveVideo}
-                  onReindex={(id) => props.onReindex([id])}
-                />
-              ))}
+<tbody>
+              {groupByFolder && groupedVideos ? (
+                groupedVideos.flatMap(([folderId, folderVideos]) => {
+                  const isUncategorized = folderId === -1
+                  const folder = isUncategorized ? null : folders.find((f) => f.id === folderId)
+                  const displayName = isUncategorized ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
+                  const header = (
+                    <tr key={`folder-header-${folderId}`} className="bg-ink-800/50 border-t border-line/40">
+                      <td colSpan={7} className="px-4 py-2">
+                        <div className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
+                          <span className="cursor-pointer select-none">▼</span>
+                          <span className="font-medium">{displayName}</span>
+                          <span className="ml-auto text-[11px] text-muted">
+                            {folderVideos.length} 个视频
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                  const rows = folderVideos.map((video) => (
+                    <VideoRow
+                      key={video.id}
+                      video={video}
+                      roots={roots}
+                      onOpen={props.onOpen}
+                      onReveal={props.onReveal}
+                      onRemove={props.onRemoveVideo}
+                      onReindex={(id) => props.onReindex([id])}
+                    />
+                  ))
+                  return [header, ...rows]
+                })
+              ) : (
+                videos.map((video) => (
+                  <VideoRow
+                    key={video.id}
+                    video={video}
+                    roots={roots}
+                    onOpen={props.onOpen}
+                    onReveal={props.onReveal}
+                    onRemove={props.onRemoveVideo}
+                    onReindex={(id) => props.onReindex([id])}
+                  />
+                ))
+              )}
             </tbody>
           </table>
           {videos.length === 0 && (

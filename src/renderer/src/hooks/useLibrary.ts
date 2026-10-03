@@ -35,6 +35,7 @@ export interface LibraryState {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
+  groupByFolder: boolean
 }
 
 const EMPTY_STATS: LibraryStats = {
@@ -67,6 +68,11 @@ export function useLibrary() {
   const [queryLabel, setQueryLabel] = useState<string | null>(null)
   const [lastSearchInput, setLastSearchInput] = useState<{ path?: string; dataUrl?: string; label?: string; dataUrlPreview?: string } | null>(null)
   const [videoQuery, setVideoQuery] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
+  const [groupByFolder, setGroupByFolder] = useState(false)
+
+  const toggleGroupByFolder = useCallback(() => {
+    setGroupByFolder((v) => !v)
+  }, [])
 
   const pushNotice = useCallback((level: Notice['level'], message: string) => {
     setNotices((prev) => {
@@ -302,7 +308,10 @@ export function useLibrary() {
       setVideoQuery(next: VideoQuery): void {
         setVideoQuery(next)
         void refreshVideos(next)
-      }
+      },
+      toggleGroupByFolder(): void {
+        setGroupByFolder((v) => !v)
+      },
     }),
     [withBusy, pushNotice, refreshAll, refreshFolders, refreshVideos, videoQuery]
   )
@@ -322,7 +331,8 @@ export function useLibrary() {
     searchError,
     queryImage,
     queryLabel,
-    hasIndexedFrames: (stats?.frames ?? 0) > 0
+    hasIndexedFrames: (stats?.frames ?? 0) > 0,
+    groupByFolder
   }
 
   return {
@@ -330,7 +340,8 @@ export function useLibrary() {
     videoQuery,
     actions: {
       ...actions,
-      reSearch
+      reSearch,
+      toggleGroupByFolder
     },
     runSearch,
     clearSearch,
