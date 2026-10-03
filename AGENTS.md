@@ -61,10 +61,11 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 
 ## 测试
 
-`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
+`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
 
 - `test:startup` / `test:core` / `test:portable` 内部先跑 `node scripts/build-core.mjs`，把 `src/main` 编到 **`out-e2e/`、`out-startup/`**（与发布产物 `out/` 无关，用 `tsconfig.e2e.json` / `tsconfig.startup.json`）。
 - `test:hash` 从 `out-e2e/shared/hash.js` 导入 `computeStructHash`，守住「结构指纹必须等距抽样、覆盖全部 16 行」这条性质——`encodeChannel` 曾因顺序填 bit 而只覆盖上半张图。改 `hash.ts` 的网格或抽样逻辑后务必跑它。
+- `test:scale` 守住「指纹尺度不变」：视频帧抽到 320 宽、查询图保持原分辨率，两者靠 `toGray` 的盒式重采样 + 均值归一化对齐。改 `toGray` 的采样方式或 `EXTRACT_WIDTH` 时务必跑它。
 - 沙箱里 `build-core.mjs` 清空 `out-e2e` 可能被安全删除守卫拦下（文件数超阈值），此时手动逐个跑 `node scripts/test-xxx.mjs` 即可，不要当成测试失败。
 - 受限沙箱禁止子进程管道时，`test:core` 依赖真实 ffmpeg 管道的用例会 SKIP 并说明原因，核心链路仍验证。
 - `scripts/lib/electron-stub.mjs` 是测试用的 Electron 桩；主进程自检在纯 Node 下跑，无需安装 Electron 运行时。
