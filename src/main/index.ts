@@ -22,6 +22,7 @@ import {
 import type { ImageDataLike } from '@shared/hash'
 import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
 import { readClipboardImageBytes } from './clipboard'
+import { describeUrlForLog, fetchImageFromUrl } from './url-image'
 
 installCrashHandlers()
 
@@ -550,6 +551,35 @@ function registerIpc(): void {
     // 必须把图片一起回传：渲染端左上角那格要显示"刚才是哪张图"，
     // 只回结果的话界面那一格会一直空着（用户以为根本没读到剪贴板）。
     return { dataUrl: image.toDataURL(), response: performSearch(image, '剪贴板') }
+  })
+
+  // 链接输入：URL → 字节 → NativeImage，之后与其它三条输入完全同一条链路。
+  // 失败时把原因作为 error 返回（界面直接显示），而不是抛异常——用户能看懂
+  // "网页里没找到图片"比"Error invoking remote method"有用得多。
+  ipcMain.handle(IPC.searchUrl, async (_e, url: string) => {
+    const started = Date.now()
+    const result = await fetchImageFromUrl(String(url ?? ''))
+    if (!result.ok || !result.data) {
+      log(`检索(链接)失败：${result.message}`)
+      const size = { width: 0, height: 0 }
+      return { ...emptyResponse(size.width, size.height, started), error: result.message }
+    }
+
+    const image = nativeImage.createFromBuffer(result.data)
+    if (image.isEmpty()) {
+      const message = '图片已下载但无法解码（可能不是有效的图片格式）'
+      log(`检索(链接)：${message} — ${describeUrlForLog(result)}`)
+      return { ...emptyResponse(0, 0, started), error: message }
+    }
+
+    const size = image.getSize()
+    log(`检索(链接)：${describeUrlForLog(result)} → ${size.width}x${size.height}`)
+    // 把来源链接写进 queryLabel，界面顶部能显示"正在搜：https://…"
+    const response = performSearch(image, '链接')
+    return {
+      ...response,
+      queryImageUrl: result.finalUrl ?? String(url)
+    }
   })
 }
 

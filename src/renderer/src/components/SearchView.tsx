@@ -14,6 +14,8 @@ interface Props {
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
   onSearchClipboard: () => void
+  /** 从 http(s) 链接取图并检索（图片直链或普通网页均可） */
+  onSearchUrl: (url: string) => void
   onReSearch: () => void
   onClear: () => void
   onOpen: (videoId: number) => void
@@ -42,6 +44,22 @@ export function SearchView(props: Props) {
 
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
+  /** 链接输入框的内容（图片直链或网页地址） */
+  const [urlInput, setUrlInput] = useState('')
+
+  /**
+   * 提交链接检索。
+   *
+   * 清空输入框而不是保留：URL 又长又占地方，检索完用户关心的是结果卡片；
+   * 需要重搜同一张图时结果卡片与顶部"重新搜索"按钮已经够用。
+   * 真要再搜同一个链接，重新粘贴更省事。
+   */
+  const submitUrl = () => {
+    const url = urlInput.trim()
+    if (!url || searching) return
+    setUrlInput('')
+    props.onSearchUrl(url)
+  }
 
   // Ctrl+V 粘贴图片
   useEffect(() => {
@@ -106,7 +124,9 @@ export function SearchView(props: Props) {
             {queryImage ? (
               <img src={queryImage} alt="查询图片" className="h-full w-full object-cover" />
             ) : (
-              <span className="px-2 text-center text-[11px] text-slate-500">拖入 / 粘贴图片</span>
+              <span className="px-2 text-center text-[11px] text-slate-500">
+                {queryLabel?.startsWith('http') ? '来自链接' : '拖入 / 粘贴图片'}
+              </span>
             )}
           </div>
 
@@ -149,6 +169,32 @@ export function SearchView(props: Props) {
                 </button>
               )}
               {searching && <span className="self-center text-[12px] text-accent">比对中…</span>}
+            </div>
+
+            {/* 链接输入：贴图片直链或普通网页都行，主进程会解析出主图后检索 */}
+            <div className="mt-2.5 flex items-center gap-2">
+              <input
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    submitUrl()
+                  }
+                }}
+                placeholder="粘贴图片链接或网页地址，回车检索"
+                spellCheck={false}
+                disabled={searching}
+                className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-slate-600 focus:border-accent/60 disabled:opacity-50"
+              />
+              <button
+                className="btn shrink-0 px-2.5 py-1.5 text-[12px] hover:bg-ink-700/70"
+                disabled={searching || !urlInput.trim()}
+                onClick={submitUrl}
+                title="从链接取图并检索（支持 og:image、网页首图）"
+              >
+                链接检索
+              </button>
             </div>
             {search && search.comparedFrames === 0 && (
               <div className="mt-2 text-[11.5px] text-warn">

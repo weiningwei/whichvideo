@@ -290,6 +290,7 @@ export default mod
     onSearchPath: noop,
     onSearchDataUrl: noop,
     onSearchClipboard: noop,
+    onSearchUrl: noop,
     onClear: noop,
     onOpen: noop,
     onReveal: noop,
@@ -300,6 +301,58 @@ export default mod
   check('搜索页渲染选择图片按钮', emptyHtml.includes('选择图片文件'))
   check('搜索页渲染使用剪贴板按钮', emptyHtml.includes('使用剪贴板图片'))
   check('搜索页渲染三步引导', emptyHtml.includes('建立索引') && emptyHtml.includes('丢一张图进来'))
+
+  // ---- 链接输入 ----
+  check(
+    '搜索页有链接输入框（占位文案说明支持网页）',
+    emptyHtml.includes('粘贴图片链接或网页地址'),
+    'placeholder 提示可贴图片或网页'
+  )
+  check('搜索页有「链接检索」按钮', emptyHtml.includes('链接检索'))
+  check(
+    '链接输入框初始为空且按钮禁用（无内容时不可提交）',
+    emptyHtml.includes('placeholder="粘贴图片链接或网页地址，回车检索"') &&
+      /<button[^>]*disabled[^>]*>\s*链接检索/.test(emptyHtml),
+    '空链接时按钮 disabled'
+  )
+  check(
+    '链接输入框在检索进行中禁用',
+    /<input[^>]*placeholder="粘贴图片链接或网页地址[^>]*disabled/.test(emptyHtml) ||
+      /<input[^>]*disabled[^>]*placeholder="粘贴图片链接或网页地址/.test(emptyHtml),
+    '避免重复提交'
+  )
+  // 链接检索后：没有预览图（主进程不回字节），但要显示来源链接
+  const urlHtml = render(
+    jsx(SearchView, {
+      ...searchBase,
+      queryImage: null,
+      queryLabel: 'https://cdn.example.com/poster.jpg',
+      searching: false
+    })
+  )
+  check(
+    '链接检索后显示来源链接作为标题',
+    urlHtml.includes('https://cdn.example.com/poster.jpg'),
+    '顶部显示实际取图的地址'
+  )
+  check(
+    '链接检索后左上角那格提示「来自链接」而非空白',
+    urlHtml.includes('来自链接'),
+    '没有预览图时给出占位说明'
+  )
+  // 失败提示
+  const urlFailHtml = render(
+    jsx(SearchView, {
+      ...searchBase,
+      searching: false,
+      error: '这个网页里没找到图片（og:image 与 <img> 都没有）'
+    })
+  )
+  check(
+    '链接取图失败时把主进程给的原因原样显示',
+    urlFailHtml.includes('这个网页里没找到图片'),
+    '错误文案透出，不显示成 IPC 调用异常'
+  )
 
   /* ---------- 3. 命中态 ---------- */
   const hitHtml = render(

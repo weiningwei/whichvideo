@@ -220,12 +220,18 @@ export function useLibrary() {
   }, [indexerRunning, refreshVideos])
 
   const runSearch = useCallback(
-    async (input: { path?: string; dataUrl?: string; label?: string; dataUrlPreview?: string }) => {
+    async (input: {
+      path?: string
+      dataUrl?: string
+      url?: string
+      label?: string
+      dataUrlPreview?: string
+    }) => {
       setLastSearchInput(input)
       setSearching(true)
       setSearchError(null)
       try {
-        // 三种来源分别处理，是为了各自拿到"查询图预览"：
+        // 各来源分别处理，是为了各自拿到"查询图预览"：
         // 剪贴板那次主进程会把图片一起回传，否则左上角那格永远是空的。
         if (input.path) {
           const response = await window.whichvideo.search.byPath(input.path)
@@ -237,6 +243,17 @@ export function useLibrary() {
           setSearch(response)
           setQueryImage(input.dataUrlPreview ?? input.dataUrl)
           setQueryLabel(input.label ?? '图片')
+        } else if (input.url) {
+          const response = await window.whichvideo.search.byUrl(input.url)
+          setSearch(response)
+          // 链接输入拿不到图片预览（主进程只回文本结果，不回字节，避免
+          // 10MB 的图再 base64 一遍过 IPC）。左上角那格显示链接占位。
+          setQueryImage(null)
+          // queryImageUrl 可能是重定向后或网页里解析出的真实图片地址，
+          // 优先用它，界面上更便于核对到底搜的是哪张图。
+          setQueryLabel(response.queryImageUrl ?? input.label ?? input.url)
+          // 失败原因由主进程给出（协议不支持 / 超时 / 网页里没图等），原样透出
+          if (response.error) setSearchError(response.error)
         } else {
           const clipboard = await window.whichvideo.search.byClipboard()
           if (!clipboard) {

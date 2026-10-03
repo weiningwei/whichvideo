@@ -132,6 +132,13 @@ export interface SearchResponse {
   /** 是否存在分数可接受的匹配 */
   found: boolean
   matches: SearchMatch[]
+  /** 检索失败时的原因（成功时无此字段）。链接输入失败会带上具体说明 */
+  error?: string
+  /**
+   * 链接输入时记录实际取图的地址（可能与用户贴的不同：跟随过重定向，
+   * 或从网页里解析出了主图）。界面用它显示"正在搜：https://…"，便于核对来源。
+   */
+  queryImageUrl?: string
 }
 
 /**
@@ -299,6 +306,12 @@ export interface WhichVideoApi {
     byDataUrl(dataUrl: string): Promise<SearchResponse>
     /** 剪贴板里没有图片时返回 null；否则返回图片预览 + 检索结果 */
     byClipboard(): Promise<ClipboardSearchResult | null>
+    /**
+     * 从 http(s) 链接取图并检索。支持图片直链，也支持普通网页
+     * （依次尝试 og:image、twitter:image、link[rel=image_src]、首个 <img>）。
+     * 失败时 error 字段说明原因（协议不支持 / 超时 / 体积超限 / 网页里没图等）。
+     */
+    byUrl(url: string): Promise<SearchResponse>
   }
   events: {
     /** 订阅库变化事件；返回取消订阅函数 */
@@ -332,5 +345,6 @@ export const IPC = {
   searchPath: 'search:path',
   searchDataUrl: 'search:data-url',
   searchClipboard: 'search:clipboard',
+  searchUrl: 'search:url',
   eventChannel: 'library:event'
 } as const

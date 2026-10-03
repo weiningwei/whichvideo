@@ -34,7 +34,8 @@ const api: WhichVideoApi = {
   search: {
     byPath: (filePath: string) => ipcRenderer.invoke(IPC.searchPath, filePath),
     byDataUrl: (dataUrl: string) => ipcRenderer.invoke(IPC.searchDataUrl, dataUrl),
-    byClipboard: () => ipcRenderer.invoke(IPC.searchClipboard)
+    byClipboard: () => ipcRenderer.invoke(IPC.searchClipboard),
+    byUrl: (url: string) => ipcRenderer.invoke(IPC.searchUrl, url)
   },
   events: {
     subscribe: (listener: (event: LibraryEvent) => void) => {
