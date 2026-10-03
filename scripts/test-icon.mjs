@@ -195,8 +195,104 @@ function main() {
     '图标不会被 build 清空 out/ 时删掉'
   )
 
+  checkPackagedExe(icoPath)
+
   console.log(`\n=== 应用图标：${passed}/${passed + failed} 通过 ===`)
   if (failed) process.exit(1)
+}
+
+/**
+ * 检查已打包的 exe 里**确实烧进了图标资源**。
+ *
+ * 必要性：win.icon 只在打包时被 electron-builder 读一次并写进 exe 的资源节，
+ * 与运行期无关。所以「任务栏有图标但 exe 没图标」完全可能——前者来自
+ * BrowserWindow 的 icon（运行期读 out/icon.ico），后者来自打包配置，
+ * 两条路径互不相干。
+ *
+ * 而 exe 图标一旦不对，Windows 会按路径缓存旧图标，重打一次包也看不到变化
+ * （见 AGENTS.md「图标看起来没生效」一节）。这里做二进制级校验，
+ * 让"图标在 exe 里"不靠肉眼判断。
+ */
+function checkPackagedExe(icoPath) {
+  console.log('')
+  console.log('=== 已打包 exe 内确有图标资源 ===')
+  const candidates = [
+    { p: join(root, 'release', 'win-unpacked', 'WhichVideo.exe'), label: 'release/win-unpacked' },
+    { p: join(root, '..', 'WhichVideo-portable', 'WhichVideo.exe'), label: '仓库外便携版' }
+  ].filter((c) => existsSync(c.p))
+
+  if (candidates.length === 0) {
+    check('（未找到已打包的 exe，跳过二进制校验）', true, '先跑 pnpm build:unpack 或 build:portable')
+    return
+  }
+
+  const icoBuf = readFileSync(icoPath)
+  const icoSizes = new Set()
+  for (let i = 0; i < icoBuf.readUInt16LE(4); i++) icoSizes.add(icoBuf.readUInt32LE(6 + i * 16 + 8))
+  const sorted = (s) => [...s].sort((a, b) => a - b).join(', ')
+
+  for (const { p: exePath, label } of candidates) {
+    const buf = readFileSync(exePath)
+    const peOff = buf.readUInt32LE(0x3c)
+    if (buf.toString('ascii', peOff, peOff + 4) !== 'PE  ') {
+      check(`${label} 是有效的 PE 文件`, false)
+      continue
+    }
+    const nSec = buf.readUInt16LE(peOff + 6)
+    const optSize = buf.readUInt16LE(peOff + 20)
+    const optOff = peOff + 24
+    const rsrcRva = buf.readUInt32LE(optOff + 112 + 16)
+    const secs = []
+    for (let i = 0; i < nSec; i++) {
+      const s = peOff + 24 + optSize + i * 40
+      secs.push({ va: buf.readUInt32LE(s + 12), vs: buf.readUInt32LE(s + 8), pr: buf.readUInt32LE(s + 20) })
+    }
+    const toOff = (rva) => {
+      for (const s of secs) if (rva >= s.va && rva < s.va + Math.max(s.vs, 1)) return s.pr + (rva - s.va)
+      return -1
+    }
+    const base = toOff(rsrcRva)
+    if (base < 0) {
+      check(`${label} 有资源节`, false, 'rsrc RVA 不在任何节内')
+      continue
+    }
+    // 资源目录是三层：类型 → 名称/ID → 语言
+    const list = (o) => {
+      const n = buf.readUInt16LE(o + 12) + buf.readUInt16LE(o + 14)
+      const out = []
+      for (let i = 0; i < n; i++) {
+        const e = o + 16 + i * 8
+        out.push({
+          id: buf.readUInt32LE(e) & 0x7fffffff,
+          off: buf.readUInt32LE(e + 4) & 0x7fffffff,
+          isDir: (buf.readUInt32LE(e + 4) & 0x80000000) !== 0
+        })
+      }
+      return out
+    }
+    const iconType = list(base).find((e) => e.id === 3 && e.isDir) // RT_ICON = 3
+    if (!iconType) {
+      check(`${label} 含 RT_ICON 资源`, false, '打包时没读到 win.icon')
+      continue
+    }
+    const pngSizes = new Set()
+    for (const lv2 of list(base + iconType.off)) {
+      if (!lv2.isDir) continue
+      for (const lang of list(base + lv2.off)) {
+        const leaf = base + lang.off
+        const dataOff = toOff(buf.readUInt32LE(leaf))
+        const dataSize = buf.readUInt32LE(leaf + 4)
+        if (dataOff >= 0 && buf[dataOff] === 0x89) pngSizes.add(dataSize)
+      }
+    }
+    check(`${label} 的 exe 里烧进了 ${pngSizes.size} 张 PNG 图标`, pngSizes.size > 0, sorted(pngSizes) + ' 字节')
+    const same = pngSizes.size === icoSizes.size && [...pngSizes].every((s) => icoSizes.has(s))
+    check(
+      `${label} 的图标与 build/icon.ico 完全一致（不是默认图标）`,
+      same,
+      same ? '逐个字节数吻合' : `exe: ${sorted(pngSizes)} / ico: ${sorted(icoSizes)}`
+    )
+  }
 }
 
 main()

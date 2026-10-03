@@ -103,6 +103,21 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 `pnpm build` 的**末尾**跑 `pnpm icon`：`electron-vite build` 会清空 `out/`，放在前面生成会被删掉。
 16×16 是纯像素光栅化（无抗锯齿）的辨识极限，32px 以上很干净——不要为了 16px 去加粗角臂，那会让四角连成方框。
 
+**「任务栏有图标但 exe 还是默认的」不是打包问题，是 Windows 图标缓存。** 两处图标是**互不相干的两条路径**：
+
+- 任务栏 / 窗口图标 = BrowserWindow 的 `icon`，运行期读 `out/icon.ico`（随包走）
+- exe 文件 / 快捷方式图标 = electron-builder 打包时读 `win.icon`，**烧进 exe 资源节**，与运行期无关
+
+先跑 `pnpm test:icon`——它会直接解析 exe 的 PE 资源节，列出 RT_ICON 下每张图的字节数并与 `build/icon.ico` 逐一比对。若显示「7 张 PNG 图标 / 完全一致」，说明打包是好的，**不用重打包**，按下面清缓存即可：
+
+```bash
+# 1) 清图标缓存（icache 是图标缓存服务，删掉后资源管理器会自动重建）
+taskkill /f /im explorer.exe && del /f /q "%localappdata%IconCache.db" \n  && del /f /q "%localappdata%MicrosoftWindowsExplorericoncache_*.db"
+start explorer.exe
+```
+
+还有两处缓存会骗人：**任务栏固定项**（取消固定 → 重新固定）与**桌面快捷方式**（删掉旧的 `.lnk` 再重新创建，`.lnk` 自身也缓存图标）。改了 exe 后若仍是旧图标，先清缓存再怀疑打包。
+
 ## 项目结构（主进程链路）
 
 `src/main/index.ts`（窗口/IPC/生命周期）→ `db.ts`（SQLite）· `search.ts`（常驻内存帧索引+打分）· `indexer.ts`（抽帧队列）· `watcher.ts`（chokidar）· `media.ts`（ffmpeg/ffprobe 查找）· `scan.ts`（目录扫描）· `datadir.ts`（便携目录判定）· `logger.ts`（日志）。

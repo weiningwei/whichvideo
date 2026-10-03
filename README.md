@@ -348,7 +348,7 @@ IPC），左上角那格显示「来自链接」，顶部显示实际取图的�
 | `pnpm test:hash` | 结构指纹覆盖度自检（12 项）：指纹必须覆盖全部 16 行、上下半判别力对称、纯色退化性质未回归 |
 | `pnpm test:path` | 路径格式化自检（23 项）：shortDir 只取目录、文件在根目录时不截断文件名、正反斜杠与大小写兼容 |
 | `pnpm test:theme` | 配色 token 自检（25 项）：组件无固定色、深浅两套 token 齐备、旧名映射、主题切换机制 |
-| `pnpm test:icon` | 图标自检（25 项）：ICO 结构与 7 个尺寸、两份 ico 同步、favicon 同源、win.icon / BrowserWindow icon 接线 |
+| `pnpm test:icon` | 图标自检（29 项）：ICO 结构与 7 个尺寸、两份 ico 同步、favicon 同源、接线检查，以及解析已打包 exe 的 PE 资源节确认图标真的烧进去了 |
 | `pnpm icon` | 重新生成应用图标（build/ 与 out/ 各一份 ico + favicon），改图形后跑 |
 | `pnpm test:url` | 链接取图自检（26 项）：og:image 等四种主图来源、相对地址转绝对、跳过占位图、协议白名单（拒绝 file:/data:） |
 | `pnpm test:scale` | 分辨率不变性自检（6 项）：同一画面在 160~2560 宽之间结构距离恒为 0，而不同画面仍拉得开 |
