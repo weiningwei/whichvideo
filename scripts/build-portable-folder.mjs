@@ -229,21 +229,31 @@ function stamp() {
  * 因为主进程 JS 压根没跑起来。
  */
 function assertBuildOutput() {
+  // 默认校验发布产物 out/；自检可用 WHICHVIDEO_BUILD_DIR 指向 tsc 产物（结构一致）
+  const buildDir = process.env.WHICHVIDEO_BUILD_DIR
+    ? resolve(process.env.WHICHVIDEO_BUILD_DIR)
+    : join(root, 'out')
   const required = [
-    ['主进程', join(root, 'out', 'main', 'index.js')],
-    ['渲染页面', join(root, 'out', 'renderer', 'index.html')],
+    ['主进程', join(buildDir, 'main', 'index.js')],
+    ['渲染页面', join(buildDir, 'renderer', 'index.html')],
     [
       'preload',
-      [join(root, 'out', 'preload', 'index.mjs'), join(root, 'out', 'preload', 'index.js')].find((p) =>
+      [join(buildDir, 'preload', 'index.mjs'), join(buildDir, 'preload', 'index.js')].find((p) =>
         existsSync(p)
-      ) ?? join(root, 'out', 'preload', 'index.mjs')
-    ]
+      ) ?? join(buildDir, 'preload', 'index.mjs')
+    ],
+    // 惰性加载的核心模块必须都在：漏了就是一个"运行到某功能才炸"的坑。
+    // （入口由 electron.vite.config.ts 扫描 src/main 自动生成，这里再兜一层）
+    ...readdirSync(join(root, 'src', 'main'))
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts'))
+      .map((f) => [`核心模块 ${f}`, join(buildDir, 'main', f.replace(/\.ts$/, '.js'))])
   ]
   const missing = required.filter(([, file]) => !existsSync(file))
   if (missing.length === 0) {
-    for (const [label, file] of required) {
+    for (const [label, file] of required.slice(0, 3)) {
       console.log(`  ✓ 编译产物就绪：${label}（${relative(root, file)}）`)
     }
+    console.log(`  ✓ 编译产物就绪：核心模块共 ${required.length - 3} 个（${relative(root, buildDir)} 下均有对应 .js）`)
     return
   }
   const missingList = missing.map(([label, file]) => `${label}: ${relative(root, file)}`)
@@ -424,7 +434,10 @@ function main() {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
   const skipBuildCheck = process.env.WHICHVIDEO_SKIP_BUILD_CHECK === '1'
-  if (!skipBuildCheck && existsSync(join(root, 'out'))) {
+  // 注意：不要加 existsSync(out) 之类的短路条件。
+  // 之前写成"out 存在才检查"，结果 out 整个缺失时反而跳过校验直接打包，
+  // 正好漏掉最该拦住的那种情况（自检场景 4 就是为了防这个）。
+  if (!skipBuildCheck) {
     assertBuildOutput()
   }
 

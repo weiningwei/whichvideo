@@ -18,7 +18,7 @@
  * 运行： node scripts/test-portable-builder.mjs
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,6 +26,31 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const builder = join(root, 'scripts', 'build-portable-folder.mjs')
 const work = join(root, 'tmp', 'portable-builder-test')
+/** 自检用的"构建产物"目录：放占位文件即可，结构与发布产物 out/ 一致 */
+const stubBuildDir = join(work, 'build')
+
+function ensureStubBuild() {
+  mkdirSync(join(stubBuildDir, 'main'), { recursive: true })
+  mkdirSync(join(stubBuildDir, 'renderer'), { recursive: true })
+  mkdirSync(join(stubBuildDir, 'preload'), { recursive: true })
+  for (const f of ['main/index.js', 'renderer/index.html', 'preload/index.js']) {
+    const target = join(stubBuildDir, f)
+    if (!existsSync(target)) {
+      if (f === 'main/index.js') {
+        // 主进程产物里带上 require('./x')，用于验证"产物完整性"这条校验真的生效
+        writeFileSync(target, "require('./db')\n")
+      } else {
+        writeFileSync(target, '// stub\n')
+      }
+    }
+  }
+  // 核心模块占位（对应 src/main/*.ts 的编译产物）
+  for (const f of readdirSync(join(root, 'src', 'main'))) {
+    if (!f.endsWith('.ts') || f.endsWith('.d.ts')) continue
+    const target = join(stubBuildDir, 'main', f.replace(/\.ts$/, '.js'))
+    if (!existsSync(target) && f !== 'index.ts') writeFileSync(target, '// stub\n')
+  }
+}
 
 let failed = 0
 let passed = 0
@@ -45,8 +70,11 @@ function check(name, ok, detail = '') {
  * stdio 全部继承：受限环境里给子进程建管道会 EPERM，
  * 结果通过 WHICHVIDEO_TEST_REPORT 指向的 JSON 文件回传。
  */
-function runBuilder(releaseDir, extraEnv = {}) {
+function runBuilder(releaseDir, extraEnv = {}, { prepareStub = true } = {}) {
   const reportPath = join(work, `report-${Math.random().toString(36).slice(2)}.json`)
+  // 自检用占位产物目录，结构与发布产物 out/ 一致，让产物校验能正常通过。
+  // 场景 4 故意删文件验证"缺产物必须拒绝打包"，所以要能跳过补齐。
+  if (prepareStub) ensureStubBuild()
   try {
     execFileSync(process.execPath, [builder], {
       cwd: root,
@@ -54,6 +82,7 @@ function runBuilder(releaseDir, extraEnv = {}) {
         ...process.env,
         WHICHVIDEO_RELEASE_DIR: releaseDir,
         WHICHVIDEO_TEST_REPORT: reportPath,
+        WHICHVIDEO_BUILD_DIR: stubBuildDir,
         // 自检不真的跑 electron-builder（耗时且需要 Electron 二进制）
         WHICHVIDEO_SKIP_ELECTRON_BUILDER: '1',
         ...extraEnv
@@ -169,14 +198,14 @@ function main() {
   {
     const releaseDir = join(work, 'guard')
     prepareLayout(releaseDir)
-    const preloadMjs = join(root, 'out', 'preload', 'index.mjs')
-    const preloadJs = join(root, 'out', 'preload', 'index.js')
-    const backup = join(work, 'preload-backup')
-    const source = existsSync(preloadMjs) ? preloadMjs : preloadJs
-    const hadPreload = existsSync(source)
-    if (hadPreload) renameSync(source, backup)
+
+    // 4a) 关键产物缺失：临时移走占位产物里的 preload
+    const preloadStub = join(stubBuildDir, 'preload', 'index.js')
+    const backup = join(work, 'moved-aside')
+    const hadPreload = existsSync(preloadStub)
+    if (hadPreload) renameSync(preloadStub, backup)
     try {
-      const r = runBuilder(releaseDir)
+      const r = runBuilder(releaseDir, {}, { prepareStub: false })
       check('产物缺失时打包失败', !r.ok, r.ok ? '却成功了' : '')
       check(
         '报告里说明是编译产物缺失',
@@ -186,10 +215,28 @@ function main() {
       check(
         '报告列出了缺失的产物',
         Array.isArray(r.report?.missing) && r.report.missing.some((m) => /preload/i.test(m)),
-        (r.report?.missing ?? []).join(' | ')
+        (r.report?.missing ?? []).slice(0, 3).join(' | ')
       )
     } finally {
-      if (hadPreload) renameSync(backup, source)
+      if (hadPreload) renameSync(backup, preloadStub)
+    }
+
+    // 4b) 整个构建目录不存在时也不能跳过校验（曾经因为加了 existsSync 短路而漏掉）
+    const buildBackup = join(work, 'build-backup')
+    const hadBuild = existsSync(stubBuildDir)
+    if (hadBuild) renameSync(stubBuildDir, buildBackup)
+    try {
+      const r = runBuilder(releaseDir, {}, { prepareStub: false })
+      check('产物目录整个缺失时同样拒绝打包', !r.ok, r.ok ? '却成功了（校验被跳过）' : '')
+      check(
+        '此时报告的原因仍是编译产物缺失',
+        r.report?.reason === 'missing-build-output',
+        String(r.report?.reason)
+      )
+    } finally {
+      // 无条件恢复：即使 hadBuild 判断与实际不符也不会把占位产物留在备份里
+      if (existsSync(buildBackup) && !existsSync(stubBuildDir)) renameSync(buildBackup, stubBuildDir)
+      ensureStubBuild()
     }
   }
 
@@ -210,4 +257,11 @@ function main() {
   if (failed) process.exit(1)
 }
 
-main()
+// 自检自身出错时也要可见（之前异常被静默吞掉，导致 out/ 没恢复都没人知道）
+try {
+  main()
+} catch (err) {
+  console.error('\n自检脚本自身抛错：')
+  console.error(err instanceof Error ? (err.stack ?? err.message) : String(err))
+  process.exit(1)
+}

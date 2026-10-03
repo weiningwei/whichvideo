@@ -54,7 +54,7 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 
 - **`electron.vite.config.ts` 禁用 `__dirname` 与 `import.meta.dirname`**：electron-vite 按 `package.json` 的 `type` 字段决定用 ESM/CJS 解析配置，二者混用会加载失败。别名 `@shared` 要在 **main / preload / renderer 三段各自声明**，`@renderer` 只在 renderer 段。`pnpm test:config` 静态检查这些。
 - **better-sqlite3 用 Node-API 预编译二进制**，Node 与 Electron 通用。`electron-builder.yml` 里 `npmRebuild: false` 是刻意关闭 `@electron/rebuild`（它在某些沙箱会 `spawn EPERM` 导致打包中断）。确需重建用 `pnpm rebuild:native`。
-- **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。
+- **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
 - `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
 
 ## 测试

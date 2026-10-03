@@ -93,6 +93,20 @@ function main() {
   check('配置没有真的使用 import.meta.dirname', !configCode.includes('import.meta.dirname'))
   check('配置校验了工作目录', configCode.includes('process.cwd()') && configCode.includes('existsSync'))
 
+  // 5) 主进程入口必须自动收集，不能退回手写列表
+  //    历史上手写 7 个入口，新增 src/main/xxx.ts 后漏掉，运行时报 Cannot find module。
+  check(
+    '主进程入口由扫描 src/main 自动生成',
+    configCode.includes('mainEntries') && configCode.includes('readdirSync'),
+    '不应手写入口列表'
+  )
+  check(
+    '主进程产物启用 preserveModules（一个模块一个文件）',
+    configCode.includes('preserveModules'),
+    '否则共享模块会被复制进多个入口，logger 这类模块级状态会分裂'
+  )
+  check('配置没有手写 datadir.ts 入口', !configCode.includes("'datadir.ts'"))
+
   console.log(`\n=== 打包配置：${passed}/${passed + failed} 通过 ===`)
   process.exit(failed ? 1 : 0)
 }

@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { basename, extname, resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -18,6 +18,32 @@ if (!existsSync(pathOf('src', 'main', 'index.ts'))) {
   )
 }
 
+/**
+ * 自动收集主进程入口，**不要**改回手写列表。
+ *
+ * 为什么：src/main/index.ts 用 `require('./db')` 这类字面量惰性加载核心模块
+ * （为了捕获原生模块加载失败并落日志）。Rollup 单入口构建不会把这些文件纳入产物，
+ * 于是 out/main 里只有 index.js，运行时报 "Cannot find module './db'"，
+ * 表现为窗口标题「启动失败」。
+ *
+ * 历史教训：这里曾经是手写的 7 个入口列表，新增 src/main/xxx.ts 后必然漏掉，
+ * 而且是**运行时才暴露**（构建不报错）。改成扫描整个目录后，新增文件自动纳入。
+ * 配套还有 scripts/test-build-output.mjs 做构建后校验，双重兜底。
+ */
+function mainEntries(): Record<string, string> {
+  const dir = pathOf('src', 'main')
+  const entries: Record<string, string> = {}
+  for (const file of readdirSync(dir)) {
+    if (extname(file) !== '.ts') continue
+    if (file.endsWith('.d.ts')) continue
+    entries[basename(file, '.ts')] = resolve(dir, file)
+  }
+  if (!entries.index) {
+    throw new Error(`src/main 下没有找到 index.ts（目录：${dir}）`)
+  }
+  return entries
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -28,18 +54,21 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        // index.ts 用动态 require('./db') 等惰性加载核心模块（见 src/main/index.ts 的
-        // loadCoreModules），Rollup 不会把动态 require 纳入单入口产物，必须把这些模块
-        // 也列为入口，否则打包后 out/main 里只有 index.js，运行时报
-        // "Cannot find module './db'" —— 表现为窗口标题「启动失败」。
-        input: {
-          index: pathOf('src', 'main', 'index.ts'),
-          db: pathOf('src', 'main', 'db.ts'),
-          search: pathOf('src', 'main', 'search.ts'),
-          indexer: pathOf('src', 'main', 'indexer.ts'),
-          watcher: pathOf('src', 'main', 'watcher.ts'),
-          media: pathOf('src', 'main', 'media.ts'),
-          datadir: pathOf('src', 'main', 'datadir.ts')
+        input: mainEntries(),
+        output: {
+          // 关键：主进程产物必须"一个模块一个文件"。
+          //
+          // 为什么不能用默认的打包方式：
+          // 1) 多入口时 Rollup 会把共享模块**复制**进每个入口。logger.ts 里有模块级状态
+          //    （初始化前先缓冲日志的 pending 数组），被复制成多份后，index.js 里的
+          //    bootstrapLogger() 与后续 relocateLogger() 可能操作到不同实例，
+          //    表现为"早期日志莫名其妙丢失"——构建不报错，只在运行时显现。
+          // 2) logger.ts / scan.ts 这类文件若不是入口，会被内联进 index.js；
+          //    一旦入口列表漏了某个文件，运行时才报 Cannot find module（历史上就漏过）。
+          // preserveModules 让 out/main 与 src/main 一一对应，require('./x') 稳定命中同名文件。
+          preserveModules: true,
+          preserveModulesRoot: pathOf('src', 'main'),
+          entryFileNames: '[name].js'
         }
       }
     }
