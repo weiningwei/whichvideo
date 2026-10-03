@@ -673,6 +673,33 @@ function resolvePreloadPath(): string {
   return candidates[0]
 }
 
+/**
+ * 解析应用图标，返回给 BrowserWindow 用。
+ *
+ * 图标由 scripts/generate-icon.mjs 生成，一份在 build/icon.ico（electron-builder
+ * 读它做 exe 与快捷方式图标），一份在 out/icon.ico（随包走，运行期读它）。
+ *
+ * 为什么需要两处：electron-builder 的 files 只含 out/**、package.json、LICENSE，
+ * 打包后仓库根的 build/ 在 asar 外不可达。若只放 build/，开发态（pnpm dev）
+ * 能拿到图标，但绿色版（win-unpacked 直接跑 exe）的任务栏与标题栏
+ * 会退回 Electron 默认图标。
+ *
+ * 找不到就返回 undefined 用默认图标，不影响启动。
+ */
+function resolveIconPath(): string | undefined {
+  const candidates = [
+    join(__dirname, '../icon.ico'), // 打包后 / 构建后：out/main → out/icon.ico
+    join(__dirname, '../../build/icon.ico'), // 开发态：out/main → 仓库根/build
+    join(__dirname, '../../../build/icon.ico')
+  ]
+  const found = candidates.find((p) => existsSync(p))
+  if (!found) {
+    log('[WARN] 未找到应用图标，窗口将使用默认图标。已尝试：' + candidates.join('、'))
+    return undefined
+  }
+  return found
+}
+
 function createWindow(): void {
   log('创建主窗口')
   mainWindow = new BrowserWindow({
@@ -683,6 +710,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0b0f17',
     title: 'WhichVideo · 以图搜视频',
+    icon: resolveIconPath(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: resolvePreloadPath(),
@@ -745,6 +773,7 @@ function showFatalInWindow(message: string): void {
         height: 620,
         backgroundColor: '#0b0f17',
         title: 'WhichVideo 启动失败',
+        icon: resolveIconPath(),
         autoHideMenuBar: true,
         webPreferences: { sandbox: false, contextIsolation: true, nodeIntegration: false }
       })

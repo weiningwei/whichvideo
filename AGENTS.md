@@ -61,12 +61,13 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 
 ## 测试
 
-`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
+`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:icon → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
 
 - `test:startup` / `test:core` / `test:portable` 内部先跑 `node scripts/build-core.mjs`，把 `src/main` 编到 **`out-e2e/`、`out-startup/`**（与发布产物 `out/` 无关，用 `tsconfig.e2e.json` / `tsconfig.startup.json`）。
 - `test:hash` 从 `out-e2e/shared/hash.js` 导入 `computeStructHash`，守住「结构指纹必须等距抽样、覆盖全部 16 行」这条性质——`encodeChannel` 曾因顺序填 bit 而只覆盖上半张图。改 `hash.ts` 的网格或抽样逻辑后务必跑它。
 - `test:path` 转译渲染端后测 `format.ts` 的路径处理，守住「shortDir 不含文件名」与「文件在根目录时 lastIndexOf 返回 -1 不截断文件名」两条性质。改 `shortDir`/`shortPath` 前必须跑它。
 - `test:url` 测 `main/url-image.ts`：网页主图解析（og:image / twitter:image / link / 首个 img、相对地址转绝对、跳过占位图与 data:）与协议校验（拒绝 file:/data:/javascript: 等）。改该文件前必须跑它。
+- `test:icon` 校验图标：ICO 结构与 7 个尺寸、`build/` 与 `out/` 两份是否同步、favicon 是否与 ICO 同源、win.icon / favicon / BrowserWindow icon 是否都接上。改图形或图标接线后必须跑它。
 - `test:scale` 守住「指纹尺度不变」：视频帧抽到 320 宽、查询图保持原分辨率，两者靠 `toGray` 的盒式重采样 + 均值归一化对齐。改 `toGray` 的采样方式或 `EXTRACT_WIDTH` 时务必跑它。
 - 沙箱里 `build-core.mjs` 清空 `out-e2e` 可能被安全删除守卫拦下（文件数超阈值），此时手动逐个跑 `node scripts/test-xxx.mjs` 即可，不要当成测试失败。
 - **`test:ui` 与 `test:path` 不能并发跑**：两者都用 `tsc -p tsconfig.preview.json` 转译渲染端，并发执行会互相干扰导致假失败（输出为空 / 退出码 1）。批量验证时必须串行；单独复跑即可确认是否真失败。
@@ -76,6 +77,19 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
   **`--strict` 不能省**：少了它 `strictNullChecks` 关闭，判别式联合（`{ok:true}|{ok:false}`）不窄化，会报 `Property 'message' does not exist`——这是误报，项目配置里 strict 是开的。
 - `scripts/lib/electron-stub.mjs` 是测试用的 Electron 桩；主进程自检在纯 Node 下跑，无需安装 Electron 运行时。
 - 打包脚本的测试钩子（只给自检用，不要在日常构建里设置）：`WHICHVIDEO_SKIP_BUILD_CHECK`、`WHICHVIDEO_SKIP_ELECTRON_BUILDER`、`WHICHVIDEO_TEST_FORCE_LOCKED`、`WHICHVIDEO_RELEASE_DIR`、`WHICHVIDEO_TEST_REPORT`。
+
+## 图标
+
+图形是圆角方形 + 四个取景角 + 播放三角（"以图搜帧"），配色沿用 accent #38bdf8。
+
+`pnpm icon` → `scripts/generate-icon.mjs`（零依赖，纯 zlib 手写 PNG/ICO）产出三处：
+
+- `build/icon.ico`（16~256）—— electron-builder 读它做 exe 与快捷方式图标
+- `out/icon.ico` —— 同上，但**随包走**：`files` 只含 `out/**`，打包后 `build/` 在 asar 外不可达，绿色版（win-unpacked 直跑 exe）靠 `__dirname/../icon.ico` 拿图标，否则任务栏退回默认图标
+- `src/renderer/public/favicon-{16,32}.png` —— 随源码入库
+
+`pnpm build` 的**末尾**跑 `pnpm icon`：`electron-vite build` 会清空 `out/`，放在前面生成会被删掉。
+16×16 是纯像素光栅化（无抗锯齿）的辨识极限，32px 以上很干净——不要为了 16px 去加粗角臂，那会让四角连成方框。
 
 ## 项目结构（主进程链路）
 

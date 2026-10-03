@@ -1,5 +1,7 @@
 # WhichVideo · 以图搜视频
 
+<img src="src/renderer/public/favicon-32.png" width="96" alt="WhichVideo 图标" align="right" />
+
 本地视频库工具：**导入视频或整个文件夹 → 自动抽帧建立指纹索引 → 丢一张图进来，立刻知道这个画面属于哪个视频、这个视频是不是已经在本地库里。**
 
 典型场景：网盘里存了几百集剧集，看到一张截图想确认"这集我下过没有"。
@@ -345,6 +347,8 @@ IPC），左上角那格显示「来自链接」，顶部显示实际取图的�
 | `pnpm test:frames` | 抽帧时长分档策略自检（25 项）：单调不减、封顶 240、设置作上限、抽帧路径按交叉点切换、采样间隔与镜头命中率 |
 | `pnpm test:hash` | 结构指纹覆盖度自检（12 项）：指纹必须覆盖全部 16 行、上下半判别力对称、纯色退化性质未回归 |
 | `pnpm test:path` | 路径格式化自检（23 项）：shortDir 只取目录、文件在根目录时不截断文件名、正反斜杠与大小写兼容 |
+| `pnpm test:icon` | 图标自检（25 项）：ICO 结构与 7 个尺寸、两份 ico 同步、favicon 同源、win.icon / BrowserWindow icon 接线 |
+| `pnpm icon` | 重新生成应用图标（build/ 与 out/ 各一份 ico + favicon），改图形后跑 |
 | `pnpm test:url` | 链接取图自检（26 项）：og:image 等四种主图来源、相对地址转绝对、跳过占位图、协议白名单（拒绝 file:/data:） |
 | `pnpm test:scale` | 分辨率不变性自检（6 项）：同一画面在 160~2560 宽之间结构距离恒为 0，而不同画面仍拉得开 |
 | `pnpm test:ui` | 渲染端组件冒烟（57 项）：真实 React 组件服务端渲染后断言关键文案与状态 |

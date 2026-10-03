@@ -28,6 +28,9 @@ extraResources:
       - '**/*'
 
 win:
+  # 图标由 scripts/generate-icon.mjs 生成到 build/icon.ico（16~256 多尺寸）。
+  # 省略时 electron-builder 会用 Electron 默认图标，任务栏与开始菜单会是一坨默认物。
+  icon: build/icon.ico
   target:
     # 安装包（数据写在 %APPDATA%）
     - target: nsis
