@@ -21,6 +21,7 @@ import {
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
 import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
+import { readClipboardImageBytes } from './clipboard'
 
 installCrashHandlers()
 
@@ -313,12 +314,15 @@ function emptyResponse(width: number, height: number, started: number): SearchRe
   }
 }
 
-function performSearch(image: Electron.NativeImage): SearchResponse {
+function performSearch(image: Electron.NativeImage, source: string): SearchResponse {
   const settings = db.getSettings()
   const started = Date.now()
   const size = image.getSize()
   const imageData = nativeImageToImageData(image)
-  if (!imageData) return emptyResponse(size.width, size.height, started)
+  if (!imageData) {
+    log(`检索(${source})：图片无法转成位图 ${size.width}x${size.height}`)
+    return emptyResponse(size.width, size.height, started)
+  }
 
   const vector = core.queryVectorFromImage(imageData)
   const { results, comparedFrames } = searchIndex.search(vector, {
@@ -341,7 +345,7 @@ function performSearch(image: Electron.NativeImage): SearchResponse {
     })
   }
 
-  return {
+  const response: SearchResponse = {
     query: {
       width: size.width,
       height: size.height,
@@ -353,6 +357,11 @@ function performSearch(image: Electron.NativeImage): SearchResponse {
     found: matches.length > 0,
     matches
   }
+  // 落日志：排查"点了没反应/没结果"时，日志能直接回答比了多少帧、命中几个。
+  log(
+    `检索(${source}) ${size.width}x${size.height}：比对 ${response.comparedFrames} 帧 → 命中 ${response.matchCount}，${response.elapsedMs}ms`
+  )
+  return response
 }
 
 /* ------------------------------------------------------------------ *
@@ -526,40 +535,44 @@ function registerIpc(): void {
   ipcMain.handle(IPC.searchPath, (_e, filePath: string) => {
     const image = loadImageFromPath(filePath)
     if (!image) throw new Error(`无法读取图片：${filePath}`)
-    return performSearch(image)
+    return performSearch(image, '文件')
   })
 
   ipcMain.handle(IPC.searchDataUrl, (_e, dataUrl: string) => {
     const image = loadImageFromDataUrl(dataUrl)
     if (!image) throw new Error('无法解析拖入/粘贴的图片数据')
-    return performSearch(image)
+    return performSearch(image, '拖入/粘贴')
   })
 
   ipcMain.handle(IPC.searchClipboard, async () => {
     const image = await readClipboardImage()
     if (!image) return null
-    return performSearch(image)
+    // 必须把图片一起回传：渲染端左上角那格要显示"刚才是哪张图"，
+    // 只回结果的话界面那一格会一直空着（用户以为根本没读到剪贴板）。
+    return { dataUrl: image.toDataURL(), response: performSearch(image, '剪贴板') }
   })
 }
 
-/** 读取系统剪贴板里的图片（Electron 44 的 clipboard 是无障碍风格的异步 API） */
+/**
+ * 读取系统剪贴板里的图片。
+ * 挑选逻辑（扫所有 image/*、不设 PNG 白名单、失败只记日志）在 src/main/clipboard.ts。
+ */
 async function readClipboardImage(): Promise<Electron.NativeImage | null> {
   try {
-    if (!(await clipboard.has('image/png'))) return null
-    const items = await clipboard.read()
-    for (const item of items) {
-      const type = item.types.find((t) => t.startsWith('image/'))
-      if (!type) continue
-      const blob = (await item.getType(type)) as Blob
-      if (typeof blob === 'string' || typeof blob.arrayBuffer !== 'function') continue
-      const buffer = Buffer.from(await blob.arrayBuffer())
-      const image = nativeImage.createFromBuffer(buffer)
-      if (!image.isEmpty()) return image
+    const found = await readClipboardImageBytes(clipboard, { log, logError })
+    if (!found) return null
+    const image = nativeImage.createFromBuffer(found.buffer)
+    if (image.isEmpty()) {
+      log(`剪贴板图片 ${found.type} 解析后为空（${found.buffer.length} 字节）`)
+      return null
     }
-  } catch {
+    const size = image.getSize()
+    log(`剪贴板图片：${found.type} → ${size.width}x${size.height}`)
+    return image
+  } catch (err) {
+    logError('读取剪贴板失败', err)
     return null
   }
-  return null
 }
 
 function showOpenDialog(

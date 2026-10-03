@@ -1,18 +1,12 @@
 {
-  "include": [
-    "src/main/db.ts",
-    "src/main/search.ts",
-    "src/main/indexer.ts",
-    "src/main/watcher.ts",
-    "src/main/media.ts",
-    "src/main/scan.ts",
-    "src/main/datadir.ts"
-  ],
+  // 不要改回手写文件列表：新增 src/main/xxx.ts 会被静默漏掉，
+  // 而且是"自检跑不到它"这种只在覆盖面上暴露的问题（和 electron.vite.config.ts 的入口同理）。
+  "include": ["src/main/**/*", "src/shared/**/*"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,

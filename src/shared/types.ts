@@ -134,6 +134,18 @@ export interface SearchResponse {
   matches: SearchMatch[]
 }
 
+/**
+ * 剪贴板检索的返回。
+ *
+ * 除了结果还要带一份图片预览（dataUrl）：渲染端的查询图框要显示"刚才搜的是哪张图"，
+ * 否则剪贴板搜索完成后左边那格一直是空的，用户看不出搜了什么。
+ */
+export interface ClipboardSearchResult {
+  /** 剪贴板图片的 PNG dataUrl，用于界面预览 */
+  dataUrl: string
+  response: SearchResponse
+}
+
 export interface VideoQuery {
   keyword?: string
   folderId?: number | null
@@ -271,7 +283,8 @@ export interface WhichVideoApi {
   search: {
     byPath(filePath: string): Promise<SearchResponse>
     byDataUrl(dataUrl: string): Promise<SearchResponse>
-    byClipboard(): Promise<SearchResponse | null>
+    /** 剪贴板里没有图片时返回 null；否则返回图片预览 + 检索结果 */
+    byClipboard(): Promise<ClipboardSearchResult | null>
   }
   events: {
     /** 订阅库变化事件；返回取消订阅函数 */

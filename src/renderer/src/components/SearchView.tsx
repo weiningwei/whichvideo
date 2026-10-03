@@ -186,6 +186,11 @@ export function SearchView(props: Props) {
             />
           ))}
         </div>
+        {!search && searching && (
+          <div className="mt-2 rounded-xl border border-line bg-ink-900/50 px-4 py-3 text-[12.5px] text-muted">
+            正在读取图片并与帧指纹比对…
+          </div>
+        )}
         {!search && !searching && <EmptyHint />}
       </div>
     </div>

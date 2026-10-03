@@ -270,10 +270,6 @@ function copyOutsideRepository(sourceDir) {
   const preferred = join(outsideRoot, name)
   let dest = preferred
 
-  if (!existsSync(outsideRoot)) {
-    return { skipped: false, dir: null, error: `目标位置不存在：${outsideRoot}` }
-  }
-
   if (existsSync(dest)) {
     // 和 clearTargetDirectory 一样尊重"强制占用"注入，否则自检没法覆盖被占用的分支
     const forcedLocked = process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1'

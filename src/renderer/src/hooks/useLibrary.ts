@@ -159,18 +159,28 @@ export function useLibrary() {
       setSearching(true)
       setSearchError(null)
       try {
-        const response = input.path
-          ? await window.whichvideo.search.byPath(input.path)
-          : input.dataUrl
-            ? await window.whichvideo.search.byDataUrl(input.dataUrl)
-            : await window.whichvideo.search.byClipboard()
-        if (!response) {
-          setSearchError('剪贴板里没有图片，请先复制一张图片或拖入图片文件')
-          return
+        // 三种来源分别处理，是为了各自拿到"查询图预览"：
+        // 剪贴板那次主进程会把图片一起回传，否则左上角那格永远是空的。
+        if (input.path) {
+          const response = await window.whichvideo.search.byPath(input.path)
+          setSearch(response)
+          setQueryImage(`file://${input.path}`)
+          setQueryLabel(input.label ?? input.path)
+        } else if (input.dataUrl) {
+          const response = await window.whichvideo.search.byDataUrl(input.dataUrl)
+          setSearch(response)
+          setQueryImage(input.dataUrlPreview ?? input.dataUrl)
+          setQueryLabel(input.label ?? '图片')
+        } else {
+          const clipboard = await window.whichvideo.search.byClipboard()
+          if (!clipboard) {
+            setSearchError('剪贴板里没有图片，请先复制一张图片再点这个按钮')
+            return
+          }
+          setSearch(clipboard.response)
+          setQueryImage(clipboard.dataUrl)
+          setQueryLabel(input.label ?? '剪贴板图片')
         }
-        setSearch(response)
-        setQueryImage(input.dataUrlPreview ?? (input.path ? `file://${input.path}` : null))
-        setQueryLabel(input.label ?? input.path ?? '剪贴板图片')
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : String(err))
       } finally {

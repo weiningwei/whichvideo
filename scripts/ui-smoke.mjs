@@ -342,6 +342,24 @@ export default mod
   )
   check('索引为空时提示先导入视频', noIndexHtml.includes('还没有任何帧指纹'))
 
+  /* ---------- 5b. 比对中不能是空白、剪贴板搜索要显示查询图 ---------- */
+  const searchingHtml = render(jsx(SearchView, { ...searchBase, searching: true }))
+  check('比对中结果区有占位文案（不能一片空白）', searchingHtml.includes('正在读取图片并与帧指纹比对'))
+  check('比对中时收起三步引导', !searchingHtml.includes('建立索引'))
+  check('比对中时显示"比对中…"', searchingHtml.includes('比对中'))
+
+  const clipboardHtml = render(
+    jsx(SearchView, {
+      ...searchBase,
+      search: hitResponse,
+      queryImage: 'data:image/png;base64,AA',
+      queryLabel: '剪贴板图片'
+    })
+  )
+  check('剪贴板搜索后左上角渲染出查询图', /<img[^>]*src="data:image\/png;base64,AA"/.test(clipboardHtml))
+  check('剪贴板搜索后标注图片来源', clipboardHtml.includes('剪贴板图片'))
+  check('剪贴板搜索后展示命中结果', clipboardHtml.includes('已在本地库中找到'))
+
   /* ---------- 6. 视频库页 ---------- */
   const libraryHtml = render(
     jsx(LibraryView, {

@@ -329,14 +329,17 @@ function main() {
         : 0) === countBefore
     )
 
-    // 6b) 落点不存在时不能把整次打包判死（release 里的产物仍然是好的）
+    // 6b) 落点创建不出来时不能把整次打包判死（release 里的产物仍然是好的）。
+    // 用"父路径是普通文件"来制造创建失败 —— 这是 Windows 上真实会遇到的形态。
+    const blocker = join(work, 'not-a-dir')
+    writeFileSync(blocker, 'not a directory')
     const missingDir = join(work, 'missing-root')
     prepareLayout(missingDir)
-    const missing = runBuilder(missingDir, { WHICHVIDEO_OUTSIDE_DIR: join(work, 'no-such-dir') })
-    check('落点不存在时脚本仍然成功退出', missing.ok, missing.ok ? '' : missing.message)
+    const missing = runBuilder(missingDir, { WHICHVIDEO_OUTSIDE_DIR: join(blocker, 'outside') })
+    check('落点创建失败时脚本仍然成功退出', missing.ok, missing.ok ? '' : missing.message)
     check(
       '报告里说明了仓库外拷贝失败的原因',
-      typeof missing.report?.outsideError === 'string' && missing.report.outsideError.includes('不存在'),
+      typeof missing.report?.outsideError === 'string' && missing.report.outsideError.length > 0,
       String(missing.report?.outsideError)
     )
     check(
