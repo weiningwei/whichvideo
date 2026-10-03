@@ -268,7 +268,15 @@ export default mod
     busy: null
   }
   const headerHtml = render(jsx(Header, { ...headerBase, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop }))
-  check('顶栏渲染品牌名', headerHtml.includes('WhichVideo'))
+  // 品牌标识用 WV 字母标 + tagline，不再重复写产品名：
+  // 窗口标题栏与任务栏已经显示 WhichVideo，界内再写一遍是同一句话说三次。
+  check('顶栏用 WV 字母标作为品牌标识', headerHtml.includes('WV'))
+  check('顶栏显示 tagline（产品做什么）', headerHtml.includes('以图搜帧') && headerHtml.includes('本地视频库'))
+  check(
+    '顶栏不重复产品全名（字母标已足够标识）',
+    !headerHtml.includes('WhichVideo'),
+    '界面内只说 tagline，不重复产品名'
+  )
   check('顶栏渲染统计（监听 1/1）', /1\/1/.test(headerHtml), headerHtml.match(/监听[\s\S]{0,40}/)?.[0] ?? '')
   check('顶栏渲染帧指纹数量', headerHtml.includes('16'))
   check('顶栏渲染导入按钮', headerHtml.includes('导入视频') && headerHtml.includes('导入文件夹'))

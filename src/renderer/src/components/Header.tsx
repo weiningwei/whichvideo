@@ -51,9 +51,12 @@ export function Header({
         <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-accent to-accent-strong text-[15px] font-bold text-[#042C53]">
           WV
         </div>
-        <div className="leading-tight">
-          <div className="text-[15px] font-semibold text-primary">WhichVideo</div>
-          <div className="text-[11px] text-muted">以图搜帧 · 本地视频库</div>
+        {/* 只留 tagline，不再重复产品名：WV 字母标已经是品牌标识，窗口标题栏与
+            任务栏也都写着 WhichVideo，界内再写一遍是同一句话说三次。
+            tagline 提为视觉主标识，说的却是产品做的事而非叫什么。 */}
+        <div className="text-[13px] font-semibold leading-tight text-secondary">
+          以图搜帧
+          <span className="ml-1.5 text-[11px] font-normal text-muted">本地视频库</span>
         </div>
       </div>
 
