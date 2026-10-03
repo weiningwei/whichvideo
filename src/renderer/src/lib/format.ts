@@ -44,17 +44,31 @@ export function dirNameOf(path: string): string {
 
 /** 把绝对路径变成相对某个根的短路径，便于在列表里显示上下文 */
 export function shortPath(path: string, roots: string[]): string {
+  return shortDir(path, roots) + fileNameOf(path)
+}
+
+/**
+ * 只要目录部分（不含文件名）。
+ *
+ * 列表里第一行已经显示文件名，若第二行再用 shortPath 会把文件名重复一次
+ * （旧实现如此，"剧名.mkv" 会连着出现两遍）。这里单独提供目录形式。
+ */
+export function shortDir(path: string, roots: string[]): string {
   const lower = path.toLowerCase()
   for (const root of roots) {
     const r = root.toLowerCase()
     if (lower.startsWith(r)) {
       const cut = path.slice(root.length).replace(/^[\\/]+/, '')
-      return cut || fileNameOf(path)
+      // 注意 lastIndexOf 找不到时返回 -1，slice(0, -1) 会砍掉最后一个字符。
+      // 文件直接位于根目录时（cut 里没有分隔符）必须走这个分支。
+      const idx = Math.max(cut.lastIndexOf('\\'), cut.lastIndexOf('/'))
+      if (idx < 0) return ''
+      return cut.slice(0, idx) + '\\'
     }
   }
   const dir = dirNameOf(path)
   const parts = dir.split(/[\\/]/)
-  return parts.length > 2 ? `…\\${parts.slice(-2).join('\\')}\\${fileNameOf(path)}` : path
+  return parts.length > 2 ? `…\\${parts.slice(-2).join('\\')}\\` : dir ? dir + '\\' : ''
 }
 
 export function scoreColor(score: number): string {

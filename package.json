@@ -27,11 +27,12 @@
     "test:config": "node scripts/test-build-config.mjs",
     "test:frames": "node scripts/build-core.mjs && node scripts/test-frame-policy.mjs",
     "test:hash": "node scripts/build-core.mjs && node scripts/test-hash-coverage.mjs",
+    "test:path": "node scripts/test-path-format.mjs",
     "test:scale": "node scripts/build-core.mjs && node scripts/test-hash-scale.mjs",
     "test:output": "node scripts/build-core.mjs && node scripts/test-build-output.mjs",
     "test:startup": "node scripts/build-core.mjs && node scripts/startup-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:hash && npm run test:scale && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
+    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:hash && npm run test:path && npm run test:scale && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
     "rebuild:native": "electron-builder install-app-deps"
   },
   "dependencies": {
