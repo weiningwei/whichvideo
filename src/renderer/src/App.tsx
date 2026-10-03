@@ -67,8 +67,8 @@ export default function App() {
             onReindex={(id) => void actions.reindex([id])}
           />
         ) : (
-          <div className="flex min-h-0 flex-1">
-            <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <LibraryView
                 folders={state.folders}
                 videos={state.videos}
@@ -98,7 +98,7 @@ export default function App() {
                 collapseAllFolders={collapseAllFolders}
               />
             </div>
-            <div className="w-[300px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">
+            <div className="w-[300px] min-w-[240px] shrink-0 overflow-y-auto border-l border-line/70 bg-ink-900/40">
               <SettingsPanel
                 settings={state.settings}
                 dataDir={state.dataDir}

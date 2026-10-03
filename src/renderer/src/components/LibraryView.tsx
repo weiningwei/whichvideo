@@ -177,9 +177,9 @@ export function LibraryView(props: Props) {
   }, [groupByFolder, groupedVideos, videos])
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <section className="flex min-h-0 flex-1 flex-col border-r border-line/70">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line/70 px-4 py-3">
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line/70 px-4 py-3">
           <input
             value={query.keyword ?? ''}
             onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
@@ -245,8 +245,8 @@ export function LibraryView(props: Props) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <table className="w-full border-separate border-spacing-0 text-[12px]">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[880px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
               <tr>
                 <th className="px-4 py-2 font-medium">
@@ -372,7 +372,7 @@ export function LibraryView(props: Props) {
         </div>
       </section>
 
-      <aside className="flex w-[360px] shrink-0 flex-col">
+      <aside className="flex w-[360px] min-w-[280px] shrink-0 flex-col">
         <div className="border-b border-line/70 px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="text-[13px] font-semibold text-slate-200">监听文件夹</div>
