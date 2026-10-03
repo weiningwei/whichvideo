@@ -7,9 +7,12 @@
  * 而旧脚本直接 rmSync，只抛裸 EPERM，用户不知道该怎么办。
  *
  * 覆盖：
- *   1. 正常重建：覆盖旧产物、清掉旧的 data\、写出便携版说明
+ *   1. 正常重建：覆盖旧产物、清掉旧的 data\、写出便携版说明，并额外拷一份到仓库外
  *   2. 目录删不掉也改名不掉时：失败退出并给出可操作提示，且不留下半成品、不丢旧数据
  *   3. 占用解除后再次打包能恢复到干净产物
+ *   4. 编译产物不全时拒绝打包
+ *   5. 必须校验"打包结果是否新鲜"
+ *   6. 仓库外那份被占用时同样自动换目录，且可以用开关跳过拷贝
  *
  * 说明：真实文件锁需要独占句柄 + 子进程，而本环境禁止 spawn，
  * 所以第 2 项用 WHICHVIDEO_TEST_FORCE_LOCKED 注入"删不掉"的状态；
@@ -19,7 +22,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -28,6 +31,8 @@ const builder = join(root, 'scripts', 'build-portable-folder.mjs')
 const work = join(root, 'tmp', 'portable-builder-test')
 /** 自检用的"构建产物"目录：放占位文件即可，结构与发布产物 out/ 一致 */
 const stubBuildDir = join(work, 'build')
+/** 仓库外拷贝的落点：必须指向 tmp，否则自检会往真实的上一级目录里写东西 */
+const outsideRoot = join(work, 'outside')
 
 function ensureStubBuild() {
   mkdirSync(join(stubBuildDir, 'main'), { recursive: true })
@@ -85,6 +90,8 @@ function runBuilder(releaseDir, extraEnv = {}, { prepareStub = true } = {}) {
         WHICHVIDEO_BUILD_DIR: stubBuildDir,
         // 自检不真的跑 electron-builder（耗时且需要 Electron 二进制）
         WHICHVIDEO_SKIP_ELECTRON_BUILDER: '1',
+        // 仓库外拷贝的落点固定在 tmp 里：绝不能写到真实的上一级目录
+        WHICHVIDEO_OUTSIDE_DIR: outsideRoot,
         ...extraEnv
       },
       stdio: ['ignore', 'inherit', 'inherit']
@@ -151,12 +158,40 @@ function main() {
       ? readFileSync(join(target, '便携版说明.txt'), 'utf8')
       : ''
     check('说明里提醒重新打包前先退出应用', readme.includes('退出正在运行的'))
+
+    const outsideDir = r.report?.outsideDir
+    check(
+      '额外拷了一份到仓库外',
+      typeof outsideDir === 'string' && outsideDir.startsWith(outsideRoot),
+      outsideDir ?? '报告里没有 outsideDir'
+    )
+    check('仓库外那份里有 exe', !!outsideDir && existsSync(join(outsideDir, 'WhichVideo.exe')))
+    check(
+      '仓库外那份的 app.asar 与 release 里一致',
+      !!outsideDir && readFileSync(join(outsideDir, 'resources', 'app.asar'), 'utf8') === 'fake asar v2'
+    )
+    check('仓库外那份也带便携版说明', !!outsideDir && existsSync(join(outsideDir, '便携版说明.txt')))
+    check(
+      '仓库外那份没有拷贝失败',
+      r.report?.outsideError === null || r.report?.outsideError === undefined,
+      r.report?.outsideError ?? ''
+    )
+    check(
+      '仓库外那份的目录名沿用产物目录名',
+      !!outsideDir && outsideDir === join(outsideRoot, basename(target)),
+      outsideDir ?? ''
+    )
   }
 
   console.log('\n=== 场景 2：目录删不掉也改名不掉（模拟被占用） ===')
   {
     const releaseDir = join(work, 'locked')
     const { target } = prepareLayout(releaseDir)
+    // 仓库外那份已经存在（场景 1 建的），并且有用户的 data\：占用时必须换目录而不是破坏它
+    const outsidePreferred = join(outsideRoot, 'WhichVideo-portable')
+    mkdirSync(join(outsidePreferred, 'data'), { recursive: true })
+    writeFileSync(join(outsidePreferred, 'data', 'whichvideo.db'), 'outside user data that must survive')
+
     const r = runBuilder(releaseDir, { WHICHVIDEO_TEST_FORCE_LOCKED: '1' })
     check('脚本仍然成功退出（自动换目录继续打包）', r.ok, r.ok ? '' : r.message)
     check(
@@ -178,6 +213,25 @@ function main() {
         existsSync(join(fallbackDir, 'WhichVideo.exe')) &&
         readFileSync(join(fallbackDir, 'resources', 'app.asar'), 'utf8') === 'fake asar v2' &&
         existsSync(join(fallbackDir, '便携版说明.txt'))
+    )
+
+    const outsideDir = r.report?.outsideDir
+    check(
+      '仓库外那份被占用时也自动换目录（带时间戳）',
+      typeof outsideDir === 'string' && /WhichVideo-portable-\d{8}-\d{4}$/.test(outsideDir),
+      outsideDir ?? '报告里没有 outsideDir'
+    )
+    check(
+      '仓库外的回退目录里是完整的新产物',
+      !!outsideDir &&
+        existsSync(join(outsideDir, 'WhichVideo.exe')) &&
+        readFileSync(join(outsideDir, 'resources', 'app.asar'), 'utf8') === 'fake asar v2'
+    )
+    check(
+      '仓库外被占用的旧目录与旧数据都没被破坏',
+      existsSync(join(outsidePreferred, 'data', 'whichvideo.db')) &&
+        readFileSync(join(outsidePreferred, 'data', 'whichvideo.db'), 'utf8') ===
+          'outside user data that must survive'
     )
   }
 
@@ -250,6 +304,46 @@ function main() {
     check('产物过期时明确失败并给出原因', source.includes('打包结果不新鲜'))
     check('electron-builder 非零退出时先检查产物', /退出码为[\s\S]{0,160}检查产物/.test(source))
     check('自检开关存在（正式路径默认不跳过打包）', source.includes('WHICHVIDEO_SKIP_ELECTRON_BUILDER'))
+  }
+
+  console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')
+  {
+    // 6a) 显式跳过
+    const skipDir = join(work, 'skip')
+    prepareLayout(skipDir)
+    const countBefore = existsSync(join(outsideRoot, 'WhichVideo-portable'))
+      ? readdirSync(join(outsideRoot, 'WhichVideo-portable')).length
+      : 0
+    const skipped = runBuilder(skipDir, { WHICHVIDEO_SKIP_OUTSIDE_COPY: '1' })
+    check('跳过时脚本仍然成功退出', skipped.ok, skipped.ok ? '' : skipped.message)
+    check(
+      '报告标记为已跳过',
+      skipped.report?.outsideSkipped === true,
+      JSON.stringify(skipped.report ?? {}).slice(0, 120)
+    )
+    check('跳过时没有写 outsideDir', skipped.report?.outsideDir === null, String(skipped.report?.outsideDir))
+    check(
+      '跳过时没有动仓库外已有的目录',
+      (existsSync(join(outsideRoot, 'WhichVideo-portable'))
+        ? readdirSync(join(outsideRoot, 'WhichVideo-portable')).length
+        : 0) === countBefore
+    )
+
+    // 6b) 落点不存在时不能把整次打包判死（release 里的产物仍然是好的）
+    const missingDir = join(work, 'missing-root')
+    prepareLayout(missingDir)
+    const missing = runBuilder(missingDir, { WHICHVIDEO_OUTSIDE_DIR: join(work, 'no-such-dir') })
+    check('落点不存在时脚本仍然成功退出', missing.ok, missing.ok ? '' : missing.message)
+    check(
+      '报告里说明了仓库外拷贝失败的原因',
+      typeof missing.report?.outsideError === 'string' && missing.report.outsideError.includes('不存在'),
+      String(missing.report?.outsideError)
+    )
+    check(
+      'release 里的产物仍然完整',
+      readFileSync(join(missingDir, 'WhichVideo-portable', 'resources', 'app.asar'), 'utf8') ===
+        'fake asar v2'
+    )
   }
 
   rmSync(work, { recursive: true, force: true })

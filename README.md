@@ -34,6 +34,7 @@ pnpm build
 
 # 5. 打包：绿色版目录 / NSIS 安装包
 pnpm build:portable    # → release/WhichVideo-portable/（免安装、免解压，数据写在同级 data\）
+                       #   同时再拷一份到仓库上一级目录，直接双击那份即可运行
 pnpm build:win         # → release/WhichVideo-0.1.0-x64.exe（安装包，数据写在 %APPDATA%）
 ```
 
@@ -85,7 +86,7 @@ pnpm fetch:ffmpeg
 
 ```bash
 pnpm fetch:ffmpeg       # 可选：把 ffmpeg 一起打包进去
-pnpm build:portable     # → release/WhichVideo-portable/  绿色版目录
+pnpm build:portable     # → release/WhichVideo-portable/  绿色版目录（并拷一份到仓库上一级目录）
 pnpm build:win          # → release/WhichVideo-0.1.0-x64.exe  安装包
 ```
 
@@ -244,7 +245,7 @@ src/
 | `pnpm dev` | 开发模式（渲染端热更新） |
 | `pnpm typecheck` | 主进程 + 渲染端类型检查 |
 | `pnpm build` | 类型检查并构建到 `out/` |
-| `pnpm build:portable` | 打包绿色版目录 `release/WhichVideo-portable/`（免安装、免解压） |
+| `pnpm build:portable` | 打包绿色版目录 `release/WhichVideo-portable/`（免安装、免解压），并再拷一份到仓库上一级目录 |
 | `pnpm build:win` | 打包 NSIS 安装包 `release/WhichVideo-<版本>-x64.exe` |
 | `pnpm build:unpack` | 只出 `release/win-unpacked/`（不做安装包） |
 | `pnpm fetch:ffmpeg` | 下载 ffmpeg/ffprobe 到 `resources/bin` |
@@ -288,7 +289,8 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，所以�
 日志落盘、便携目录、初始化失败可见、单实例锁"这些启动路径。
 
 **`pnpm build:portable` 报 EPERM / Permission denied？**
-说明 `release\WhichVideo-portable` 里的文件正被占用，Windows 上删不掉也改不了名。常见占用者：
+说明 `release\WhichVideo-portable`（或仓库上一级目录里那份同名文件夹）里的文件正被占用，
+Windows 上删不掉也改不了名。常见占用者：
 
 1. **绿色版还在运行**（最常见）：先退出 `WhichVideo.exe`，任务管理器确认进程没了
 2. **编辑器**：Sublime Text 的 `plugin_host-3.3.exe`、VS Code 的 `Code.exe` 等在索引本项目时会持有目录句柄
@@ -306,6 +308,9 @@ node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
 
 脚本的处理顺序是：**重试删除 → 改名成 `WhichVideo-portable.old-<时间戳>` 挪开 → 仍然不行就自动输出到 `WhichVideo-portable-<日期>-<时间>` 并继续打包**。
 也就是说占用不会让打包失败，只会换个目录名；你的旧 `data\` 会完整留在原处或 `.old-*` 里，不会被静默删掉。
+
+拷到仓库上一级目录的那份用的是同一套处理顺序，并在拷贝后核对文件数、总字节数和 `app.asar` 的 sha256。
+只有这一份失败时不会让整次打包失败——`release\WhichVideo-portable` 仍然是可用的，输出里会提示手动拷走。
 
 想让它一直用首选目录名，就把占用源关掉（或退出编辑器）再跑一次。
 本仓库内置了 `.vscode/settings.json`，已经把 `release`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。

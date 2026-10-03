@@ -6,6 +6,12 @@
  * 目录版没有解压环节，WhichVideo.exe 就地运行；主进程检测到 exe 所在目录可写时
  * 会把索引库与缓存写到同级的 data\ 里（见 src/main/datadir.ts）。
  *
+ *   release\WhichVideo-portable  →  <仓库上一级目录>\WhichVideo-portable\
+ *
+ * 第二份放在仓库外面，是为了让"运行/验证"这件事彻底离开本项目目录：
+ * 编辑器索引、杀软扫描、资源管理器停留都可能锁住仓库里的目录（见下面 EPERM 说明），
+ * 而产物本身是要给用户双击运行的，放在项目里反而更容易被占用。
+ *
  * 运行： node scripts/build-portable-folder.mjs
  *
  * 关于 EPERM：绿色版运行时 exe 会被占用，资源管理器停在该目录、杀毒软件扫描
@@ -26,7 +32,7 @@ import {
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -40,6 +46,11 @@ const unpackedDir = join(releaseDir, 'win-unpacked')
 const preferredTargetDir = join(releaseDir, 'WhichVideo-portable')
 // 首选目录被占用时，会自动退到这个带时间的目录继续打包（见 clearTargetDirectory）
 let targetDir = preferredTargetDir
+// 产物要再拷一份到仓库外面（默认是仓库上一级目录），让运行/验证不落在本项目里。
+// WHICHVIDEO_OUTSIDE_DIR 给自检用，指向 tmp 里的目录，避免自检污染真实上一级目录。
+const outsideRoot = process.env.WHICHVIDEO_OUTSIDE_DIR
+  ? resolve(process.env.WHICHVIDEO_OUTSIDE_DIR)
+  : resolve(root, '..')
 
 const sleepSync = (ms) => {
   const end = Date.now() + ms
@@ -220,6 +231,122 @@ function stamp() {
   const d = new Date()
   const pad = (n, w = 2) => String(n).padStart(w, '0')
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+}
+
+/** 目录里所有普通文件的总字节数（用来核对拷贝是否完整） */
+function directorySize(dir) {
+  let total = 0
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    const st = statSync(full)
+    if (st.isDirectory()) total += directorySize(full)
+    else total += st.size
+  }
+  return total
+}
+
+/** 单个文件的 sha256（核对拷贝后的产物是否与源一致） */
+function hashFile(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+/**
+ * 把绿色版再拷一份到仓库外面（默认 <仓库上一级目录>\WhichVideo-portable）。
+ *
+ * 为什么要这一份：产物是给用户双击运行的，放在本项目目录里容易被编辑器索引、
+ * 杀软扫描、资源管理器停留锁住（就是本文件顶部 EPERM 那段说的情况）。
+ * 拷到仓库外再运行，"占用"和"验证"就跟项目目录彻底解耦。
+ *
+ * 占用处理与 release 里的目标目录完全一致：直接删 → 重试删 → 改名挪开 → 换带时间戳的目录。
+ * 注意会连同上一份里的 data\ 一起清掉（产物必须是干净的），所以这里在删之前明确提示。
+ */
+function copyOutsideRepository(sourceDir) {
+  if (process.env.WHICHVIDEO_SKIP_OUTSIDE_COPY === '1') {
+    return { skipped: true, dir: null }
+  }
+
+  // 沿用源目录名：release 里退到带时间戳的目录时，外面那份也带时间戳，两边不会认错
+  const name = basename(sourceDir) || 'WhichVideo-portable'
+  const preferred = join(outsideRoot, name)
+  let dest = preferred
+
+  if (!existsSync(outsideRoot)) {
+    return { skipped: false, dir: null, error: `目标位置不存在：${outsideRoot}` }
+  }
+
+  if (existsSync(dest)) {
+    // 和 clearTargetDirectory 一样尊重"强制占用"注入，否则自检没法覆盖被占用的分支
+    const forcedLocked = process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1'
+    const hasData = existsSync(join(dest, 'data'))
+    if (!forcedLocked) {
+      try {
+        rmSync(dest, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      } catch {
+        /* 交给下面的重试与改名 */
+      }
+      if (!existsSync(dest)) {
+        if (hasData) console.log('  （旧的 data\\ 索引库已随目录一起清掉，需要时重新导入视频即可）')
+      }
+    }
+    if (existsSync(dest)) {
+      const removed = removeWithRetry(dest)
+      if (!removed && existsSync(dest)) {
+        console.log(`  仓库外的同名目录被占用，尝试改名挪开：${dest}`)
+        const aside = moveAside(dest)
+        if (aside) {
+          console.log(`  已挪到 ${aside}（确认无用后可删除）`)
+          removeWithRetry(aside, 3)
+        } else {
+          // 连改名都不行：换带时间戳的目录名继续，别让"外面那份正在运行"挡死打包
+          dest = `${preferred}-${stamp()}`
+          console.log(`  删除和改名都失败，改为输出到：${dest}`)
+        }
+      }
+    }
+  }
+
+  try {
+    mkdirSync(dest, { recursive: true })
+    let copyError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        cpSync(sourceDir, dest, { recursive: true, force: true })
+        copyError = null
+        break
+      } catch (err) {
+        copyError = err
+        sleepSync(300 * (attempt + 1))
+      }
+    }
+    if (copyError) throw copyError
+
+    // 核对：exe 在、文件数与总字节数一致、asar 与源同 hash。
+    // 拷贝被中途打断时常常"看起来成功"，少几个文件的情况必须在这里挡住。
+    const srcAsar = join(sourceDir, 'resources', 'app.asar')
+    const dstAsar = join(dest, 'resources', 'app.asar')
+    const problems = []
+    if (!existsSync(join(dest, 'WhichVideo.exe'))) problems.push('缺少 WhichVideo.exe')
+    if (existsSync(srcAsar) && existsSync(dstAsar) && hashFile(srcAsar) !== hashFile(dstAsar)) {
+      problems.push('app.asar 与源不一致')
+    }
+    const srcFiles = countFiles(sourceDir)
+    const dstFiles = countFiles(dest)
+    if (srcFiles !== dstFiles) problems.push(`文件数不一致（源 ${srcFiles} / 目标 ${dstFiles}）`)
+    const srcBytes = directorySize(sourceDir)
+    const dstBytes = directorySize(dest)
+    if (srcBytes !== dstBytes) problems.push(`总字节数不一致（源 ${srcBytes} / 目标 ${dstBytes}）`)
+    if (problems.length > 0) {
+      return { skipped: false, dir: dest, error: `拷贝校验不通过：${problems.join('；')}` }
+    }
+
+    return { skipped: false, dir: dest, fallback: dest !== preferred, fileCount: dstFiles, bytes: dstBytes }
+  } catch (err) {
+    return {
+      skipped: false,
+      dir: dest,
+      error: err instanceof Error ? err.message : String(err)
+    }
+  }
 }
 
 /**
@@ -493,12 +620,36 @@ function main() {
   const fileCount = countFiles(targetDir)
   console.log(`  文件数量：${fileCount}`)
   console.log('  拷走整个文件夹即可迁移；运行后会自动生成 data\\ 子目录。')
+
+  // 再拷一份到仓库外面，方便直接运行验证（不落在本项目目录里，避免被索引/杀软锁住）
+  console.log(`\n正在拷贝一份到仓库外：${outsideRoot}`)
+  const outside = copyOutsideRepository(targetDir)
+  if (outside.skipped) {
+    console.log('  （已通过 WHICHVIDEO_SKIP_OUTSIDE_COPY 跳过）')
+  } else if (outside.error) {
+    // 不让这一份的失败把整次打包判死：release 里的产物已经是好的。
+    // 但必须显眼地报出来，并给出下一步该做什么。
+    console.error('\n⚠ 拷贝到仓库外失败（release 里的绿色版仍然可用）：')
+    console.error(`  原因：${outside.error}`)
+    console.error(`  目标位置：${outside.dir ?? join(outsideRoot, 'WhichVideo-portable')}`)
+    console.error('  处理：手动拷走 release\\WhichVideo-portable 即可；或先关掉正在运行的绿色版再重试。')
+  } else {
+    console.log(`  ✓ 仓库外副本已就绪：${outside.dir}`)
+    console.log(`    文件数量：${outside.fileCount}（${(outside.bytes / 1024 / 1024).toFixed(1)} MB，与源一致）`)
+    if (outside.fallback) console.log('    注意：同名目录被占用，本次用了带时间戳的新目录。')
+    console.log(`    直接运行：${join(outside.dir, 'WhichVideo.exe')}`)
+  }
+
   writeTestReport({
     ok: true,
     reason: targetDir === preferredTargetDir ? 'built' : 'built-fallback',
     targetDir,
     preferredTargetDir,
-    fileCount
+    fileCount,
+    outsideRoot,
+    outsideDir: outside.dir ?? null,
+    outsideError: outside.error ?? null,
+    outsideSkipped: outside.skipped === true
   })
 }
 
