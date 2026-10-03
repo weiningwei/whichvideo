@@ -15,9 +15,9 @@ export function StatusBar({ status, busy, notice }: Props) {
 
   return (
     <footer className="flex items-center gap-3 border-t border-line/80 bg-ink-900/80 px-5 py-2 text-[11.5px] text-muted">
-      <span className={`flex items-center gap-1.5 ${running ? 'text-accent' : 'text-slate-500'}`}>
+      <span className={`flex items-center gap-1.5 ${running ? 'text-accent' : 'text-tertiary'}`}>
         <span
-          className={`h-1.5 w-1.5 rounded-full ${running ? 'animate-pulse bg-accent' : 'bg-slate-600'}`}
+          className={`h-1.5 w-1.5 rounded-full ${running ? 'animate-pulse bg-accent' : 'bg-disabled'}`}
         />
         {running ? '索引进行中' : status?.finishedAt ? '索引空闲' : '待机'}
       </span>
@@ -37,7 +37,7 @@ export function StatusBar({ status, busy, notice }: Props) {
       )}
 
       {status?.currentPath && (
-        <span className="max-w-[38ch] truncate text-slate-400" title={status.currentPath}>
+        <span className="max-w-[38ch] truncate text-secondary" title={status.currentPath}>
           正在处理 {status.currentPath}
         </span>
       )}
@@ -59,13 +59,13 @@ export function StatusBar({ status, busy, notice }: Props) {
                 ? 'text-bad'
                 : notice.level === 'warn'
                   ? 'text-warn'
-                  : 'text-slate-400'
+                  : 'text-secondary'
             }
           >
             {notice.message}
           </span>
         ) : (
-          <span className="text-slate-600">
+          <span className="text-tertiary">
             拖入图片 / Ctrl+V 粘贴 / 选择图片文件，即可查询视频是否已在库中
           </span>
         )}

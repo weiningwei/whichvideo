@@ -61,13 +61,14 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 
 ## 测试
 
-`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:icon → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
+`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:icon → test:theme → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
 
 - `test:startup` / `test:core` / `test:portable` 内部先跑 `node scripts/build-core.mjs`，把 `src/main` 编到 **`out-e2e/`、`out-startup/`**（与发布产物 `out/` 无关，用 `tsconfig.e2e.json` / `tsconfig.startup.json`）。
 - `test:hash` 从 `out-e2e/shared/hash.js` 导入 `computeStructHash`，守住「结构指纹必须等距抽样、覆盖全部 16 行」这条性质——`encodeChannel` 曾因顺序填 bit 而只覆盖上半张图。改 `hash.ts` 的网格或抽样逻辑后务必跑它。
 - `test:path` 转译渲染端后测 `format.ts` 的路径处理，守住「shortDir 不含文件名」与「文件在根目录时 lastIndexOf 返回 -1 不截断文件名」两条性质。改 `shortDir`/`shortPath` 前必须跑它。
 - `test:url` 测 `main/url-image.ts`：网页主图解析（og:image / twitter:image / link / 首个 img、相对地址转绝对、跳过占位图与 data:）与协议校验（拒绝 file:/data:/javascript: 等）。改该文件前必须跑它。
 - `test:icon` 校验图标：ICO 结构与 7 个尺寸、`build/` 与 `out/` 两份是否同步、favicon 是否与 ICO 同源、win.icon / favicon / BrowserWindow icon 是否都接上。改图形或图标接线后必须跑它。
+- `test:theme` 守住配色纪律：组件里不许出现十六进制颜色或 Tailwind 内置固定色（slate-100 等），语义 token 必须在 `@theme` 与 `[data-theme=light]` 两侧都定义齐全。**在 tsx 里写固定色前先想清楚它是否该 token 化**；确有例外（如 Header 的「WV」压在 accent 渐变上）要登记到该脚本的 `HEX_EXCEPTIONS`，并写明理由。
 - `test:scale` 守住「指纹尺度不变」：视频帧抽到 320 宽、查询图保持原分辨率，两者靠 `toGray` 的盒式重采样 + 均值归一化对齐。改 `toGray` 的采样方式或 `EXTRACT_WIDTH` 时务必跑它。
 - 沙箱里 `build-core.mjs` 清空 `out-e2e` 可能被安全删除守卫拦下（文件数超阈值），此时手动逐个跑 `node scripts/test-xxx.mjs` 即可，不要当成测试失败。
 - **`test:ui` 与 `test:path` 不能并发跑**：两者都用 `tsc -p tsconfig.preview.json` 转译渲染端，并发执行会互相干扰导致假失败（输出为空 / 退出码 1）。批量验证时必须串行；单独复跑即可确认是否真失败。
@@ -77,6 +78,17 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
   **`--strict` 不能省**：少了它 `strictNullChecks` 关闭，判别式联合（`{ok:true}|{ok:false}`）不窄化，会报 `Property 'message' does not exist`——这是误报，项目配置里 strict 是开的。
 - `scripts/lib/electron-stub.mjs` 是测试用的 Electron 桩；主进程自检在纯 Node 下跑，无需安装 Electron 运行时。
 - 打包脚本的测试钩子（只给自检用，不要在日常构建里设置）：`WHICHVIDEO_SKIP_BUILD_CHECK`、`WHICHVIDEO_SKIP_ELECTRON_BUILDER`、`WHICHVIDEO_TEST_FORCE_LOCKED`、`WHICHVIDEO_RELEASE_DIR`、`WHICHVIDEO_TEST_REPORT`。
+
+## 主题与配色
+
+三层结构：语义 token（`primary` / `surface-*` / `line` / `accent`…）→ 两套色值（`@theme` 深色 / `[data-theme='light']` 浅色）→ `<html data-theme>`。组件只写第一层。
+
+- `useTheme()` 提供深色 / 浅色 / 跟随系统三档，循环切换，存在 `localStorage["wv-theme"]`
+- 「跟随系统」用 `matchMedia("(prefers-color-scheme: dark)")` 并**监听 change**，用户改 Windows 深浅色时能实时跟随
+- 没用 CSS 的 `prefers-color-scheme` 直接换色：那样手动选浅色就盖不住系统设置了
+- 旧的 `ink-950…ink-700` / `muted` 通过 `var()` 映射到语义层，仍可用，改主题会自动跟随
+
+**新增组件时只能用语义 token。** 深色下的 `text-slate-100` 在浅色主题里是白字白底，`#38bdf8` 在白底上对比度约 2.1:1——这类问题在深色下看不出，只能靠 `test:theme` 静态拦。
 
 ## 图标
 

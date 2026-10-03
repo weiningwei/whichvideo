@@ -49,7 +49,7 @@ export function SidePanel({
       {tab === 'folders' ? (
         <>
           <div className="flex shrink-0 items-center justify-between border-b border-line/70 px-3.5 py-2.5">
-            <span className="text-[12.5px] font-semibold text-slate-200">监听文件夹</span>
+            <span className="text-[12.5px] font-semibold text-primary">监听文件夹</span>
             <button className="btn px-2 py-1 text-[11.5px] hover:bg-ink-700/70" onClick={onAddFolder}>
               + 添加
             </button>
@@ -87,14 +87,14 @@ function Tab({
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] transition ${
         active
-          ? 'bg-ink-700/70 font-medium text-slate-100'
-          : 'text-muted hover:bg-ink-800/50 hover:text-slate-300'
+          ? 'bg-ink-700/70 font-medium text-primary'
+          : 'text-muted hover:bg-ink-800/50 hover:text-secondary'
       }`}
     >
       {children}
       {count !== undefined && (
         <span
-          className={`rounded px-1 text-[10px] ${active ? 'bg-accent/20 text-accent' : 'bg-ink-700/60 text-slate-500'}`}
+          className={`rounded px-1 text-[10px] ${active ? 'bg-accent/20 text-accent' : 'bg-ink-700/60 text-tertiary'}`}
         >
           {count}
         </span>

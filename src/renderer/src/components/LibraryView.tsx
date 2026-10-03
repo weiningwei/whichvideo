@@ -36,7 +36,7 @@ interface Props {
 
 const STATE_STYLE: Record<string, { text: string; cls: string }> = {
   watching: { text: '监听中', cls: 'border-ok/40 bg-ok/10 text-ok' },
-  idle: { text: '已暂停', cls: 'border-line bg-ink-700/40 text-slate-400' },
+  idle: { text: '已暂停', cls: 'border-line bg-ink-700/40 text-secondary' },
   missing: { text: '目录不存在', cls: 'border-bad/40 bg-bad/10 text-bad' },
   error: { text: '监听异常', cls: 'border-bad/40 bg-bad/10 text-bad' },
 }
@@ -203,7 +203,7 @@ export function LibraryView(props: Props) {
             value={query.keyword ?? ''}
             onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
             placeholder="按文件名 / 目录筛选"
-            className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-slate-600 focus:border-accent/60"
+            className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
           />
           <select
             value={String(query.folderId ?? '')}
@@ -248,7 +248,7 @@ export function LibraryView(props: Props) {
             显示 {videos.length} / {total}
           </span>
           <span
-            className="hidden text-[11px] text-slate-600 lg:inline"
+            className="hidden text-[11px] text-tertiary lg:inline"
             title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
           >
             ↑↓ 移动 · Enter 选中
@@ -273,7 +273,7 @@ export function LibraryView(props: Props) {
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
           {/* min-w 覆盖三列的下限：视频列至少 220 + 状态 96 + 操作 180 */}
           <table className="w-full min-w-[540px] border-separate border-spacing-0 text-[12px]">
-            <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-slate-500 backdrop-blur">
+            <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
               <tr>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
@@ -294,7 +294,7 @@ export function LibraryView(props: Props) {
                   const header = (
                     <tr key={`folder-header-${folderId}`} className="bg-ink-800/50 border-t border-line/40">
                       <td colSpan={3} className="px-3 py-2">
-                        <div className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
+                        <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
                           <span
                             className="cursor-pointer select-none transition-transform duration-150"
                             style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
@@ -311,7 +311,7 @@ export function LibraryView(props: Props) {
                           />
                           {/* 点击分组名即全选 / 取消该组 */}
                           <span
-                            className="cursor-pointer truncate font-medium hover:text-slate-100"
+                            className="cursor-pointer truncate font-medium hover:text-primary"
                             onClick={() => {
                               const target = !groupSelected
                               folderVideos.forEach((v) => {
@@ -432,11 +432,11 @@ function FolderCard({
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-[12.5px] font-medium text-slate-100" title={folder.path}>
+            <span className="truncate text-[12.5px] font-medium text-primary" title={folder.path}>
               {folder.name}
             </span>
             {folder.pinned && (
-              <span className="rounded bg-ink-700/60 px-1 text-[9.5px] text-slate-400">手动</span>
+              <span className="rounded bg-ink-700/60 px-1 text-[9.5px] text-secondary">手动</span>
             )}
           </div>
           <div className="mt-0.5 truncate text-[10.5px] text-muted" title={folder.path}>
@@ -472,7 +472,7 @@ function FolderCard({
           停止监听
         </button>
       </div>
-      <div className="mt-1.5 text-[10px] text-slate-600">
+      <div className="mt-1.5 text-[10px] text-tertiary">
         {folder.recursive ? '包含子目录' : '仅当前目录'}
         {folder.lastScanAt ? ` · 上次扫描 ${new Date(folder.lastScanAt).toLocaleString('zh-CN')}` : ''}
       </div>
@@ -551,15 +551,15 @@ function VideoRow({
         {selected ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
         ) : focused ? (
-          <span className="absolute inset-y-0 left-0 w-[2px] bg-slate-500/60" />
+          <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
         ) : null}
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-ink-950">
+          <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0">
             <div
-              className={`truncate ${selected ? 'text-accent' : 'text-slate-100'}`}
+              className={`truncate ${selected ? 'text-accent' : 'text-primary'}`}
               title={video.path}
             >
               {video.name}

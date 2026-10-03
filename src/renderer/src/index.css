@@ -1,18 +1,91 @@
 @import 'tailwindcss';
 
+/*
+ * 配色分两层：
+ *   1. 语义 token（primary / surface / line / accent …）—— 组件只认这一层
+ *   2. 两套具体色值（深色 / 浅色）—— 由 [data-theme] 切换
+ *
+ * 组件里不要写 text-slate-100 这类固定色：它在浅色主题下会是白字白底。
+ * 语义 token 全在 @theme 里定义，因此切换主题时 Tailwind 会自动生成对应的
+ * text-primary / bg-surface-2 / border-line 这��工具类，无需额外配置。
+ */
 @theme {
-  --color-ink-950: #070a12;
-  --color-ink-900: #0b0f17;
-  --color-ink-850: #101725;
-  --color-ink-800: #141c2b;
-  --color-ink-700: #1d2739;
+  /* 背景层级：从最深的底到最浅的浮层（数字大 = 更靠前） */
+  --color-surface-0: #070a12; /* 应用最底层 */
+  --color-surface-1: #0b0f17; /* 主区域 */
+  --color-surface-2: #101725; /* 卡片 / 面板 */
+  --color-surface-3: #141c2b; /* 悬停态 */
+  --color-surface-4: #1d2739; /* 最高层（浮层、选中） */
+  --color-surface-inset: #162233; /* 缩略图衬底 */
+
+  /* 描边 */
   --color-line: #223049;
-  --color-muted: #94a3b8;
+  --color-line-strong: #2d3d5c;
+
+  /* 文字 */
+  --color-primary: #e2e8f0; /* 标题、主要内容 */
+  --color-secondary: #cbd5e1; /* 次要内容、按钮文字 */
+  --color-tertiary: #94a3b8; /* 说明、提示（即原 muted） */
+  --color-disabled: #64748b; /* 禁用态、极弱提示 */
+
+  /* 强调色 */
   --color-accent: #38bdf8;
   --color-accent-strong: #0ea5e9;
+  --color-accent-soft: #0ea5e933; /* 选中背景 */
+
+  /* 语义色 */
   --color-ok: #34d399;
   --color-warn: #fbbf24;
   --color-bad: #f87171;
+
+  /* 兼容旧名：这些 token 在组件里还有零星引用，映射到语义层 */
+  --color-ink-950: var(--color-surface-0);
+  --color-ink-900: var(--color-surface-1);
+  --color-ink-850: var(--color-surface-2);
+  --color-ink-800: var(--color-surface-3);
+  --color-ink-700: var(--color-surface-4);
+  --color-muted: var(--color-tertiary);
+
+  --color-btn-bg: #16203380;
+  --color-btn-border: #223049;
+  --color-btn-text: #dbe4f0;
+  --color-scroll-thumb: #23304a;
+  --color-scroll-thumb-hover: #33456a;
+}
+
+/*
+ * 浅色主题。刻意保持"冷白"而非纯白，长时间看缩略图列表不刺眼；
+ * 强调色压深一档（#38bdf8 在白底上对比度不足，约 2.1:1）。
+ */
+[data-theme='light'] {
+  --color-surface-0: #eef2f7;
+  --color-surface-1: #f8fafc;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #f1f5f9;
+  --color-surface-4: #e2e8f0;
+  --color-surface-inset: #e8edf3;
+
+  --color-line: #d8e0ea;
+  --color-line-strong: #bcc9d8;
+
+  --color-primary: #0f172a;
+  --color-secondary: #334155;
+  --color-tertiary: #64748b;
+  --color-disabled: #94a3b8;
+
+  --color-accent: #0284c7;
+  --color-accent-strong: #0369a1;
+  --color-accent-soft: #0284c71a;
+
+  --color-ok: #059669;
+  --color-warn: #b45309;
+  --color-bad: #dc2626;
+
+  --color-btn-bg: #ffffffcc;
+  --color-btn-border: #d8e0ea;
+  --color-btn-text: #334155;
+  --color-scroll-thumb: #cbd5e1;
+  --color-scroll-thumb-hover: #94a3b8;
 }
 
 @layer base {
@@ -25,10 +98,15 @@
 
   body {
     background: radial-gradient(1200px 600px at 20% -10%, #16243c 0%, #0b0f17 55%, #070a12 100%);
-    color: #e2e8f0;
+    color: var(--color-primary);
     font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
     font-size: 14px;
     overflow: hidden;
+  }
+
+  /* 浅色下把径向渐变整体提亮，否则深蓝底会透过内容层显出来 */
+  [data-theme='light'] body {
+    background: radial-gradient(1200px 600px at 20% -10%, #ffffff 0%, #f1f5f9 55%, #e8eef5 100%);
   }
 
   ::-webkit-scrollbar {
@@ -37,14 +115,14 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #23304a;
+    background: var(--color-scroll-thumb);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #33456a;
+    background: var(--color-scroll-thumb-hover);
     background-clip: content-box;
   }
 }
@@ -56,9 +134,9 @@
   gap: 6px;
   padding: 7px 12px;
   border-radius: 9px;
-  border: 1px solid #223049;
-  background: #16203380;
-  color: #dbe4f0;
+  border: 1px solid var(--color-btn-border);
+  background: var(--color-btn-bg);
+  color: var(--color-btn-text);
   cursor: pointer;
   transition:
     background 0.14s ease,

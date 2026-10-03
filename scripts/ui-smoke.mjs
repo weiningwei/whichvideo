@@ -258,21 +258,48 @@ export default mod
   const render = (element) => renderToStaticMarkup(element)
 
   /* ---------- 1. 顶栏 + 状态栏 ---------- */
-  const headerHtml = render(
-    jsx(Header, {
-      stats,
-      status,
-      tab: 'search',
-      onTab: noop,
-      onImportFiles: noop,
-      onImportFolder: noop,
-      busy: null
-    })
-  )
+  const headerBase = {
+    stats,
+    status,
+    tab: 'search',
+    onTab: noop,
+    onImportFiles: noop,
+    onImportFolder: noop,
+    busy: null
+  }
+  const headerHtml = render(jsx(Header, { ...headerBase, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop }))
   check('顶栏渲染品牌名', headerHtml.includes('WhichVideo'))
   check('顶栏渲染统计（监听 1/1）', /1\/1/.test(headerHtml), headerHtml.match(/监听[\s\S]{0,40}/)?.[0] ?? '')
   check('顶栏渲染帧指纹数量', headerHtml.includes('16'))
   check('顶栏渲染导入按钮', headerHtml.includes('导入视频') && headerHtml.includes('导入文件夹'))
+
+  // ---- 主题切换 ----
+  check('顶栏有主题切换按钮', headerHtml.includes('切换主题') && /aria-label="切换主题"/.test(headerHtml))
+  check(
+    '深色模式按钮 title 说明当前档位',
+    headerHtml.includes('主题：深色'),
+    '三档循环：深色 → 浅色 → 跟随系统'
+  )
+  const lightHeaderHtml = render(
+    jsx(Header, { ...headerBase, themeMode: 'light', themeResolved: 'light', onCycleTheme: noop })
+  )
+  check('浅色模式 title 正确', lightHeaderHtml.includes('主题：浅色'))
+  const systemHeaderHtml = render(
+    jsx(Header, { ...headerBase, themeMode: 'system', themeResolved: 'dark', onCycleTheme: noop })
+  )
+  check(
+    '跟随系统会额外显示解析后的实际主题',
+    systemHeaderHtml.includes('主题：跟随系统') && systemHeaderHtml.includes('当前深色'),
+    '系统为深色时如实告知'
+  )
+  check(
+    '三档图标各不相同（否则看不出当前在哪一档）',
+    new Set(['◐', '◑', '◒']).size === 3 &&
+      headerHtml.includes('◐') &&
+      lightHeaderHtml.includes('◑') &&
+      systemHeaderHtml.includes('◒'),
+    '◐ 深色 / ◑ 浅色 / ◒ 跟随系统'
+  )
 
   const barHtml = render(jsx(StatusBar, { status, busy: null, notice: null }))
   check('状态栏渲染空闲状态', barHtml.includes('索引空闲') || barHtml.includes('待机'))
@@ -515,7 +542,7 @@ export default mod
     )
     check(
       '键盘焦点有独立视觉提示（淡灰竖条，与选中蓝条区分）',
-      src.includes('w-[2px] bg-slate-500/60') && src.includes('bg-ink-800/70'),
+      src.includes('w-[2px] bg-disabled/60') && src.includes('bg-ink-800/70'),
       '焦点灰条 / 选中蓝条'
     )
     check(

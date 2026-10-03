@@ -124,14 +124,14 @@ export function SearchView(props: Props) {
             {queryImage ? (
               <img src={queryImage} alt="查询图片" className="h-full w-full object-cover" />
             ) : (
-              <span className="px-2 text-center text-[11px] text-slate-500">
+              <span className="px-2 text-center text-[11px] text-tertiary">
                 {queryLabel?.startsWith('http') ? '来自链接' : '拖入 / 粘贴图片'}
               </span>
             )}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-slate-200">
+            <div className="text-[13px] font-medium text-primary">
               {queryLabel ?? '把截图、海报或任意图片拖到这里'}
             </div>
             <div className="mt-1 text-[11.5px] text-muted">
@@ -185,7 +185,7 @@ export function SearchView(props: Props) {
                 placeholder="粘贴图片链接或网页地址，回车检索"
                 spellCheck={false}
                 disabled={searching}
-                className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-slate-600 focus:border-accent/60 disabled:opacity-50"
+                className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-tertiary focus:border-accent/60 disabled:opacity-50"
               />
               <button
                 className="btn shrink-0 px-2.5 py-1.5 text-[12px] hover:bg-ink-700/70"
@@ -259,7 +259,7 @@ export function SearchView(props: Props) {
 
 function EmptyHint() {
   return (
-    <div className="mt-2 grid gap-3 text-[12.5px] text-slate-400 sm:grid-cols-3">
+    <div className="mt-2 grid gap-3 text-[12.5px] text-secondary sm:grid-cols-3">
       <Hint title="1 · 建立索引" body="在「视频库与监听」里导入单个视频或整个文件夹，程序会抽帧建立指纹索引。" />
       <Hint title="2 · 丢一张图进来" body="把图片拖进窗口、Ctrl+V 粘贴，或点击「选择图片文件」。" />
       <Hint title="3 · 看结果" body="命中即说明该视频已在本地；未命中说明这张图对应的视频还没下载。" />
@@ -270,7 +270,7 @@ function EmptyHint() {
 function Hint({ title, body }: { title: string; body: string }) {
   return (
     <div className="card p-3">
-      <div className="text-[12px] font-semibold text-slate-200">{title}</div>
+      <div className="text-[12px] font-semibold text-primary">{title}</div>
       <div className="mt-1 leading-relaxed text-muted">{body}</div>
     </div>
   )
@@ -319,15 +319,15 @@ function ResultCard({
 
   return (
     <div className="card group flex gap-3 overflow-hidden p-3 transition hover:border-accent/40">
-      <div className="relative h-[86px] w-[150px] shrink-0 overflow-hidden rounded-lg border border-line bg-ink-950">
+      <div className="relative h-[86px] w-[150px] shrink-0 overflow-hidden rounded-lg border border-line bg-surface-inset">
         {thumb ? (
           <img src={thumb} alt={video.name} className="h-full w-full object-cover" />
         ) : (
-          <div className="grid h-full place-items-center text-[11px] text-slate-600">
+          <div className="grid h-full place-items-center text-[11px] text-tertiary">
             {video.status === 'ready' ? '无缩略图' : video.status === 'failed' ? '索引失败' : '索引中…'}
           </div>
         )}
-        <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-slate-200">
+        <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-primary">
           {formatDuration(match.timeSeconds)}
         </span>
       </div>
@@ -335,7 +335,7 @@ function ResultCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium text-slate-100" title={video.path}>
+            <div className="truncate text-[13px] font-medium text-primary" title={video.path}>
               {video.name}
             </div>
             <div className="truncate text-[11px] text-muted" title={video.path}>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLibrary } from './hooks/useLibrary'
+import { useTheme } from './hooks/useTheme'
 import { Header } from './components/Header'
 import { StatusBar } from './components/StatusBar'
 import { SearchView } from './components/SearchView'
@@ -12,6 +13,8 @@ export default function App() {
   const { hasIndexedFrames, groupByFolder, selectedVideoIds, expandedFolderIds } = state
   const { reSearch, toggleGroupByFolder, toggleVideoSelection, clearSelection, selectAll,
     toggleFolderExpanded, expandAllFolders, collapseAllFolders, isVideoSelected, isFolderExpanded } = actions
+  // 主题：深色 / 浅色 / 跟随系统。落在 <html data-theme> 上，CSS 侧自动换色值
+  const { mode: themeMode, resolved: themeResolved, cycle: cycleTheme } = useTheme()
 
   // G 键切换分组/平铺（仅在库页面）
   useEffect(() => {
@@ -42,6 +45,9 @@ export default function App() {
           void actions.importFolder()
           setTab('library')
         }}
+        themeMode={themeMode}
+        themeResolved={themeResolved}
+        onCycleTheme={cycleTheme}
       />
 
       <main className="flex min-h-0 flex-1 flex-col">

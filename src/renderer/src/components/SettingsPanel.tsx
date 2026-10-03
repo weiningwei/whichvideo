@@ -67,7 +67,7 @@ export function SettingsPanel({
         onChange={(v) => onChange({ awaitWriteMs: v })}
       />
 
-      <label className="flex items-center gap-2 text-slate-300">
+      <label className="flex items-center gap-2 text-secondary">
         <input
           type="checkbox"
           checked={value.pruneOnDelete}
@@ -78,21 +78,21 @@ export function SettingsPanel({
 
       <div className="rounded-lg border border-line/70 bg-ink-900/60 px-2.5 py-2 text-[10.5px] leading-relaxed">
         <div className="flex items-center gap-1.5">
-          <span className="text-slate-400">数据目录</span>
+          <span className="text-secondary">数据目录</span>
           {dataDir?.portable ? (
             <span className="rounded border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok">
               便携模式{dataDir.source === 'env' ? '（环境变量）' : ''}
             </span>
           ) : (
-            <span className="rounded border border-line bg-ink-700/40 px-1.5 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded border border-line bg-ink-700/40 px-1.5 py-0.5 text-[10px] text-secondary">
               默认（用户目录）
             </span>
           )}
         </div>
-        <div className="mt-1 break-all font-mono text-[10px] text-slate-400" title={dataDir?.dir}>
+        <div className="mt-1 break-all font-mono text-[10px] text-secondary" title={dataDir?.dir}>
           {dataDir?.dir ?? '（读取中）'}
         </div>
-        <div className="mt-1 text-slate-500">
+        <div className="mt-1 text-tertiary">
           便携模式下索引库与缓存都写在这个目录，整个文件夹拷走即可迁移；也可用环境变量
           <span className="font-mono"> WHICHVIDEO_DATA_DIR </span>
           指定其他位置。
@@ -127,7 +127,7 @@ export function SettingsPanel({
           </button>
         )}
       </div>
-      <p className="text-[10.5px] leading-relaxed text-slate-500">
+      <p className="text-[10.5px] leading-relaxed text-tertiary">
         清空只删除索引数据（数据库文件），不会动你的视频文件。修改设置后，重建索引才会生效。
       </p>
     </div>
@@ -154,7 +154,7 @@ function Field({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="text-slate-300">{label}</span>
+        <span className="text-secondary">{label}</span>
         <span className="font-mono text-accent">{value}</span>
       </div>
       <input
@@ -164,9 +164,9 @@ function Field({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full accent-[#38bdf8]"
+        className="mt-1 w-full accent-accent"
       />
-      <div className="text-[10px] leading-snug text-slate-500">{hint}</div>
+      <div className="text-[10px] leading-snug text-tertiary">{hint}</div>
     </div>
   )
 }
