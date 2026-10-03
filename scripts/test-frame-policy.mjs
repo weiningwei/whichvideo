@@ -39,7 +39,7 @@ async function main() {
 
   check('导出了 framesForDuration', typeof framesForDuration === 'function')
   check('导出了 plannedFrameCount', typeof plannedFrameCount === 'function')
-  check('默认上限为 64', DEFAULT_FRAME_BUDGET === 64, String(DEFAULT_FRAME_BUDGET))
+  check('默认上限为 128', DEFAULT_FRAME_BUDGET === 128, String(DEFAULT_FRAME_BUDGET))
 
   // 核心诉求：时长越长，帧数越多（原来固定不变）
   const durations = [10, 30, 60, 300, 600, 900, 1800, 3600, 7200]
@@ -57,10 +57,46 @@ async function main() {
     frames.join(' ≤ ')
   )
   check('10 分钟与 1 小时不再相同', framesForDuration(600) !== framesForDuration(3600), `${framesForDuration(600)} vs ${framesForDuration(3600)}`)
-  check('1 小时视频至少 48 帧', framesForDuration(3600) >= 48, String(framesForDuration(3600)))
-  check('策略值不超过 64（保守封顶）', Math.max(...frames) <= 64, String(Math.max(...frames)))
+  check('1 小时视频至少 80 帧', framesForDuration(3600) >= 80, String(framesForDuration(3600)))
+  check('策略值不超过 128（保守封顶）', Math.max(...frames) <= 128, String(Math.max(...frames)))
   check('短视频也有下限（≥8）', framesForDuration(5) >= 8, String(framesForDuration(5)))
   check('非法时长不抛错', Number.isFinite(framesForDuration(null)) && Number.isFinite(framesForDuration(0)))
+
+  // 核心不变量：采样间隔。一集剧平均镜头约 5 秒，1 小时约 720 个镜头；
+  // 间隔 gap = 时长/帧数，某个镜头至少被采到一帧的概率 ≈ min(1, 5/gap)。
+  // 原表 1 小时只给 56 帧（gap=64s）→ 命中率约 8%，即 92% 的镜头在库里
+  // 没有任何对应指纹，这类"明明有却搜不到"与匹配算法无关，纯粹是采样太稀。
+  console.log('')
+  console.log('  1 小时视频的采样间隔与镜头命中率：')
+  for (const cap of [64, 96, 128, 192]) {
+    const f = plannedFrameCount(3600, cap)
+    const gap = 3600 / f
+    const hit = Math.min(1, 5 / gap)
+    console.log(
+      `    上限 ${String(cap).padStart(3)} → ${String(f).padStart(3)} 帧，间隔 ${gap.toFixed(0)}s，单镜头命中约 ${(hit * 100).toFixed(0)}%`
+    )
+  }
+  console.log('')
+  const gapDefault = 3600 / plannedFrameCount(3600, DEFAULT_FRAME_BUDGET)
+  const hitDefault = Math.min(1, 5 / gapDefault)
+  // 注意：分档表 3600s 折点是 96 帧，所以把上限调到 128 也不会让 1 小时视频
+  // 拿到 128 帧——真正决定帧数的是表本身，不是用户设置。
+  check(
+    '默认配置下 1 小时视频至少 90 帧（间隔 ≤ 40 秒）',
+    plannedFrameCount(3600, DEFAULT_FRAME_BUDGET) >= 90 && gapDefault <= 40,
+    `${plannedFrameCount(3600, DEFAULT_FRAME_BUDGET)} 帧，间隔 ${gapDefault.toFixed(0)} 秒`
+  )
+  check(
+    '默认配置下单镜头命中率 ≥ 12%（原策略仅 8%）',
+    hitDefault >= 0.12,
+    `${(hitDefault * 100).toFixed(0)}%`
+  )
+  // 守住"上限只是封顶、真正决定帧数的是表"这一性质，避免误以为调大设置就能加密
+  check(
+    '调大上限不再增加 1 小时视频的帧数（由分档表决定）',
+    plannedFrameCount(3600, 256) === plannedFrameCount(3600, DEFAULT_FRAME_BUDGET),
+    `${plannedFrameCount(3600, 256)} 帧`
+  )
 
   // 用户设置作为上限：取小
   check('设置 16 会压住策略值', plannedFrameCount(3600, 16) === 16, String(plannedFrameCount(3600, 16)))

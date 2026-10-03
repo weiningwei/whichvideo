@@ -37,11 +37,12 @@ export function SettingsPanel({
       {open && (
         <div className="flex flex-col gap-3 px-4 pb-4 text-[11.5px]">
           <Field
-            label="每个视频抽帧数"
-            hint="越长越准，但建索引更慢。默认 16 帧。"
+            label="每个视频抽帧数（上限）"
+            hint="实际帧数按时长自动分档，这里是封顶值。调小会稀疏、调大更密，长视频尤其明显。"
             value={value.framesPerVideo}
-            min={4}
-            max={60}
+            min={8}
+            max={256}
+            step={8}
             onChange={(v) => onChange({ framesPerVideo: v })}
           />
           <Field
