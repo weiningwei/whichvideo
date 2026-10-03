@@ -415,7 +415,7 @@ export class Indexer {
     }
 
     const timestamps = planTimestamps(duration, settings.framesPerVideo)
-    const frames = await extractAndHash(video.path, timestamps, settings)
+    const frames = await extractAndHash(video.path, timestamps, settings, duration)
     const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
     const thumbnail = await makeThumbnail(video.path, thumbTime, t)
     this.db.replaceFrames(videoId, frames, thumbnail)

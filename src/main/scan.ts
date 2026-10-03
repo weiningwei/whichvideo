@@ -2,15 +2,19 @@
  * 目录扫描与抽帧：把视频文件变成一组帧指纹。
  *
  * - 扫描阶段串行且轻量（stat + 必要时 ffprobe）
- * - 抽帧用一次 ffmpeg 调用对多个时间点 seek，直接输出 rgb24 到 stdout，
- *   收完再逐帧算哈希，避免落任何临时图片文件
+ * - 抽帧用一次 ffmpeg 调用，直接输出 rgb24 到 stdout，收完再逐帧算哈希，
+ *   避免落任何临时图片文件
+ *
+ * 抽帧有两条路径，由帧数是否越过成本交叉点自动选择（见 extractAndHash）：
+ *   · 少量帧：每个时间点一个 `-ss` 精确跳转（scan.ts::extractAndHashBySeek）
+ *   · 大量帧：单次全片解码 + fps 采样（scan.ts::extractAndHashByFullScan）
  */
 import { existsSync, statSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { basename, extname, join, relative, sep } from 'node:path'
 import { isVideoFile, normalizePath, pathKeyOf, type AppSettings, type LibraryEvent } from '@shared/types'
 import { computeSignature, type ImageDataLike } from '@shared/hash'
-import { requireTools, run, type ToolPaths } from './media'
+import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } from './media'
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
 
@@ -34,21 +38,43 @@ function tools(): ToolPaths {
  * ------------------------------------------------------------------ */
 
 /**
- * 一次 ffmpeg 调用按时间点抽帧，直接输出 rgb24 裸像素到 stdout（不落临时文件）。
+ * 把视频按给定时间点抽帧并算成指纹，直接输出 rgb24 裸像素到 stdout（不落临时文件）。
  *
- * 每个时间点拆成一个 `-ss/-i` 输入，再为每个输入各写一路 `pipe:1` 输出；
- * ffmpeg 会按输出顺序把各帧依次写进同一个管道，stdout 就是 N 段等长的裸像素。
- * 各帧来自同一个源、同一个 scale 滤镜，尺寸必然一致，因此用
- * 「总字节数 / 时间点数」即可还原单帧尺寸，无需解析 ffmpeg 日志。
+ * 两条路径按帧数自动切换（交叉点见 media.ts::SEEK_VS_FULLSCAN_CROSSOVER）：
+ * - 少量帧走 extractAndHashBySeek：每个时间点拆成一个 `-ss/-i` 输入，再为每个输入
+ *   各写一路 `pipe:1` 输出。ffmpeg 按输出顺序把各帧依次写进同一管道，stdout 就是
+ *   N 段等长的裸像素；各帧同源同 scale 滤镜故尺寸一致，用「总字节数 / 时间点数」
+ *   即可还原单帧尺寸，无需解析 ffmpeg 日志。成本约 25 ms/帧，与时长无关。
+ * - 大量帧走 extractAndHashByFullScan：单次全片解码 + fps 采样，成本与帧数无关。
+ *
  * 哈希与查询图共用 @shared/hash 的同一份实现，保证口径一致。
  */
 export async function extractAndHash(
   filePath: string,
   timestamps: number[],
-  settings: AppSettings
+  settings: AppSettings,
+  durationSeconds?: number | null
 ): Promise<NewFrame[]> {
-  void settings
   if (timestamps.length === 0) return []
+
+  // 帧数越过成本交叉点后，改用"单次全片解码 + fps 采样"：
+  // 逐点 seek 约 25 ms/帧（与时长无关），全片解码约等于该时长的解码时间（与帧数无关），
+  // 实测 600 秒视频在约 55 帧处交叉。帧数上限提到 240 后，逐点 seek 会成为主要开销。
+  //
+  // 注：当前两条路径都固定用 EXTRACT_WIDTH 缩放，settings 暂未参与抽帧决策；
+  // 参数保留以便后续设置（如缩放宽度、抽帧模式）演进时不必改所有调用点。
+  void settings
+  if (shouldUseFullScan(timestamps.length)) {
+    return extractAndHashByFullScan(filePath, timestamps, durationSeconds ?? null)
+  }
+  return extractAndHashBySeek(filePath, timestamps)
+}
+
+/**
+ * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，成本约 25 ms/帧，与时长无关。
+ * 帧数较少时优于全片解码（无需从头解一遍）。
+ */
+async function extractAndHashBySeek(filePath: string, timestamps: number[]): Promise<NewFrame[]> {
   const t = tools()
 
   const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
@@ -103,6 +129,44 @@ export async function extractAndHash(
       color: quantizeColor(sig.color),
       frameIndex: i,
       timeMs: Math.round(timestamps[i] * 1000)
+    })
+  }
+  return frames
+}
+
+/**
+ * 路径 B：单次全片解码 + `fps=N/时长` 均匀采样，成本与帧数无关。
+ * 帧数较多、或视频很长时优于逐点 seek。
+ *
+ * 与路径 A 的差别：fps 采样取的是"每 rate 帧一张"，实际落点与传入的 timestamps
+ * 未必逐一对齐（尤其时长估计不准时）。但由于 timestamps 本身就是等间隔分布的，
+ * 且搜索只按指纹比对、不依赖精确时间点，这个偏差不影响召回与排序；
+ * 落点偏差仅体现在 UI 显示的命中时间上（可能有一帧左右的误差）。
+ */
+async function extractAndHashByFullScan(
+  filePath: string,
+  timestamps: number[],
+  durationSeconds: number | null
+): Promise<NewFrame[]> {
+  const extracted = await extractFrames(filePath, timestamps, tools(), {
+    maxWidth: EXTRACT_WIDTH,
+    durationSeconds: durationSeconds ?? undefined
+  })
+  if (extracted.length === 0) {
+    throw new Error('抽帧失败：全片解码未取到任何画面')
+  }
+
+  const frames: NewFrame[] = []
+  for (let i = 0; i < extracted.length; i++) {
+    const { rgb, width, height, time } = extracted[i]
+    const image: ImageDataLike = { width, height, channels: 3, order: 'rgb', data: rgb }
+    const sig = computeSignature(image)
+    frames.push({
+      dhash: sig.dhash,
+      struct: sig.struct,
+      color: quantizeColor(sig.color),
+      frameIndex: i,
+      timeMs: Math.round(time * 1000)
     })
   }
   return frames

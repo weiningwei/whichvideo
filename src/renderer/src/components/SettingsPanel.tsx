@@ -38,10 +38,10 @@ export function SettingsPanel({
         <div className="flex flex-col gap-3 px-4 pb-4 text-[11.5px]">
           <Field
             label="每个视频抽帧数（上限）"
-            hint="实际帧数按时长自动分档，这里是封顶值。调小会稀疏、调大更密，长视频尤其明显。"
+            hint="实际帧数按时长自动分档，这里是封顶值。超过约 48 帧后会自动改用更快的抽帧方式，调大不会明显变慢。"
             value={value.framesPerVideo}
             min={8}
-            max={256}
+            max={400}
             step={8}
             onChange={(v) => onChange({ framesPerVideo: v })}
           />
