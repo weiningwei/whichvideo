@@ -595,14 +595,33 @@ export default mod
     jsx(SettingsPanel, {
       settings: appSettings,
       dataDir: { dir: 'C:\\Users\\me\\AppData\\Roaming\\WhichVideo', portable: false, source: 'default', toolsReady: true },
-      initialOpen: true,
       onChange: noop,
       onReset: noop,
       onOpenDatabaseFolder: noop
     })
   )
-  // 设置面板现在嵌在右栏的「索引设置」标签页内，自身标题改为「抽帧与匹配参数」
-  check('设置面板有入口标题', settingsHtml.includes('抽帧与匹配参数'))
+  // 参数一律直接展开：不再有「展开 / 收起」二级操作，滑块与开关应直接可见
+  check('设置面板不再有「展开 / 收起」按钮', !settingsHtml.includes('收起') && !settingsHtml.includes('展开'))
+  check(
+    '五个参数滑块默认全部可见（无需点击展开）',
+    ['每个视频抽帧数', '并发解码数', '匹配阈值', '最多返回结果', '新文件稳定等待'].every(
+      (label) => settingsHtml.includes(label)
+    ),
+    '抽帧数 / 并发 / 阈值 / 结果数 / 稳定等待'
+  )
+  check(
+    '参数滑块渲染为 range 输入',
+    (settingsHtml.match(/type="range"/g) ?? []).length === 5,
+    `${(settingsHtml.match(/type="range"/g) ?? []).length} 个滑块`
+  )
+  check('删除时自动移除的开关也直接可见', settingsHtml.includes('文件被删除时自动从库中移除'))
+  check(
+    '危险操作与说明直接可见（无需展开）',
+    settingsHtml.includes('清空索引库') &&
+      settingsHtml.includes('不会动你的视频文件') &&
+      settingsHtml.includes('打开索引库位置'),
+    '清空 / 说明 / 打开位置都在首屏'
+  )
   check('设置面板展示数据目录', settingsHtml.includes('数据目录') && settingsHtml.includes('AppData\\Roaming\\WhichVideo'))
   check('默认模式标注为"默认（用户目录）"', settingsHtml.includes('默认（用户目录）'))
 
@@ -610,7 +629,6 @@ export default mod
     jsx(SettingsPanel, {
       settings: appSettings,
       dataDir: { dir: 'E:\\WhichVideo\\data', portable: true, source: 'portable-launcher', toolsReady: true },
-      initialOpen: true,
       onChange: noop,
       onReset: noop,
       onOpenDatabaseFolder: noop
