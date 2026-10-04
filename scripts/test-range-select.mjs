@@ -15,31 +15,43 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 
 /**
- * 复刻 useLibrary 的选中算法（逐行照搬 src/renderer/src/hooks/useLibrary.ts）。
- * 用闭包模拟 React setState(fn) 的语义：fn 收到的 prev 是上一轮结果。
+ * 复刻 useLibrary 的选中算法（对照 src/renderer/src/hooks/useLibrary.ts）。
+ *
+ * 关键：锚点用 ref（同步可读），不是 state。
+ * 曾经的 bug 是 useCallback([videos]) + 闭包读 state —— 而选中并不改变 videos，
+ * 依赖永远不变、callback 永不重建，闭包里那个值永远是初始 null，
+ * 于是 Shift 连选每次都退化成单选。本脚本的 makeSelection 用 ref 语义，
+ * 若实现改回 state 会立刻暴露（见末尾的同步守卫）。
  */
 function makeSelection(ids) {
   let selected = new Set()
-  let lastSelectedId = null
+  const lastSelectedRef = { current: null } // ref：同步读写
   return {
     toggle(videoId, shiftKey = false, ctrlKey = false) {
+      const anchor = lastSelectedRef.current // updater 同步执行，读到的是最新值
       selected = (() => {
         const next = new Set(selected)
-        if (shiftKey && lastSelectedId !== null) {
-          const start = ids.indexOf(lastSelectedId)
+        if (shiftKey && anchor !== null) {
+          const start = ids.indexOf(anchor)
           const end = ids.indexOf(videoId)
           const [min, max] = start < end ? [start, end] : [end, start]
           for (let i = min; i <= max; i++) next.add(ids[i])
+          return next
         } else if (ctrlKey) {
           if (next.has(videoId)) next.delete(videoId)
           else next.add(videoId)
+          return next
         } else {
           next.clear()
           next.add(videoId)
+          return next
         }
-        return next
       })()
-      lastSelectedId = videoId
+      lastSelectedRef.current = videoId
+    },
+    clear() {
+      selected = new Set()
+      lastSelectedRef.current = null
     },
     size: () => selected.size,
     ids: () => [...selected]
@@ -72,6 +84,33 @@ console.log('=== Shift 连选：选中集合会累积 ===')
   s.toggle(4, true)
   check('再 Shift 后 size=3', s.size() === 3, '实际 ' + s.size())
   check('集合是 [2,3,4]', JSON.stringify(s.ids().sort((a, b) => a - b)) === '[2,3,4]', JSON.stringify(s.ids()))
+}
+
+console.log('=== 连按 Shift+↓ 持续累积（用户报告的那个场景）===')
+{
+  // 之前 useCallback([videos]) 捕获的锚点永远是 null，
+  // 于是连按方向键每次都退化成单选 —— 界面表现为「已选 1」。
+  // 光标从第 1 行起，按三次 Shift+↓，应选中 1~4 四个。
+  const s = makeSelection(ids)
+  s.toggle(1) // 落在第 1 行
+  s.toggle(2, true)
+  check('按一次 Shift+↓ 后 size=2', s.size() === 2, '实际 ' + s.size())
+  s.toggle(3, true)
+  check('按两次后 size=3', s.size() === 3, '实际 ' + s.size())
+  s.toggle(4, true)
+  check('按三次后 size=4（每次都累积）', s.size() === 4, '实际 ' + s.size())
+  check('集合是 [1,2,3,4]', JSON.stringify(s.ids().sort((a, b) => a - b)) === '[1,2,3,4]', JSON.stringify(s.ids()))
+}
+
+console.log('=== clearSelection 后锚点要清掉 ===')
+{
+  const s = makeSelection(ids)
+  s.toggle(3)
+  s.toggle(4, true)
+  s.clear()
+  check('清空后 size=0', s.size() === 0)
+  s.toggle(2, true) // 锚点已清 → 退化成单选而不是从旧的 4 开始
+  check('清空后按 Shift 退化为单选（不从旧锚点扩展）', s.size() === 1, '实际 ' + s.size())
 }
 
 console.log('=== Shift 与 Ctrl 最终结果一致（提示才能统一）===')
@@ -124,11 +163,30 @@ console.log('=== 实现与 useLibrary 的算法保持一致 ===')
   const algo = hookSrc.slice(hookSrc.indexOf('const toggleVideoSelection'), hookSrc.indexOf('const clearSelection'))
   check(
     '复刻的算法与 useLibrary 里的分支结构一致',
-    algo.includes('if (shiftKey && lastSelectedVideoId !== null)') &&
-      algo.includes('} else if (ctrlKey) {') &&
+    algo.includes('} else if (ctrlKey) {') &&
       algo.includes('next.clear()') &&
-      algo.includes('setLastSelectedVideoId(videoId)'),
+      algo.includes('lastSelectedRef.current = videoId'),
     'useLibrary 的选中算法变了，本脚本的复刻需要同步'
+  )
+  // 下面这条是本 bug 的核心防线：锚点必须走 ref。
+  // 改回 state（哪怕分支结构没变）会立刻被抓住 —— 那个 bug 正是
+  // typecheck 通过、静态断言全绿、只有真去连选才暴露。
+  check(
+    '连选锚点用 ref 而非 state（否则闭包陈旧导致连选退化成单选）',
+    hookSrc.includes('const lastSelectedRef = useRef<number | null>(null)') &&
+      algo.includes('const anchor = lastSelectedRef.current') &&
+      !hookSrc.includes('useState<number | null>(null)'),
+    'lastSelectedRef 存在，且 toggle 内读的是 ref'
+  )
+  check(
+    '连选条件的判断用的是这个 ref 值',
+    algo.includes('if (shiftKey && anchor !== null)'),
+    '不能改回读 state'
+  )
+  check(
+    'clearSelection 也清了锚点（否则取消后再 Shift 会从旧位置扩展）',
+    /const clearSelection[\s\S]{0,200}lastSelectedRef\.current = null/.test(hookSrc),
+    'clearSelection 里要重置 ref'
   )
   const viewSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
   check(

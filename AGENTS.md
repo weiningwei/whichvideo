@@ -156,6 +156,47 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 `absolute` 在表格布局里定位不可靠（兄弟节点不是定位祖先时它会跑到别处），
 不如直接用实色 token。
 
+## 连选锚点必须用 ref，不能用 state
+
+`useLibrary` 的 Shift 连选锚点（`lastSelectedRef`）**必须是 ref**。改成 state 就会出
+一个 typecheck 通过、静态断言全绿、只有真去连选才暴露的 bug。
+
+**症状**：连按 Shift+↓ 选中不累积，每按一次都被清成 1 个（工具条显示「已选 1」）。
+
+**根因**（两层，都很隐蔽）：
+
+1. 连选逻辑写在 `setState` 的 updater 里，而 updater 是**同步执行**的 ——
+   此刻读 state 拿到的还是本轮 `setLast` **之前**的旧值。React 不会因为我们刚调过
+   `setLast` 就重跑一次 callback。
+2. 原来的依赖是 `[videos]`，而**选中并不改变 videos**（videos 只在扫描/导入时 set）。
+   所以依赖永远不变、callback 永不重建，闭包里那个 state 值永远是初始的 `null` ——
+   连选每次都走 `else` 分支退化成单选。
+
+**症状为什么"时好时坏"**：任何顺带 `setVideos` 的操作（重新扫描、导入）都会让
+callback 重建，此时闭包能拿到新锚点，于是连选又能用一会儿。
+这种间歇性表现让复现变得很困难，我一度误判成"用户跑的是旧构建"。
+
+**正确写法**：
+
+```ts
+const lastSelectedRef = useRef<number | null>(null)
+const toggleVideoSelection = useCallback((videoId, shiftKey, ctrlKey) => {
+  const anchor = lastSelectedRef.current   // 同步读到最新值
+  setSelectedVideoIds((prev) => { /* 用 anchor */ })
+  lastSelectedRef.current = videoId        // 同步更新
+}, [videos])
+```
+
+`clearSelection` 里也要清 `lastSelectedRef.current = null`，
+否则取消选择后再按 Shift 会从上一次的位置开始扩展。
+
+`test:range` 里有专门三条守着它（锚点用 ref、判断读 ref、clearSelection 清 ref），
+外加「连按 Shift+↓ 每次都累积」的行为验证。**改连选逻辑前先跑它。**
+
+顺带一个通用教训：**`useCallback` 的依赖数组是"何时重建闭包"的唯一依据，
+而"读一个 state"不构成依赖 —— 因为 state 变了但你若没把它列进去，闭包就永远读不到
+新值。** 凡是"上一次的位置/上一次的某状态"这类锚点，直接用 ref。
+
 ## 光标与选中
 
 **光标与选中必须是同一个东西。** 文件管理器式的列表里，光标在哪单选就在哪。
@@ -211,6 +252,7 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - `test:path` 转译渲染端后测 `format.ts` 的路径处理，守住「shortDir 不含文件名」与「文件在根目录时 lastIndexOf 返回 -1 不截断文件名」两条性质。改 `shortDir`/`shortPath` 前必须跑它。
 - `test:url` 测 `main/url-image.ts`：网页主图解析（og:image / twitter:image / link / 首个 img、相对地址转绝对、跳过占位图与 data:）与协议校验（拒绝 file:/data:/javascript: 等）。改该文件前必须跑它。
 - `test:icon` 校验图标：ICO 结构与 7 个尺寸、`build/` 与 `out/` 两份是否同步、favicon 是否与 ICO 同源、win.icon / favicon / BrowserWindow icon 是否都接上。改图形或图标接线后必须跑它。
+- `test:range` 验证连选算法的**行为**（21 项）：点一个→Shift 扩展→Ctrl 点选/取消、**连按 Shift+↓ 每次都累积**、clearSelection 清锚点、单选 size=1。三条静态守卫确保锚点用 ref 而非 state（改回去会报 19/21）。改连选逻辑前必跑。
 - `test:cursor` 验证光标算法的**行为**（28 项）：↓ 逐行移动且单选跟随、Ctrl+↓ 只移光标不动选区、分组视图跳过分组标题、光标误落在标题上时按 ↑ 从末行起步、End/Home 夹紧、空列表不崩，以及**点击整行后光标是否同步移动**（点第 3 个再按 ↑ 必须落到第 2 个，平铺与分组视图各验一遍）。ui-smoke 只能静态检查"源码里有没有某个调用"，抓不到"方向键动了但选中没跟着动"这类逻辑错误——**改 LibraryView 的光标/选中逻辑前必须跑它**。
 - `test:network` 守住隐私边界：除 `main/url-image.ts`（链接取图）外源码不得有任何网络请求；9 个核心模块（导入/抽帧/指纹/检索/存储/监听/剪贴板/日志）零联网；链接取图必须用户主动触发、请求头不带本机标识；依赖里无遥测类库；产物里无更新源配置；渲染端 CSP 无 connect-src 放宽。**引入任何联网能力前先想清楚会不会把用户数据带出去**，改完必须跑它。
 - `test:theme` 守住配色纪律：组件里不许出现十六进制颜色或 Tailwind 内置固定色（slate-100 等），语义 token 必须在 `@theme` 与 `[data-theme=light]` 两侧都定义齐全。**在 tsx 里写固定色前先想清楚它是否该 token 化**；确有例外（如 Header 的「WV」压在 accent 渐变上）要登记到该脚本的 `HEX_EXCEPTIONS`，并写明理由。

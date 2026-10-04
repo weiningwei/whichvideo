@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type AppSettings,
   type DataDirInfo,
@@ -73,19 +73,33 @@ export function useLibrary() {
   const [groupByFolder, setGroupByFolder] = useState(false)
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set())
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<number>>(new Set())
-  const [lastSelectedVideoId, setLastSelectedVideoId] = useState<number | null>(null)
+  /**
+   * 连选锚点。**用 ref 而不是 state**。
+   *
+   * 连选的实现写在 setState 的 updater 里，而 updater 是**同步执行**的 ——
+   * 此刻读 state 拿到的仍是本轮 setLast 之前的旧值，React 不会因为我们刚调过
+   * setLast 就重跑一次 callback。
+   *
+   * 曾经的写法是 `useCallback([videos])` + 闭包里直接读 state。而**选中并不改变
+   * videos**（videos 只在扫描/导入时 set），所以依赖永远不变、callback 永不重建，
+   * 闭包里那个值永远是初始的 null —— 于是 Shift 连选每次都走 else 分支退化成
+   * 单选，界面表现为「已选 1」。typecheck 与静态断言都抓不到，只有真去连选才暴露。
+   */
+  const lastSelectedRef = useRef<number | null>(null)
 
   const toggleGroupByFolder = useCallback(() => {
     setGroupByFolder((v) => !v)
   }, [])
 
   const toggleVideoSelection = useCallback((videoId: number, shiftKey: boolean = false, ctrlKey: boolean = false) => {
+    // 读 ref 而非 state：updater 同步执行，读 state 会拿到本轮 setLast 之前的旧值
+    const anchor = lastSelectedRef.current
     setSelectedVideoIds((prev) => {
       const next = new Set(prev)
-      if (shiftKey && lastSelectedVideoId !== null) {
+      if (shiftKey && anchor !== null) {
         // Range selection
         const allIds = videos.map(v => v.id)
-        const start = allIds.indexOf(lastSelectedVideoId)
+        const start = allIds.indexOf(anchor)
         const end = allIds.indexOf(videoId)
         const [min, max] = start < end ? [start, end] : [end, start]
         for (let i = min; i <= max; i++) next.add(allIds[i])
@@ -98,12 +112,14 @@ export function useLibrary() {
       }
       return next
     })
-    setLastSelectedVideoId(videoId)
+    // 同步更新 ref：本次选中的行就是下一次 Shift 的扩展起点
+    lastSelectedRef.current = videoId
   }, [videos])
 
   const clearSelection = useCallback(() => {
     setSelectedVideoIds(new Set())
-    setLastSelectedVideoId(null)
+    // 锚点也要清：否则取消选择后再按 Shift，会从上一次的位置开始扩展
+    lastSelectedRef.current = null
   }, [])
 
   const selectAll = useCallback(() => {
