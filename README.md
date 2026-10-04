@@ -271,6 +271,12 @@ pnpm icon                # 重新生成应用图标
 但用起来就是不对"的 bug 只能靠它挡住 —— 此前"点第三个视频后按 ↑ 跳回第一个"
 就是靠它钉住的。
 
+另外，打包时 Electron 运行时**默认只下一次**（缓存在
+`%LOCALAPPDATA%\electron\Cache`）。若日志出现 `downloading label=electron`
+且本地明明有缓存，说明校验步骤在联网取 `SHASUMS256.txt` 而网络不通，
+于是回退成重新下载 —— 原因与解法见
+[AGENTS.md 的对应章节](AGENTS.md#打包时反复下载-electron-运行时downloading-labelelectron)。
+
 更多文档：
 
 - [docs/how-search-works.md](docs/how-search-works.md) —— 检索原理与实测数据

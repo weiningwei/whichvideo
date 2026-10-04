@@ -35,6 +35,60 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，启动�
 6. **包里是旧代码**：`build:portable` 每次强制重新打包，并用 `@electron/asar` 读出包内 `out/main/index.js` 与本地产物做 sha256 比对，不一致即退出。出现该错误时删掉 `release\win-unpacked` 与 `release\WhichVideo-portable` 重跑。
 7. **环境类开关兜底**：`.\WhichVideo.exe --disable-gpu` / `--disable-gpu-compositing` / `--no-sandbox` / `--disable-software-rasterizer`。主进程在 Windows 已默认 `--disable-gpu-sandbox`，且日志初始化早于单实例锁与数据目录解析（`bootstrapLogger` → `relocateLogger`），早期崩溃也会留记录。
 
+## 打包时反复下载 Electron 运行时（`downloading label=electron`）
+
+**症状**：每次 `pnpm build:unpack` 都在下载 158MB 的 Electron zip，日志显示
+`downloading label=electron` + 100% 进度条，但本机明明已有缓存。
+
+**根因**：`@electron/get` 命中缓存后**还要下载 `SHASUMS256.txt` 做 SHA256 校验**，
+而那个校验文件是硬编码「Never use the cache」的（`@electron/get` 的
+`dist/index.js`，注释写得很清楚）。于是：
+
+```
+Cache hit                              ← 缓存命中了 158MB 的 zip
+Downloading .../SHASUMS256.txt         ← 但仍要联网取校验文件
+ConnectTimeoutError: github.com:443    ← 连不上（本机 10s 超时）
+Artifact in cache didn't match checksums
+falling back to re-download            ← 于是重新下载
+```
+
+**那行 `downloading label=electron` 是误导性的** —— 不是"又在下载"，而是"缓存命中了
+但校验没做，改走网络下载"，而网络又不通。
+
+**解法**（已写进 `electron-builder.yml`）：
+
+```yaml
+electronDownload:
+  unsafelyDisableChecksums: true
+```
+
+命中缓存后不再联网，实测 **4769ms 直接返回缓存**。不加这个配置则卡在
+github 连接上直到超时。
+
+代价是不再校验 zip 完整性，风险很低：缓存里是同一台机器从官方下载的产物、
+同一版本；真损坏的话 electron-builder 后续解包会直接报错。删缓存重下即可恢复。
+
+**排查手法**（下次遇到"明明有缓存却还在下"直接照这个走）：
+
+```bash
+# 1. 确认缓存里有没有（两个目录都要看）
+ls "$LOCALAPPDATA/electron/Cache"/*/                       # @electron/get 的 zip 缓存
+ls "$LOCALAPPDATA/electron-builder/Cache"/electron-v*/     # electron-builder 的解压缓存
+
+# 2. 让 @electron/get 说话（这步最关键，日志会直接给出 Cache hit / miss / 为什么回退）
+DEBUG='@electron/get*' node -e "
+const {downloadArtifact}=require('./node_modules/.pnpm/@electron+get@5.1.0/node_modules/@electron/get/dist/index.js');
+downloadArtifact({version:'44.5.1',artifactName:'electron',platform:'win32',arch:'x64'})
+  .catch(e=>console.log('ERR',e.message));
+"
+```
+
+缓存键是**下载 URL 目录部分的 sha256**（`Cache.getCacheDirectory`：去掉
+query/hash 后取 `dirname` 再哈希），所以换镜像源就会换一份缓存、等于白下一遍。
+
+顺带一提：`SAFE_DELETE_BULK_CONFIRM_REQUIRED` 是本机安全删除守卫在拦
+（一次删 151 个文件超过阈值 50），与 electron 下载无关。
+
 ## 打包与目录占用（EPERM）
 
 `build:portable` 产出两份目录：`release\WhichVideo-portable\`（在仓库内）与**仓库上一级目录**下的同名文件夹（`..\WhichVideo-portable\`）。外面那份是给用户直接双击运行的，刻意放在项目目录之外，避免被编辑器索引 / 杀软扫描 / 资源管理器停留锁住。拷贝后脚本会核对文件数、总字节数与 `app.asar` 的 sha256；**这一份失败不会让整次打包判死**（`release` 里的产物仍然是好的），只在输出里报错并提示手动拷走。

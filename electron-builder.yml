@@ -13,6 +13,20 @@ directories:
 # 导致整个打包中断 —— 从而出现"看起来打包成功、实际是上一次的旧产物"这种坑。
 npmRebuild: false
 
+# 复用 %LOCALAPPDATA%\electron\Cache 里的 Electron 运行时，不要每次重新下载。
+#
+# 背景：@electron/get 命中缓存后**还要下载 SHASUMS256.txt 做 SHA256 校验**，
+# 而那个校验文件是「Never use the cache」硬编码的（见 @electron/get dist/index.js）。
+# 于是只要 github.com 连不上（本机实测 10s ConnectTimeout），校验必然失败，
+# 接着 falling back to re-download —— 明明缓存里躺着 158MB 的 zip 还是要重下一遍，
+# 日志表现为 `downloading label=electron` + 100% 进度条，很有迷惑性。
+#
+# unsafelyDisableChecksums 关掉那步联网校验。代价是不再验 zip 完整性，
+# 风险很低：缓存里是同一台机器上次从官方下载的产物、同一版本；真损坏的话
+# electron-builder 后续解包会直接报错，不会悄悄装进一个坏运行时。删缓存重下即可恢复。
+electronDownload:
+  unsafelyDisableChecksums: true
+
 files:
   - out/**
   - package.json

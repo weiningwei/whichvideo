@@ -107,6 +107,22 @@ function main() {
   )
   check('配置没有手写 datadir.ts 入口', !configCode.includes("'datadir.ts'"))
 
+  // Electron 运行时缓存：@electron/get 命中缓存后仍要联网取 SHASUMS256.txt 做校验，
+  // 那个文件是硬编码不走缓存的。github 连不上时校验必失败 → falling back to
+  // re-download → 明明缓存里有 158MB 的 zip 还要重下一遍，日志显示
+  // `downloading label=electron` 很有迷惑性。关掉那步校验即可（详见 AGENTS.md）。
+  const builderYml = readFileSync(join(root, 'electron-builder.yml'), 'utf8')
+  check(
+    'electronDownload 关掉了 zip 校验（否则每次打包都重新下载运行时）',
+    /electronDownload:\s*\n\s*unsafelyDisableChecksums:\s*true/.test(builderYml),
+    '命中 %LOCALAPPDATA%\\electron\\Cache 后不再联网'
+  )
+  check(
+    '关掉校验这件事在配置里写明了理由与代价',
+    /unsafelyDisableChecksums[\s\S]{0,400}?(SHASUMS256|校验)/.test(builderYml),
+    '有注释说明为什么，别让后人以为是随手关掉的'
+  )
+
   console.log(`\n=== 打包配置：${passed}/${passed + failed} 通过 ===`)
   process.exit(failed ? 1 : 0)
 }
