@@ -545,16 +545,17 @@ export default mod
       (html.match(/line-clamp-2 break-all [^"]*text-accent/g) ?? []).length
 
     check(
-      '单选时标题染蓝',
-      titleAccentCount(renderWith([1])) === 1,
+      '选中时视频标题不染蓝（蓝色只留给竖条与行底）',
+      titleAccentCount(renderWith([1])) === 0,
       `实际 ${titleAccentCount(renderWith([1]))} 处`
     )
-    // 单选与多选必须**完全一致**：竖条 + 淡蓝底 + 标题染蓝，三样各自独立生效。
-    // 曾按选中数量分过两档（多选只留竖条），想的是"少即是多"，实际破坏了风格
-    // 统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己处于哪种状态。
+    // 单选与多选必须**完全一致**。选中提示只有两样：左侧竖条 + 淡蓝底。
+    // 标题与操作按钮刻意不参与染色 —— 那两处蓝不是"选中信号"而是噪声：
+    // 标题染蓝后分不清是"这一项被选中"还是"这几项都选中"；按钮的 btn-bg 是
+    // 半透明的，淡蓝底透上来会让它看着像"按钮被激活了"，实际只是可点。
     check(
-      '多选时标题同样染蓝（与单选一致）',
-      titleAccentCount(renderWith([1, 2])) === 2,
+      '多选时视频标题同样不染蓝（与单选一致）',
+      titleAccentCount(renderWith([1, 2])) === 0,
       `实际 ${titleAccentCount(renderWith([1, 2]))} 处`
     )
     const multiHtml = renderWith([1, 2])
@@ -569,25 +570,45 @@ export default mod
       `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 3 个）`
     )
     // 核心断言：把单选与多选的渲染结果按"选中提示"维度逐项比对。
-    // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、标题染色 1 个。
+    // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、
+    // 标题 text-accent **0 个**、操作按钮 bg-surface-2 **4 个**（不透明底）。
     // 样本固定渲染 2 行视频，单选命中 1 行、多选命中 2 行，所以各项应恰好翻倍。
     const countOf = (html, re) => (html.match(re) ?? []).length
     const BAR = /absolute inset-y-0 left-0 w-\[2px\] bg-accent/g
     const ROW_BG = /bg-row-selected/g
-    const TITLE = /line-clamp-2 break-all [^"]*text-accent/g
+    const TITLE_ACCENT = /line-clamp-2 break-all [^"]*text-accent/g
+    const BTN_OPAQUE = /btn[^"]*bg-surface-2/g
     const one = renderWith([1])
     const both = renderWith([1, 2])
-    const single = [countOf(one, BAR), countOf(one, ROW_BG), countOf(one, TITLE)]
-    const multi = [countOf(both, BAR), countOf(both, ROW_BG), countOf(both, TITLE)]
+    // 依次为：竖条 / 行底色 / 标题染色（须为 0）/ 按钮不透明底
+    const single = [
+      countOf(one, BAR),
+      countOf(one, ROW_BG),
+      countOf(one, TITLE_ACCENT),
+      countOf(one, BTN_OPAQUE)
+    ]
+    const multi = [
+      countOf(both, BAR),
+      countOf(both, ROW_BG),
+      countOf(both, TITLE_ACCENT),
+      countOf(both, BTN_OPAQUE)
+    ]
     check(
-      '单选 1 行 → 竖条 1、淡蓝底 3（三格）、标题 1',
-      single[0] === 1 && single[1] === 3 && single[2] === 1,
+      '单选 1 行 → 竖条 1、淡蓝底 3、标题染色 0、按钮不透明底 4',
+      single[0] === 1 && single[1] === 3 && single[2] === 0 && single[3] === 4,
       `实际 ${single.join('/')}`
     )
     check(
-      '多选 2 行 → 三项都恰好翻倍（与单选逐项一致）',
-      multi[0] === single[0] * 2 && multi[1] === single[1] * 2 && multi[2] === single[2] * 2,
+      '多选 2 行 → 四项都与单选成比例（选中提示完全统一）',
+      multi.every((n, i) => n === single[i] * 2),
       `期望 ${single.map((n) => n * 2).join('/')}，实际 ${multi.join('/')}`
+    )
+    // 按钮的不透明底是防透色用的：btn-bg 半透明，不覆盖的话淡蓝底会透上来
+    // 把按钮连边框染蓝，看着像"按钮被激活了"。
+    check(
+      '选中行的操作按钮用了不透明底色（阻止行底色透上来染蓝）',
+      single[3] === 4,
+      `实际 ${single[3]} 个（应为每行 4 个按钮）`
     )
   }
   // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
@@ -841,9 +862,17 @@ export default mod
     // 曾按 selectedCount 分过两档（多选只留竖条），想"少即是多"，实际破坏了
     // 风格统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己在哪种状态。
     check(
-      '标题直接用 selected 染色（没有按选中数量分档）',
-      /selected \? 'text-accent' : 'text-primary'/.test(src) && !src.includes('titleAccent'),
-      '不分档'
+      '视频标题恒为 text-primary，选中也不染蓝（蓝色只留给竖条与行底）',
+      /line-clamp-2 break-all text-primary/.test(src) &&
+        !/line-clamp-2 break-all \$\{/.test(src) &&
+        !src.includes('titleAccent'),
+      '标题不参与选中染色'
+    )
+    check(
+      '选中行的操作按钮用不透明底色（否则半透明 btn-bg 会透出行底色）',
+      /btn px-1\.5 py-0\.5 text-\[11px\] hover:bg-ink-700\/70 \$\{selected \? 'bg-surface-2' : ''\}/.test(src) &&
+        (src.match(/bg-surface-2/g) ?? []).length === 4,
+      '四个按钮都加了（播放/定位/索引/移除）'
     )
     check(
       'rowBg 直接用 selected（没有 singleSelected 之类的中间变量）',

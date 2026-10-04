@@ -825,19 +825,18 @@ function VideoRow({
   const selected = isVideoSelected(video.id)
 
   /**
-   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底 + 标题染蓝，三样一起上。
+   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。
    *
-   * 曾经按选中数量分过两档（多选只留竖条），想的是"少即是多"，实际反而破坏了
-   * 风格统一：单选时标题是蓝的、底是蓝的，多选时标题黑、底白，同一个交互在
-   * 两种状态下长得不一样，用户得先想"我现在是单选还是多选"才知道该期待什么。
+   * 曾经分过两档（多选只留竖条），又取消过（单选多选都三样），现在定为
+   * **标题与按钮都不参与染色**。理由：那两处蓝色不是"选中信号"，而是噪声 ——
+   *   - 标题染成 accent 蓝后，一眼扫过去分不清是"这一项被选中"还是"这几项都选中"，
+   *     反而不如竖条 + 底色来得明确
+   *   - 操作按钮的 btn-bg 是半透明的，淡蓝底会从底下透上来把按钮连边框一起染蓝，
+   *     看着像"按钮被激活了"，实际它们只是可点
+   * 于是蓝色只留给左侧竖条与行底色 —— 这两处占地最小、语义最准。
    *
-   * 这里刻意不做 `selectedCount` 之类的分档。多选就是"多个行各自被选中"，
-   * 每行的呈现与它单独被选中时没有区别 —— 这才是"统一"。
-   *
-   * 已知代价（接受，不额外处理）：淡蓝底铺满整行会与行内元素叠加 ——
-   * 状态徽标「待索引 / 索引中」本身就是 accent 蓝；操作按钮的 btn-bg 是
-   * 半透明的，底色会透上来让按钮泛蓝。这两处的蓝本来就存在，淡蓝底只是
-   * 让它们更明显一点，并不改变信息含义（一个说状态，一个说可点）。
+   * 仍然不做 `selectedCount` 之类的分档：多选就是"多个行各自被选中"，
+   * 每行的呈现与它单独被选中时没有区别。
    */
   const rowBg = selected
     ? 'bg-row-selected'
@@ -868,7 +867,7 @@ function VideoRow({
                 会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
                 第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
             <div
-              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
+              className="line-clamp-2 break-all text-primary"
               title={video.path}
             >
               {video.name}
@@ -906,28 +905,28 @@ function VideoRow({
             多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
         <div className="flex items-center justify-end gap-1">
           <button
-            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
             onClick={() => onOpen(video.id)}
             title="用系统播放器打开"
           >
             播放
           </button>
           <button
-            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
             onClick={() => onReveal(video.id)}
             title="在资源管理器中定位该文件"
           >
             定位
           </button>
           <button
-            className="btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70"
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
             onClick={() => onReindex(video.id)}
             title="重新抽帧并重建指纹"
           >
             索引
           </button>
           <button
-            className="btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10"
+            className={`btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10 ${selected ? 'bg-surface-2' : ''}`}
             onClick={() => onRemove(video.id)}
             title="只从索引库移除记录，不会删除磁盘文件"
           >

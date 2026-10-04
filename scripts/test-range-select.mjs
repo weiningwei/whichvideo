@@ -191,9 +191,16 @@ console.log('=== 实现与 useLibrary 的算法保持一致 ===')
   const viewSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
   const viewCode = viewSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
   check(
-    '选中提示单选多选一致：标题直接用 selected 染色',
-    /selected \? 'text-accent' : 'text-primary'/.test(viewSrc) && !viewCode.includes('titleAccent'),
-    '没有按选中数量分档'
+    '选中时视频标题不染蓝（蓝色只留给竖条与行底）',
+    /line-clamp-2 break-all text-primary/.test(viewSrc) &&
+      !/line-clamp-2 break-all \$\{/.test(viewSrc) &&
+      !viewCode.includes('titleAccent'),
+    '标题不参与选中染色'
+  )
+  check(
+    '选中行的操作按钮用不透明底色（阻止半透明 btn-bg 透出行底色）',
+    (viewSrc.match(/bg-surface-2/g) ?? []).length === 4,
+    '四个按钮：播放 / 定位 / 索引 / 移除'
   )
   check(
     '选中提示单选多选一致：rowBg 直接用 selected',
