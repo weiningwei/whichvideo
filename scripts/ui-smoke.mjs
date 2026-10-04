@@ -554,13 +554,25 @@ export default mod
       titleAccentCount(renderWith([1, 2])) === 0,
       `实际 ${titleAccentCount(renderWith([1, 2]))} 处`
     )
-    // 选中提示本身不能因为多选而消失
+    // 选中提示本身不能因为多选而消失 —— 左侧竖条必须仍在
     const multiHtml = renderWith([1, 2])
     check(
-      '多选时竖条与淡蓝底仍在（只是标题不染色）',
-      (multiHtml.match(/absolute inset-y-0 left-0 w-\[2px\] bg-accent/g) ?? []).length === 2 &&
-        (multiHtml.match(/bg-row-selected/g) ?? []).length >= 2,
-      '两行都保留选中提示'
+      '多选时左侧蓝竖条仍在（唯一的选中提示）',
+      (multiHtml.match(/absolute inset-y-0 left-0 w-\[2px\] bg-accent/g) ?? []).length === 2,
+      '两行都有蓝竖条'
+    )
+    // 多选不再铺整行淡蓝底：那层底会把标题、状态徽标、操作按钮全染一遍
+    // （btn-bg 是半透明的，底色直接透上来，四个按钮连边框一起泛蓝）。
+    check(
+      '多选时不铺整行淡蓝底（否则按钮/徽标会被染蓝）',
+      (multiHtml.match(/bg-row-selected/g) ?? []).length === 0,
+      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处`
+    )
+    check(
+      '单选时铺淡蓝底并染蓝标题（强调当前项）',
+      (renderWith([1]).match(/bg-row-selected/g) ?? []).length >= 2 &&
+        titleAccentCount(renderWith([1])) === 1,
+      '单选保留完整提示'
     )
   }
   // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
@@ -810,19 +822,24 @@ export default mod
       '第二行仍 truncate'
     )
 
-    // 选中提示分两档：单选 = 蓝竖条 + 淡蓝底 + 标题染蓝；多选 = **只有**前两者。
-    // 此前标题只要 selected 就染蓝，Shift 连选一段后满屏蓝字，既吵又读不出重点。
+    // 选中提示分两档：
+    //   单选 = 蓝竖条 + 淡蓝底 + 标题染蓝（强调当前操作项）
+    //   多选 = **只有蓝竖条**，不铺底色、不染标题
+    // 此前不分单选多选都铺整行淡蓝底，那层底会把行里所有元素染一遍：
+    // 状态徽标（本身是 accent 蓝）分不清是状态还是选中，操作按钮的 btn-bg
+    // 是半透明的、底色直接透上来，四个按钮连边框一起泛蓝。
     check(
       '标题只在单选时染蓝（多选不染色）',
-      src.includes('const titleAccent = selected && selectedCount === 1') &&
+      src.includes('const singleSelected = selected && selectedCount === 1') &&
+        src.includes('const titleAccent = singleSelected') &&
         /titleAccent \? 'text-accent' : 'text-primary'/.test(src) &&
         !/selected \? 'text-accent' : 'text-primary'/.test(src),
-      'titleAccent 需要 selectedCount === 1'
+      'titleAccent 走 singleSelected'
     )
     check(
-      '多选的提示与单选一致（不额外加效果）',
-      src.includes("? 'bg-row-selected'") && !/selectedCount > 1[\s\S]{0,80}bg-/.test(src),
-      '底色与竖条不因选中数量改变'
+      '多选不铺淡蓝底（rowBg 走空串分支）',
+      /const rowBg = singleSelected[\s\S]{0,120}: selected[\s\S]{0,40}\? ''/.test(src),
+      "多选时 rowBg 为空，只留左侧竖条"
     )
     check(
       'VideoRow 拿到了选中总数（用来区分单选与多选）',

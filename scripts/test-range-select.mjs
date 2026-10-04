@@ -190,9 +190,15 @@ console.log('=== 实现与 useLibrary 的算法保持一致 ===')
   )
   const viewSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
   check(
-    '标题染蓝条件仍是 selected && selectedCount === 1',
-    viewSrc.includes('const titleAccent = selected && selectedCount === 1'),
+    '标题染蓝条件仍是单选（selectedCount === 1）',
+    viewSrc.includes('const singleSelected = selected && selectedCount === 1') &&
+      viewSrc.includes('const titleAccent = singleSelected'),
     '条件变了要同步'
+  )
+  check(
+    '多选时不铺淡蓝底（rowBg 走空串分支，只留左侧竖条）',
+    /const rowBg = singleSelected[\s\S]{0,120}: selected[\s\S]{0,40}\? ''/.test(viewSrc),
+    '整行铺底会把标题/状态徽标/半透明按钮全染一遍'
   )
 }
 

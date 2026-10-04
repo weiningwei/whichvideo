@@ -831,15 +831,23 @@ function VideoRow({
           : '待索引'
 
   const selected = isVideoSelected(video.id)
+  const singleSelected = selected && selectedCount === 1
 
   /**
-   * 标题染蓝**只在单选时**。
+   * 选中提示分两档，**多选只留左侧竖条**。
    *
-   * 此前是 `selected ? 'text-accent'`，于是 Shift 连选一段后整片标题都变蓝 ——
-   * 多选时满屏蓝字既吵、又读不出"从哪到哪"的重点在哪。选中提示靠左侧竖条与
-   * 淡蓝底已经足够（两者单选多选表现一致），文字保持正常色即可。
+   * 此前不分单选多选都给整行铺 `bg-row-selected`，看着"选中提示很明确"，实际
+   * 代价很大：那层淡蓝底铺满整行，会把行里所有元素都染一遍 ——
+   *   - 视频标题整片偏蓝（已通过 titleAccent 单独处理）
+   *   - 状态徽标「待索引 / 索引中」本来就是 accent 蓝，叠在一起分不清是状态还是选中
+   *   - 操作按钮的 `btn-bg` 是**半透明**的（见 index.css 的 --color-btn-bg，
+   *     末两位带 alpha），底色直接透上来，四个按钮连边框一起泛蓝（截图里最刺眼的
+   *     就是这个）
+   * 选中范围靠左侧那列竖条已经能看全，竖条占地最小且不遮挡任何内容。
+   *
+   * 单选时保留淡蓝底 + 标题染蓝，用来强调"当前操作的是这一项"。
    */
-  const titleAccent = selected && selectedCount === 1
+  const titleAccent = singleSelected
 
   /**
    * 行底色。用 `--color-row-*` 这几个**不透明**的实色，不是 bg-accent/12 那种
@@ -848,11 +856,13 @@ function VideoRow({
    *
    * 只给 td、不给 tr：tr 若也有背景，与吸附格叠加后同一行会出现两种色块。
    */
-  const rowBg = selected
+  const rowBg = singleSelected
     ? 'bg-row-selected'
-    : focused
-      ? 'bg-row-focus'
-      : 'hover:bg-row-hover'
+    : selected
+      ? '' // 多选：不铺底色，只有左侧竖条
+      : focused
+        ? 'bg-row-focus'
+        : 'hover:bg-row-hover'
 
   return (
     <tr
