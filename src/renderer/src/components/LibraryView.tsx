@@ -503,6 +503,11 @@ export function LibraryView(props: Props) {
           <span className="text-[11.5px] text-muted">
             显示 {videos.length} / {total}
           </span>
+          {/* 选中数量：多选时给出反馈（此前只能靠数竖条），也便于自查
+              「标题染色是否与选中数量一致」——见 test:range 的说明 */}
+          {selectedVideoIds.size > 0 && (
+            <span className="text-[11.5px] text-tertiary">已选 {selectedVideoIds.size}</span>
+          )}
           <span
             className="hidden text-[11px] text-tertiary lg:inline"
             title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
