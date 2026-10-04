@@ -59,6 +59,20 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
 - `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
 
+## 文档分工
+
+面向的读者不同，别都塞进 README：
+
+| 文件 | 读者 | 内容 |
+| --- | --- | --- |
+| `README.md` | 想用这个软件的人 | 快速开始、使用流程、配置项、用户级 FAQ |
+| `docs/how-search-works.md` | 想了解实现的人 | 检索原理、内存布局、实测距离量级、调参依据 |
+| `docs/troubleshooting.md` | 打包维护者 | 启动无反应、EPERM、环境类崩溃、构建期报错 |
+| `AGENTS.md` | 参与开发的人 | 架构约束、踩坑记录、14 套自检的性质 |
+
+写 README 时先问：这条信息是「想用的人」关心的吗？ 不是就往 docs/ 放。
+同理，崩溃排查与数学推导不要写进 README —— 那两章曾占掉 58% 的篇幅。
+
 ## 测试
 
 `pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:icon → test:theme → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`。
