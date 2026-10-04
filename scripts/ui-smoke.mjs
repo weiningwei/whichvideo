@@ -502,6 +502,67 @@ export default mod
   )
   check('视频库页显示视频行', libraryHtml.includes('Blue.Intro.1080p.mp4'))
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
+
+  // 上面那份样本 selectedVideoIds 是空集，**永远走不到「选中」分支**，
+  // 所以「多选时标题不染蓝」这条此前只有静态断言、没有被真实渲染验证过。
+  // 这里补一份真的选中状态下的渲染，用正则数标题上的 text-accent 个数。
+  {
+    const two = [{ ...video, id: 1, name: 'Ep01.mkv' }, { ...video, id: 2, name: 'Ep02.mkv' }]
+    const renderWith = (ids) =>
+      render(
+        jsx(LibraryView, {
+          folders: [folder],
+          videos: two,
+          total: two.length,
+          query: { limit: 500, status: 'all', sort: 'added' },
+          onSetQuery: noop,
+          onAddFolder: noop,
+          onAddFolderPath: noop,
+          onRemoveFolder: noop,
+          onRescan: noop,
+          onToggleFolder: noop,
+          onOpen: noop,
+          onReveal: noop,
+          onRemoveVideo: noop,
+          onReindex: noop,
+          groupByFolder: false,
+          onToggleGroupByFolder: noop,
+          selectedVideoIds: new Set(ids),
+          expandedFolderIds: emptyExpanded,
+          isVideoSelected: (id) => ids.includes(id),
+          isFolderExpanded: noopBool,
+          toggleVideoSelection: noopSel,
+          clearSelection: noopSel,
+          selectAll: noopSel,
+          toggleFolderExpanded: noopSel,
+          expandAllFolders: noopSel,
+          collapseAllFolders: noopSel,
+          sideSettings: null
+        })
+      )
+    // 标题行是 line-clamp-2 的那个 div。数它带不带 text-accent
+    const titleAccentCount = (html) =>
+      (html.match(/line-clamp-2 break-all [^"]*text-accent/g) ?? []).length
+
+    check(
+      '单选时标题染蓝（强调当前项）',
+      titleAccentCount(renderWith([1])) === 1,
+      `实际 ${titleAccentCount(renderWith([1]))} 处`
+    )
+    check(
+      '多选时标题不染蓝（Shift 连选 / Ctrl 点选都一样）',
+      titleAccentCount(renderWith([1, 2])) === 0,
+      `实际 ${titleAccentCount(renderWith([1, 2]))} 处`
+    )
+    // 选中提示本身不能因为多选而消失
+    const multiHtml = renderWith([1, 2])
+    check(
+      '多选时竖条与淡蓝底仍在（只是标题不染色）',
+      (multiHtml.match(/absolute inset-y-0 left-0 w-\[2px\] bg-accent/g) ?? []).length === 2 &&
+        (multiHtml.match(/bg-row-selected/g) ?? []).length >= 2,
+      '两行都保留选中提示'
+    )
+  }
   // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
   // 状态列仍需禁止换行：中文可逐字断行，列被压窄会竖排成多行。
   // align-top 是配套的——文件名可占两行，状态徽标要与其顶端对齐而不是被拉高中间。
