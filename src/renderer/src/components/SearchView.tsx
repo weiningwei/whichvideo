@@ -61,6 +61,20 @@ export function SearchView(props: Props) {
     props.onSearchUrl(url)
   }
 
+  // Ctrl+K 聚焦链接输入框。放在本组件而不是 App：只有搜索页有这个框，
+  // App 里的全局处理拿不到 ref。
+  const urlInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        urlInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // Ctrl+V 粘贴图片
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -174,6 +188,7 @@ export function SearchView(props: Props) {
             {/* 链接输入：贴图片直链或普通网页都行，主进程会解析出主图后检索 */}
             <div className="mt-2.5 flex items-center gap-2">
               <input
+                ref={urlInputRef}
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -182,7 +197,7 @@ export function SearchView(props: Props) {
                     submitUrl()
                   }
                 }}
-                placeholder="粘贴图片链接或网页地址，回车检索"
+                placeholder="粘贴图片链接或网页地址，回车检索（Ctrl+K 聚焦）"
                 spellCheck={false}
                 disabled={searching}
                 className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-tertiary focus:border-accent/60 disabled:opacity-50"

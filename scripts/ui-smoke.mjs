@@ -296,6 +296,10 @@ export default mod
   // ---- 主题切换 ----
   check('顶栏有主题切换按钮', headerHtml.includes('切换主题') && /aria-label="切换主题"/.test(headerHtml))
   check(
+    '顶栏有快捷键帮助入口（否则用户不知道 ? 能用）',
+    headerHtml.includes('键盘快捷键') && /aria-label="键盘快捷键"/.test(headerHtml)
+  )
+  check(
     '深色模式按钮 title 说明当前档位',
     headerHtml.includes('主题：深色'),
     '三档循环：深色 → 浅色 → 跟随系统'
@@ -358,7 +362,7 @@ export default mod
   check('搜索页有「链接检索」按钮', emptyHtml.includes('链接检索'))
   check(
     '链接输入框初始为空且按钮禁用（无内容时不可提交）',
-    emptyHtml.includes('placeholder="粘贴图片链接或网页地址，回车检索"') &&
+    emptyHtml.includes('粘贴图片链接或网页地址，回车检索（Ctrl+K 聚焦）') &&
       /<button[^>]*disabled[^>]*>\s*链接检索/.test(emptyHtml),
     '空链接时按钮 disabled'
   )
@@ -733,6 +737,68 @@ export default mod
     'fileNameOf/dirNameOf',
     format.fileNameOf(video.path) === 'Blue.Intro.1080p.mp4' && format.dirNameOf(video.path) === 'E:\\Media\\Movies'
   )
+
+  console.log('\n=== 8. 快捷键 ===')
+  {
+    const lib = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    const app = readFileSync(join(root, 'src', 'renderer', 'src', 'App.tsx'), 'utf8')
+    const sc = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'shortcuts.ts'), 'utf8')
+
+    // 键位声明集中在 shortcuts.ts，帮助面板从它生成 —— 不再散落在各组件
+    check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
+    check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
+    check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))
+
+    // 列表导航：翻页与跳到首尾是新增的
+    for (const k of ['PageDown', 'PageUp', 'Home', 'End']) {
+      check(`支持 ${k}`, lib.includes(`case '${k}':`))
+    }
+    check('PageUp/PageDown 一次翻 PAGE_JUMP 行', lib.includes('const PAGE_JUMP'))
+    check('跳转会夹紧到合法范围', lib.includes('Math.max(0, Math.min(navigableItems.length - 1'))
+
+    // 操作键
+    check('Delete 可移除（不删磁盘文件）', lib.includes("case 'Delete':"))
+    check('多选删除有二次确认', lib.includes('window.confirm'))
+    check('确认文案说明不删磁盘文件', lib.includes('不会删除磁盘文件'))
+    check('Enter 播放（选中优先，否则焦点处）', lib.includes('const target = getTargetVideo()'))
+    check('Space 只做选中切换不播放', /case ' ':[\s\S]{0,200}?toggleFocusedSelection/.test(lib))
+    check('Ctrl+L 定位文件', lib.includes("case 'l':"))
+    check('Ctrl+R 重建索引', lib.includes("case 'r':"))
+
+    // 发现性
+    check('筛选框 placeholder 提示了 / 键', lib.includes('（/ 聚焦）'))
+    check('筛选框有 ref 供 / 聚焦', lib.includes('filterInputRef.current?.focus()'))
+    check('? 打开帮助面板', app.includes("case '?':"))
+    check('1/2 切换页签', app.includes("case '1':") && app.includes("case '2':"))
+    check('帮助面板打开时不响应其他全局键', app.includes('if (helpOpen) return'))
+    check('输入框内不抢键', app.includes('HTMLInputElement'))
+
+    // G 键不能被两个组件同时处理
+    check('G 键只由 LibraryView 处理', lib.includes("case 'g':") && !/e\.key === 'g'/.test(app))
+
+    // 帮助面板写"能按"但实际按不了，是最糟的情况 —— 逐条核对声明与实现。
+    // 这里只查"单键且非组合键"的声明（组合键与页面态相关的另行处理）。
+    const singleKeyDecls = [...sc.matchAll(/\{\s*group:\s*'[^']+',\s*keys:\s*'([A-Za-z?/])'/g)].map((m) => m[1])
+    const search = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'SearchView.tsx'), 'utf8')
+    const notImplemented = singleKeyDecls.filter((k) => {
+      const esc = k.replace(/[?/]/g, '\\$&')
+      return !new RegExp(`case '${esc}'`).test(lib) && !new RegExp(`case '${esc}'`).test(app) &&
+        !new RegExp(`e\\.key === '${esc}'`).test(app) && !new RegExp(`e\\.key === '${esc}'`).test(search)
+    })
+    check(
+      `单键快捷键声明与实现一致（${singleKeyDecls.length} 个单键）`,
+      notImplemented.length === 0,
+      notImplemented.length ? `声明了但没实现：${notImplemented.join(', ')}` : singleKeyDecls.join(' ')
+    )
+    check(
+      'B 键触发重建全部索引（原先文档写了但没实现）',
+      lib.includes("case 'b':") && sc.includes("keys: 'B'")
+    )
+    check(
+      'Ctrl+K 聚焦链接输入框',
+      search.includes("e.key === 'k'") && sc.includes('Ctrl+K')
+    )
+  }
 
   console.log(`\n=== 渲染端冒烟：${results.filter((r) => r.ok).length}/${results.length} 通过 ===`)
   if (failed) for (const r of results.filter((x) => !x.ok)) console.log(`  - 失败：${r.name} ${r.detail}`)

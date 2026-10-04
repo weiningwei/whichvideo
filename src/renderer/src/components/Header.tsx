@@ -27,6 +27,8 @@ interface Props {
   /** system 模式解析后的实际主题，仅用于提示文案 */
   themeResolved: ResolvedTheme
   onCycleTheme: () => void
+  /** 打开快捷键帮助面板 */
+  onShowShortcuts: () => void
 }
 
 export function Header({
@@ -39,7 +41,8 @@ export function Header({
   busy,
   themeMode,
   themeResolved,
-  onCycleTheme
+  onCycleTheme,
+  onShowShortcuts
 }: Props) {
   const running = status?.running ?? false
   return (
@@ -96,6 +99,15 @@ export function Header({
           aria-label="切换主题"
         >
           {THEME_ICON[themeMode]}
+        </button>
+        {/* 快捷键入口：只做发现用（快捷键本身在 App 里监听），所以给个按钮而不是快捷键提示 */}
+        <button
+          className="btn px-2 hover:bg-ink-700/70"
+          onClick={onShowShortcuts}
+          title="键盘快捷键 (?)"
+          aria-label="键盘快捷键"
+        >
+          ?
         </button>
       </div>
     </header>

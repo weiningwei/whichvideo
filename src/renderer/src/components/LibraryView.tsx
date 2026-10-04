@@ -11,6 +11,8 @@ interface Props {
   onSetQuery: (query: VideoQuery) => void
   onAddFolder: () => void
   onAddFolderPath: (dirPath: string) => void
+  /** 快捷键 I：导入视频文件（与顶栏「+ 导入视频」同一个动作） */
+  onImportFiles: () => void
   onRemoveFolder: (folderId: number) => void
   onRescan: (folderId?: number) => void
   onToggleFolder: (folderId: number, enabled: boolean) => void
@@ -34,6 +36,9 @@ interface Props {
   sideSettings: ReactNode
 }
 
+/** PageUp / PageDown 一次跳多少行。按"一屏大约能看 15 行"取整。 */
+const PAGE_JUMP = 15
+
 const STATE_STYLE: Record<string, { text: string; cls: string }> = {
   watching: { text: '监听中', cls: 'border-ok/40 bg-ok/10 text-ok' },
   idle: { text: '已暂停', cls: 'border-line bg-ink-700/40 text-secondary' },
@@ -50,6 +55,8 @@ export function LibraryView(props: Props) {
 
   const [folderDrop, setFolderDrop] = useState(false)
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
+  /** 快捷键 / 会聚焦到这里 */
+  const filterInputRef = useRef<HTMLInputElement>(null)
 
   // 分组视图：按 folderId 聚合，null folderId 归为"未分类"
   const groupedVideos = useMemo(() => {
@@ -67,52 +74,7 @@ export function LibraryView(props: Props) {
   // 注：原先这里有两个 useEffect 用来同步表头/分组复选框的 indeterminate 态。
   // 复选框已全部移除（选中改为竖条提示 + 整行点击），故不再需要这两个 ref。
 
-  // 键盘导航
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
-
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault()
-          moveSelection(1)
-          break
-        case 'ArrowUp':
-          e.preventDefault()
-          moveSelection(-1)
-          break
-        case 'ArrowRight':
-          if (groupByFolder) {
-            e.preventDefault()
-            expandFocusedFolder()
-          }
-          break
-        case 'ArrowLeft':
-          if (groupByFolder) {
-            e.preventDefault()
-            collapseFocusedFolder()
-          }
-          break
-        case ' ':
-        case 'Enter':
-          if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement) return
-          e.preventDefault()
-          toggleFocusedSelection(e.shiftKey, e.ctrlKey || e.metaKey)
-          break
-        case 'a':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault()
-            selectAll()
-          }
-          break
-        case 'Escape':
-          clearSelection()
-          break
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds])
+  // 键盘导航与快捷操作
 
   const navigableItems = useMemo(() => {
     if (!groupByFolder || !groupedVideos) {
@@ -151,6 +113,178 @@ export function LibraryView(props: Props) {
     setFocusedIndex(next)
   }
 
+  /** 跳到指定下标（Home / End / PageUp / PageDown 用），越界自动夹紧 */
+  const jumpTo = (index: number) => {
+    if (navigableItems.length === 0) return
+    setFocusedIndex(Math.max(0, Math.min(navigableItems.length - 1, index)))
+  }
+
+  /**
+   * 拿到"该被操作的那个视频"：有选中就用第一个选中的，否则用焦点处的。
+   *
+   * 这样 Delete / 播放这类操作在"多选"和"只看一行"两种心智下都自然：
+   * 先选中再按 Delete 是删多个，什么都不选直接按是删当前这一行。
+   */
+  const getTargetVideo = (): VideoRecord | null => {
+    if (selectedVideoIds.size > 0) {
+      for (const v of videos) if (selectedVideoIds.has(v.id)) return v
+      return null
+    }
+    return navigableItems[focusedIndex]?.video ?? null
+  }
+
+  /** 当前操作会作用到几个视频（用于决定要不要二次确认） */
+  const getTargetCount = (): number =>
+    selectedVideoIds.size > 0 ? selectedVideoIds.size : focusedVideoId === null ? 0 : 1
+
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
+      // 焦点在按钮上时，空格与回车应触发按钮本身，否则会出现"点一下按钮没反应又改了选中态"
+      const onButton = e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement
+      const mod = e.ctrlKey || e.metaKey
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          moveSelection(1)
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          moveSelection(-1)
+          break
+        case 'PageDown':
+          e.preventDefault()
+          jumpTo(focusedIndex + PAGE_JUMP)
+          break
+        case 'PageUp':
+          e.preventDefault()
+          jumpTo(focusedIndex - PAGE_JUMP)
+          break
+        case 'Home':
+          if (!mod) {
+            e.preventDefault()
+            jumpTo(0)
+          }
+          break
+        case 'End':
+          if (!mod) {
+            e.preventDefault()
+            jumpTo(navigableItems.length - 1)
+          }
+          break
+        case 'ArrowRight':
+          if (groupByFolder) {
+            e.preventDefault()
+            expandFocusedFolder()
+          }
+          break
+        case 'ArrowLeft':
+          if (groupByFolder) {
+            e.preventDefault()
+            collapseFocusedFolder()
+          }
+          break
+
+        // Enter：有选中就播放第一个选中的；否则播放焦点处的
+        case 'Enter': {
+          if (onButton) return
+          e.preventDefault()
+          const target = getTargetVideo()
+          if (target) props.onOpen(target.id)
+          break
+        }
+        // 空格只做选中切换（不播放）—— 与文件管理器一致，空格是"选择"不是"打开"
+        case ' ':
+          if (onButton) return
+          e.preventDefault()
+          toggleFocusedSelection(e.shiftKey, mod)
+          break
+
+        // Ctrl+L 定位文件 / Ctrl+R 重建索引
+        case 'l':
+        case 'L':
+          if (!mod) return
+          e.preventDefault()
+          if (focusedVideoId !== null) props.onReveal(focusedVideoId)
+          break
+        case 'r':
+        case 'R':
+          if (!mod) return
+          e.preventDefault()
+          if (focusedVideoId !== null) props.onReindex([focusedVideoId])
+          break
+
+        case 'a':
+        case 'A':
+          if (mod) {
+            e.preventDefault()
+            selectAll()
+          }
+          break
+        case 'b':
+        case 'B':
+          // 重建全部索引。耗时较长（整库重新抽帧），但不涉及破坏性操作，不需要确认
+          if (!mod) {
+            e.preventDefault()
+            props.onReindex()
+          }
+          break
+        case 'i':
+        case 'I':
+          if (mod && e.shiftKey) {
+            e.preventDefault()
+            props.onAddFolder()
+          } else if (!mod) {
+            e.preventDefault()
+            props.onImportFiles()
+          }
+          break
+        case 's':
+        case 'S':
+          if (!mod) {
+            e.preventDefault()
+            props.onRescan()
+          }
+          break
+        case 'g':
+        case 'G':
+          e.preventDefault()
+          onToggleGroupByFolder()
+          break
+
+        case 'Delete':
+        case 'Backspace': {
+          e.preventDefault()
+          const count = getTargetCount()
+          if (count === 0) return
+          // 一次删多个时先确认，避免误按丢掉一大片索引记录
+          if (count > 1 && !window.confirm(`从索引库移除选中的 ${count} 个视频？\n（不会删除磁盘文件，可随时重新导入）`)) {
+            return
+          }
+          if (selectedVideoIds.size > 0) {
+            for (const id of selectedVideoIds) props.onRemoveVideo(id)
+            clearSelection()
+          } else {
+            const target = getTargetVideo()
+            if (target) props.onRemoveVideo(target.id)
+          }
+          break
+        }
+        case '/':
+          e.preventDefault()
+          filterInputRef.current?.focus()
+          filterInputRef.current?.select()
+          break
+        case 'Escape':
+          clearSelection()
+          break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, navigableItems, focusedVideoId, onToggleGroupByFolder])
   const expandFocusedFolder = () => {
     const item = navigableItems[focusedIndex]
     if (item && item.type === 'folder') {
@@ -200,9 +334,10 @@ export function LibraryView(props: Props) {
       <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
         <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line/70 px-3 py-2.5">
           <input
+            ref={filterInputRef}
             value={query.keyword ?? ''}
             onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
-            placeholder="按文件名 / 目录筛选"
+            placeholder="按文件名 / 目录筛选（/ 聚焦）"
             className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
           />
           <select
