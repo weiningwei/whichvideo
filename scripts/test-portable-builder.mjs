@@ -306,6 +306,23 @@ function main() {
     check('自检开关存在（正式路径默认不跳过打包）', source.includes('WHICHVIDEO_SKIP_ELECTRON_BUILDER'))
   }
 
+  console.log('\n=== 场景 5b：仓库外拷贝要保留 data\\（索引库） ===')
+  {
+    // 开发时反复打包，若每次都清掉 data\ 就得重跑一遍抽帧建索引，很浪费时间。
+    // 做法是先把 data\ rename 到临时路径，换完产物再挪回来。
+    const source = readFileSync(builder, 'utf8')
+    check('拷贝前把 data\\ 挪到临时路径', /renameSync\(oldData, keptData\)/.test(source))
+    check('临时路径带时间戳，避免与残留目录冲突', /keptData = `\$\{dest\}\.data-keep-\$\{Date\.now\(\)\}`/.test(source))
+    check('拷贝后把 data\\ 挪回来', /renameSync\(keptData, join\(dest, 'data'\)\)/.test(source))
+    check('挪不回来时明确告知用户位置', source.includes('请手动挪回去'))
+    check('统计文件数时排除 data\\（源目录本来就没有）', /countFiles\(dest, 'data'\)/.test(source))
+    check('统计字节数时同样排除 data\\', /directorySize\(dest, 'data'\)/.test(source))
+    check('成功结果里带 dataPreserved 标记供输出提示', source.includes('dataPreserved'))
+    check('输出里说明已保留 data\\', source.includes('不需要重新导入视频'))
+    // 挪不动时不能静默丢索引库
+    check('挪动失败会退回"删除"并如实告知', source.includes('已随目录一起清掉'))
+  }
+
   console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')
   {
     // 6a) 显式跳过

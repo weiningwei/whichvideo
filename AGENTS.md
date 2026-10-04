@@ -37,7 +37,9 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，启动�
 
 ## 打包与目录占用（EPERM）
 
-`build:portable` 产出两份目录：`release\WhichVideo-portable\`（在仓库内）与**仓库上一级目录**下的同名文件夹（`E:\code\weiningwei\WhichVideo-portable\`）。外面那份是给用户直接双击运行的，刻意放在项目目录之外，避免被编辑器索引 / 杀软扫描 / 资源管理器停留锁住。拷贝后脚本会核对文件数、总字节数与 `app.asar` 的 sha256；**这一份失败不会让整次打包判死**（`release` 里的产物仍然是好的），只在输出里报错并提示手动拷走。落点可用 `WHICHVIDEO_OUTSIDE_DIR` 指定，`WHICHVIDEO_SKIP_OUTSIDE_COPY=1` 可跳过（`test:pack` 就是把它指向 `tmp\` 跑的，绝不能让它写真实的上一级目录）。
+`build:portable` 产出两份目录：`release\WhichVideo-portable\`（在仓库内）与**仓库上一级目录**下的同名文件夹（`E:\code\weiningwei\WhichVideo-portable\`）。外面那份是给用户直接双击运行的，刻意放在项目目录之外，避免被编辑器索引 / 杀软扫描 / 资源管理器停留锁住。拷贝后脚本会核对文件数、总字节数与 `app.asar` 的 sha256；**这一份失败不会让整次打包判死**（`release` 里的产物仍然是好的），只在输出里报错并提示手动拷走。
+
+外面那份**会保留已有的 `data\`**（`copyOutsideRepository` 里先用 `renameSync` 挪到 `<dest>.data-keep-<时间戳>`，替换产物后再挪回）。理由是开发时反复打包，清掉索引库就得重跑一遍抽帧。相应地，拷贝校验的文件数与字节数统计都排除 `data\`（源目录 `release/` 里本来就没有这个目录）——`countFiles(dir, excludeDirName)` 与 `directorySize(dir, excludeDirName)` 因此都多了一个参数。挪不动时（跨卷、data 被占用）会退回删除并在输出里如实说明，不会静默丢索引库。落点可用 `WHICHVIDEO_OUTSIDE_DIR` 指定，`WHICHVIDEO_SKIP_OUTSIDE_COPY=1` 可跳过（`test:pack` 就是把它指向 `tmp\` 跑的，绝不能让它写真实的上一级目录）。
 
 两份目录的占用处理完全一致。`pnpm build:portable` 报 EPERM 是目标目录被占用（绿色版仍在运行、编辑器 plugin_host / VS Code 索引了 `release`、资源管理器停在该目录、杀软扫描）。脚本会**重试删除 → 改名成 `.old-<时间戳>` 挪开 → 仍失败则输出到 `WhichVideo-portable-<日期>-<时间>` 继续**，旧 `data\` 不会静默删除。排查占用者：
 

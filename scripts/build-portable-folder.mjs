@@ -86,11 +86,19 @@ function moveAside(dir) {
   }
 }
 
-function countFiles(dir) {
+/**
+ * 递归统计文件数。
+ *
+ * excludeDirName：跳过这一层里叫这个名字的子目录。用于比对产物时排除
+ * data\ —— 那是保留下来的用户索引库，源目录（release 里那份）本来就没有，
+ * 算进去必然不一致。
+ */
+function countFiles(dir, excludeDirName) {
   let count = 0
   for (const entry of readdirSync(dir)) {
+    if (excludeDirName && entry === excludeDirName) continue
     const full = join(dir, entry)
-    if (statSync(full).isDirectory()) count += countFiles(full)
+    if (statSync(full).isDirectory()) count += countFiles(full, excludeDirName)
     else count++
   }
   return count
@@ -234,12 +242,14 @@ function stamp() {
 }
 
 /** 目录里所有普通文件的总字节数（用来核对拷贝是否完整） */
-function directorySize(dir) {
+/** 递归统计目录占用字节；excludeDirName 的含义同 countFiles */
+function directorySize(dir, excludeDirName) {
   let total = 0
   for (const entry of readdirSync(dir)) {
+    if (excludeDirName && entry === excludeDirName) continue
     const full = join(dir, entry)
     const st = statSync(full)
-    if (st.isDirectory()) total += directorySize(full)
+    if (st.isDirectory()) total += directorySize(full, excludeDirName)
     else total += st.size
   }
   return total
@@ -258,7 +268,11 @@ function hashFile(path) {
  * 拷到仓库外再运行，"占用"和"验证"就跟项目目录彻底解耦。
  *
  * 占用处理与 release 里的目标目录完全一致：直接删 → 重试删 → 改名挪开 → 换带时间戳的目录。
- * 注意会连同上一份里的 data\ 一起清掉（产物必须是干净的），所以这里在删之前明确提示。
+ *
+ * data\ 目录会被**保留**：里面是索引库（whichvideo.db）与用户自己的配置，
+ * 重新建索引要重跑一遍抽帧，开发时反复打包很浪费时间。做法是先把 data\
+ * 挪到临时位置，替换完产物再挪回去。若源目录（release 里那份）没有 data\
+ * 则视为"要干净产物"，不保留。
  */
 function copyOutsideRepository(sourceDir) {
   if (process.env.WHICHVIDEO_SKIP_OUTSIDE_COPY === '1') {
@@ -270,18 +284,43 @@ function copyOutsideRepository(sourceDir) {
   const preferred = join(outsideRoot, name)
   let dest = preferred
 
+  // 旧目录里的 data\：先挪到 dest 的同级临时目录，替换完再挪回来
+  let keptData = null
+  let hasOldData = false
+
   if (existsSync(dest)) {
     // 和 clearTargetDirectory 一样尊重"强制占用"注入，否则自检没法覆盖被占用的分支
     const forcedLocked = process.env.WHICHVIDEO_TEST_FORCE_LOCKED === '1'
-    const hasData = existsSync(join(dest, 'data'))
+    const oldData = join(dest, 'data')
+    hasOldData = existsSync(oldData)
+    if (hasOldData && !forcedLocked) {
+      // 挪走而不是复制：data 可能有几百 MB（索引库 + 缩略图），复制不划算，
+      // 而且移动是原子的，不会出现"拷到一半失败"留下残缺 data 的情况。
+      keptData = `${dest}.data-keep-${Date.now()}`
+      try {
+        renameSync(oldData, keptData)
+      } catch {
+        // 挪不动（跨卷、权限、data 被占用）就退回"删除"，下面的分支会如实告知
+        keptData = null
+      }
+    }
     if (!forcedLocked) {
       try {
         rmSync(dest, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
       } catch {
         /* 交给下面的重试与改名 */
       }
-      if (!existsSync(dest)) {
-        if (hasData) console.log('  （旧的 data\\ 索引库已随目录一起清掉，需要时重新导入视频即可）')
+      if (!existsSync(dest) && hasOldData && !keptData) {
+        console.log('  （旧的 data\\ 没能挪出来，已随目录一起清掉，需要时重新导入视频）')
+      }
+    }
+    // data 挪出来了但目录本身删不掉：把 data 挪回去，别让索引库丢在临时路径上
+    if (existsSync(dest) && keptData) {
+      try {
+        renameSync(keptData, join(dest, 'data'))
+        keptData = null
+      } catch {
+        /* 下面会走改名挪开分支，data 留在临时路径上，最后再报告 */
       }
     }
     if (existsSync(dest)) {
@@ -316,8 +355,27 @@ function copyOutsideRepository(sourceDir) {
     }
     if (copyError) throw copyError
 
+    // 把保留的 data\ 挪回来。放在拷贝之后、校验之前 —— 校验要能把它算进去。
+    let restoredData = false
+    if (keptData) {
+      try {
+        renameSync(keptData, join(dest, 'data'))
+        restoredData = true
+        hasOldData = true
+        keptData = null
+      } catch (err) {
+        return {
+          skipped: false,
+          dir: dest,
+          error: `产物已拷贝，但旧的 data\\ 放不回来：${err instanceof Error ? err.message : String(err)}`,
+          keptDataPath: keptData
+        }
+      }
+    }
+
     // 核对：exe 在、文件数与总字节数一致、asar 与源同 hash。
     // 拷贝被中途打断时常常"看起来成功"，少几个文件的情况必须在这里挡住。
+    // data\ 是唯一允许与源不一致的部分（源没有、目标有），所以比文件数与字节数时排除它。
     const srcAsar = join(sourceDir, 'resources', 'app.asar')
     const dstAsar = join(dest, 'resources', 'app.asar')
     const problems = []
@@ -326,21 +384,30 @@ function copyOutsideRepository(sourceDir) {
       problems.push('app.asar 与源不一致')
     }
     const srcFiles = countFiles(sourceDir)
-    const dstFiles = countFiles(dest)
+    const dstFiles = countFiles(dest, 'data')
     if (srcFiles !== dstFiles) problems.push(`文件数不一致（源 ${srcFiles} / 目标 ${dstFiles}）`)
     const srcBytes = directorySize(sourceDir)
-    const dstBytes = directorySize(dest)
+    const dstBytes = directorySize(dest, 'data')
     if (srcBytes !== dstBytes) problems.push(`总字节数不一致（源 ${srcBytes} / 目标 ${dstBytes}）`)
     if (problems.length > 0) {
       return { skipped: false, dir: dest, error: `拷贝校验不通过：${problems.join('；')}` }
     }
 
-    return { skipped: false, dir: dest, fallback: dest !== preferred, fileCount: dstFiles, bytes: dstBytes }
-  } catch (err) {
     return {
       skipped: false,
       dir: dest,
-      error: err instanceof Error ? err.message : String(err)
+      fallback: dest !== preferred,
+      fileCount: dstFiles,
+      bytes: dstBytes,
+      dataPreserved: restoredData || hasOldData
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      skipped: false,
+      dir: dest,
+      error: keptData ? `${msg}（另外：旧的 data\\ 还在 ${keptData}，请手动挪回去）` : msg,
+      keptDataPath: keptData
     }
   }
 }
@@ -632,6 +699,9 @@ function main() {
   } else {
     console.log(`  ✓ 仓库外副本已就绪：${outside.dir}`)
     console.log(`    文件数量：${outside.fileCount}（${(outside.bytes / 1024 / 1024).toFixed(1)} MB，与源一致）`)
+    if (outside.dataPreserved) {
+      console.log('    已保留原有的 data\\（索引库与配置），不需要重新导入视频。')
+    }
     if (outside.fallback) console.log('    注意：同名目录被占用，本次用了带时间戳的新目录。')
     console.log(`    直接运行：${join(outside.dir, 'WhichVideo.exe')}`)
   }
