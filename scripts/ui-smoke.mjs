@@ -538,6 +538,40 @@ export default mod
       src.includes("groupSelected ? 'bg-accent'") && src.includes('groupPartial'),
       '全选 / 部分选中两态'
     )
+    // 分组标题的点击热区职责划分：名字管展开收起，竖条管全选。
+    // 此前名字被"全选该组"占用，只能点小三角展开，不符合直觉（用户反馈）。
+    check(
+      '分组标题：竖条是全选入口，且有足够大的点击热区',
+      src.includes('全选该组') && /-m-1 flex h-5 w-3[^\n]*cursor-pointer/.test(src) &&
+        src.includes('role="checkbox"'),
+      '视觉 2px、点击区 12px'
+    )
+    check(
+      '分组标题：展开/收起绑在名字那一整块上（不是只有小三角）',
+      /onClick=\{\(\) => toggleFolderExpanded\(folderId\)\}[\s\S]{0,400}?展开该目录/.test(src) ||
+        /展开该目录[\s\S]{0,400}?onClick=\{\(\) => toggleFolderExpanded\(folderId\)\}/.test(src),
+      '点名字、点视频数、点空白都可展开收起'
+    )
+    check(
+      '展开热区包住三角 + 名字 + 视频数（flex-1）',
+      src.includes('flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2'),
+      '热区连续，不留死区'
+    )
+    check(
+      '全选与展开是两个独立元素，不会互相抢点击',
+      !/onClick=\{toggleGroup\}[\s\S]{0,300}?\{displayName\}/.test(src),
+      'toggleGroup 的元素内不含 displayName'
+    )
+    check(
+      '分组标题有键盘焦点提示（↑↓ 走到分组时可见）',
+      src.includes('headerFocused') && src.includes("headerFocused ? 'bg-ink-800/70'"),
+      'focusedIndex === groupIdx 时提亮'
+    )
+    check(
+      '分组焦点用下标直取，不做 findIndex 遍历',
+      src.includes('focusedIndex === groupIdx') && !/focusedIndex === navigableItems\.findIndex/.test(src),
+      'navigableItems 与 groupedVideos 同序遍历，下标直接对应'
+    )
     const codeNoComments = src
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^[ \t]*\/\/.*$/gm, '')

@@ -282,7 +282,7 @@ export function LibraryView(props: Props) {
             </thead>
             <tbody>
               {groupByFolder && groupedVideos ? (
-                Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos]) => {
+                Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos], groupIdx) => {
                   const folder = folderId === -1 ? null : folders.find((f) => f.id === folderId)
                   const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
                   const expanded = expandedFolderIds.has(folderId)
@@ -291,39 +291,60 @@ export function LibraryView(props: Props) {
                   const groupPartial =
                     !groupSelected && folderVideos.some((v) => isVideoSelected(v.id))
 
+                  const toggleGroup = () => {
+                    const target = !groupSelected
+                    folderVideos.forEach((v) => {
+                      if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
+                    })
+                  }
+
+                  // navigableItems 里分组标题一定排在各组视频之前，顺序与 groupedVideos
+                  // 的迭代顺序一致，所以下标直接对应（不必再 findIndex 遍历一遍）。
+                  const headerFocused = focusedIndex === groupIdx
+
                   const header = (
-                    <tr key={`folder-header-${folderId}`} className="bg-ink-800/50 border-t border-line/40">
+                    <tr
+                      key={`folder-header-${folderId}`}
+                      className={`border-t border-line/40 transition-colors ${
+                        headerFocused ? 'bg-ink-800/70' : 'bg-ink-800/50'
+                      }`}
+                    >
                       <td colSpan={3} className="px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
+                          {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
+                              否则这个 2px 的细条根本点不中。 */}
                           <span
-                            className="cursor-pointer select-none transition-transform duration-150"
-                            style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
+                            className="-m-1 flex h-5 w-3 shrink-0 cursor-pointer items-center justify-center"
+                            onClick={toggleGroup}
+                            title={groupSelected ? '取消全选该组' : '全选该组'}
+                            role="checkbox"
+                            aria-checked={groupSelected}
+                            aria-label="全选该组"
+                          >
+                            <span
+                              className={`h-3.5 w-[2px] rounded-full transition ${
+                                groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
+                              }`}
+                            />
+                          </span>
+                          {/* 展开/收起：整块（竖条右侧到视频数）都可点。
+                              此前文件夹名字被"全选该组"占用了，只能点小三角 ——
+                              那不符合直觉，名字就该是展开收起的主热区。 */}
+                          <span
+                            className="-my-2 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 hover:text-primary"
                             onClick={() => toggleFolderExpanded(folderId)}
+                            title={expanded ? '收起该目录' : '展开该目录'}
                           >
-                            ▼
-                          </span>
-                          {/* 分组选中态用竖条提示，不再放复选框 */}
-                          <span
-                            className={`h-3.5 w-[2px] shrink-0 rounded-full ${
-                              groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
-                            }`}
-                            title={groupSelected ? '已全选该组' : groupPartial ? '部分选中' : ''}
-                          />
-                          {/* 点击分组名即全选 / 取消该组 */}
-                          <span
-                            className="cursor-pointer truncate font-medium hover:text-primary"
-                            onClick={() => {
-                              const target = !groupSelected
-                              folderVideos.forEach((v) => {
-                                if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
-                              })
-                            }}
-                            title="点击全选 / 取消该组"
-                          >
-                            {displayName}
-                          </span>
-                          <span className="ml-auto text-[11px] text-muted">
-                            {folderVideos.length} 个视频
+                            <span
+                              className="select-none transition-transform duration-150"
+                              style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
+                            >
+                              ▼
+                            </span>
+                            <span className="truncate font-medium">{displayName}</span>
+                            <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
+                              {folderVideos.length} 个视频
+                            </span>
                           </span>
                         </div>
                       </td>
