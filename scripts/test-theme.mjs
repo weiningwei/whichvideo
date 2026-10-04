@@ -50,14 +50,13 @@ const THEMEABLE = [
  *
  * 格式：`文件 → 颜色 → 理由`。每条都要能自圆其说——写进这里等于承诺
  * 「这个颜色在深浅两套主题下都必须成立」，评审时会被逐条质疑。
+ *
+ * 目前为空：唯一的例外曾是 Header 的「WV」字母标（#042C53，压在 accent 渐变
+ * 方块上不能用语义 token），但那个字母标本身已从顶栏去掉，例外也就没了。
+ * 若将来又出现同类"语义 token 表达不了"的固定色，在此处登记并写明理由；
+ * 登记后记得确认它真的还在用（下面有一项会检查白名单条目是否被用上）。
  */
-const HEX_EXCEPTIONS = [
-  {
-    file: 'Header.tsx',
-    color: '#042C53',
-    reason: '「WV」字母标压在 accent 渐变方块上，两套主题下都必须是深色；用语义 token 会跟着主题变，反而在浅色下变成浅字压浅底'
-  }
-]
+const HEX_EXCEPTIONS = []
 
 function isException(file, hex) {
   return HEX_EXCEPTIONS.some((e) => e.file === file && e.color.toLowerCase() === hex.toLowerCase())

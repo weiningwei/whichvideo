@@ -44,19 +44,15 @@ export function Header({
   const running = status?.running ?? false
   return (
     <header className="flex items-center gap-4 border-b border-line/80 bg-ink-900/70 px-5 py-3 backdrop-blur">
-      {/* 品牌区只有字母标，不放任何文字。
-          产品名：窗口标题栏与任务栏已经写着 WhichVideo，界内再写是重复。
-          tagline：以图搜帧 与右侧「图片搜索」tab 语义几乎相同，且紧挨着，
-          同一句话在同一行出现两次。之前试过保留它，反而更重复，所以整个去掉。
+      {/* 顶栏左侧直接是页签，不再放品牌标识。
+          试过三级精简：产品名（重复标题栏）→ tagline（重复页签）→ 字母标。
+          字母标最终也去掉了：「WV」只是内部才懂的缩写，陌生用户看到不会有任何
+          联想，不传达信息也不建立识别，白占 36px + 间距。产品名在标题栏与任务栏，
+          功能由页签自己说，顶栏左侧完全交给导航。
 
-          「WV」文字色刻意固定为 #042C53：它压在 accent 渐变方块上，深浅两套
-          主题下都必须是深色。用语义 token 会跟着主题变，浅色主题下就变成浅字压浅底。
-          这条例外记在 scripts/test-theme.mjs 的 HEX_EXCEPTIONS 里。 */}
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-accent to-accent-strong text-[15px] font-bold text-[#042C53]">
-        WV
-      </div>
-
-      <div className="ml-2 flex items-center gap-1 rounded-xl border border-line/80 bg-ink-850/60 p-1">
+          注意：这不影响应用图标——exe、快捷方式、任务栏仍用 build/icon.ico，
+          那才是品牌露出该待的地方（壳层），界内不需要再重复一次。 */}
+      <div className="flex items-center gap-1 rounded-xl border border-line/80 bg-ink-850/60 p-1">
         <TabButton active={tab === 'search'} onClick={() => onTab('search')}>
           图片搜索
         </TabButton>
