@@ -33,6 +33,15 @@
   --color-accent-strong: #0ea5e9;
   --color-accent-soft: #0ea5e933; /* 选中背景 */
 
+  /* 列表行底色：**预先混好的不透明色**，不是半透明叠在 surface-1 上。
+     视频库的操作列是 sticky 的（横向滚动时吸附在右侧），会浮在其它单元格
+     之上；若这里用 bg-accent/12 这类半透明色，左侧滚过来的文字会透上来
+     叠在按钮上。下面三个是「前景色按 alpha 混 surface-1」算出的实色。 */
+  --color-row-selected: #102432; /* accent 12% 叠 surface-1 */
+  --color-row-focus: #111825; /* surface-3 70% 叠 surface-1 */
+  --color-row-hover: #0f141f; /* surface-3 40% 叠 surface-1 */
+  --color-row-group: #101621; /* surface-3 50% 叠 surface-1，分组标题行 */
+
   /* 语义色 */
   --color-ok: #34d399;
   --color-warn: #fbbf24;
@@ -76,6 +85,12 @@
   --color-accent: #0284c7;
   --color-accent-strong: #0369a1;
   --color-accent-soft: #0284c71a;
+
+  /* 行底色同样是预先混好的不透明色（理由见 @theme 里的同名注释） */
+  --color-row-selected: #daecf6;
+  --color-row-focus: #f3f7fa;
+  --color-row-hover: #f5f8fb;
+  --color-row-group: #f4f8fb;
 
   --color-ok: #059669;
   --color-warn: #b45309;

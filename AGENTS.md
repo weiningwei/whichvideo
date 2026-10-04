@@ -75,6 +75,33 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
 - `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
 
+## 列表行的底色必须是不透明实色
+
+视频库操作列是 `sticky right-0`（横向滚动时吸附右侧）。**sticky 格若用半透明底色
+（`bg-accent/12`、`bg-ink-800/70` 这类），左侧滚过来的文字会透上来叠在按钮上。**
+
+行底色统一用 `--color-row-*` 这几个**预先混好**的实色，不要写半透明叠色：
+
+| token | 由什么混成 | 用途 |
+| --- | --- | --- |
+| `--color-row-selected` | accent 12% + surface-1 | 选中行 |
+| `--color-row-focus` | surface-3 70% + surface-1 | 仅键盘光标 |
+| `--color-row-hover` | surface-3 40% + surface-1 | 悬停 |
+| `--color-row-group` | surface-3 50% + surface-1 | 分组标题行 |
+
+混色算法：`round(前景通道 × alpha + surface-1 通道 × (1 - alpha))`，深浅两套
+各自的 surface-1 不同，所以四个色值在 `[data-theme='light']` 里要重新算一遍。
+
+两个容易踩的点：
+
+- **只给 td，不给 tr。** tr 若也有背景，会与吸附格叠加，同一行出现两种色块
+- **分组标题行不能用一个 `colSpan={3}` 的 td**，那会盖住操作列、让左侧分隔线
+  断开；必须拆成 `colSpan={2}` + 一个空的吸附格
+
+试过的错路：给 td 铺不透明底色 + 内层 `absolute inset-0` 覆盖层渲染行色 ——
+`absolute` 在表格布局里定位不可靠（兄弟节点不是定位祖先时它会跑到别处），
+不如直接用实色 token。
+
 ## 光标与选中
 
 **光标与选中必须是同一个东西。** 文件管理器式的列表里，光标在哪单选就在哪。

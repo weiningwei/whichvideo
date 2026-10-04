@@ -476,14 +476,21 @@ export function LibraryView(props: Props) {
           </div>
         </div>
 
-        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
-          {/* min-w 覆盖三列的下限：视频列至少 220 + 状态 96 + 操作 180 */}
-          <table className="w-full min-w-[540px] border-separate border-spacing-0 text-[12px]">
+        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-ink-900">
+          {/* min-w 是"低于这个宽度才允许横向滚动"的阈值，取三列的下限之和：
+              视频列 200（够一行缩略图+几个字）+ 状态 96 + 操作 180。
+              别设更高——文件名已改成两行显示，内容并不需要那么宽，
+              阈值定高反而会凭空造出横向滚动条。 */}
+          <table className="w-full min-w-[480px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
               <tr>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
-                <th className="w-[180px] px-3 py-2 text-right font-medium">操作</th>
+                {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
+                    左侧那条线标示"这里是浮在内容之上的固定区"。 */}
+                <th className="sticky right-0 w-[180px] border-l border-line/70 bg-ink-900 px-3 py-2 text-right font-medium">
+                  操作
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -507,9 +514,11 @@ export function LibraryView(props: Props) {
                   // 分组标题不再有「键盘焦点」态：↑↓ 只在视频行间移动，光标不会停在标题上。
                   // 之前用 focusedIndex === groupIdx 判断，但那条件在光标与选中合一后
                   // 永远不成立，留着只会误导后来人以为标题能被键盘选中。
+                  // 标题行拆成两格而不是一个 colSpan=3：跨三列的 td 会把操作列一起盖住，
+                  // 右侧的吸附格与分隔线就断了。第二格留空，只为延续那条竖线。
                   const header = (
-                    <tr key={`folder-header-${folderId}`} className="border-t border-line/40 bg-ink-800/50 transition-colors">
-                      <td colSpan={3} className="px-3 py-2">
+                    <tr key={`folder-header-${folderId}`} className="border-t border-line/40">
+                      <td colSpan={2} className="bg-row-group px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
                           {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
                               否则这个 2px 的细条根本点不中。 */}
@@ -548,6 +557,8 @@ export function LibraryView(props: Props) {
                           </span>
                         </div>
                       </td>
+                      {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
+                      <td className="sticky right-0 w-[180px] border-l border-line/70 bg-row-group" />
                     </tr>
                   )
                   const rows = expanded ? folderVideos.map((video) => (
@@ -754,33 +765,43 @@ function VideoRow({
 
   const selected = isVideoSelected(video.id)
 
+  /**
+   * 行底色。用 `--color-row-*` 这几个**不透明**的实色，不是 bg-accent/12 那种
+   * 半透明叠色 —— 操作列是 sticky 的，会浮在左侧单元格之上，半透明底色会让
+   * 滚过来的文字透上来叠在按钮上（这几个色值已在 index.css 里预先混好）。
+   *
+   * 只给 td、不给 tr：tr 若也有背景，与吸附格叠加后同一行会出现两种色块。
+   */
+  const rowBg = selected
+    ? 'bg-row-selected'
+    : focused
+      ? 'bg-row-focus'
+      : 'hover:bg-row-hover'
+
   return (
     <tr
       data-video-id={video.id}
       onClick={onToggleSelect}
-      className={`cursor-pointer border-b border-line/40 transition-colors ${
-        selected
-          ? 'bg-accent/12'
-          : focused
-            ? 'bg-ink-800/70'
-            : 'hover:bg-ink-800/40'
-      }`}
+      className="group cursor-pointer border-b border-line/40"
     >
-      <td className="relative px-3 py-1.5">
+      <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
         {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
-            选中 = accent 蓝条；仅键盘焦点 = 淡灰条。两者同时存在时以选中为准。 */}
+            选中 = accent 蓝条；仅键盘光标 = 淡灰条。两者同时存在时以选中为准。 */}
         {selected ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
         ) : focused ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
         ) : null}
-        <div className="flex items-center gap-2.5">
-          <div className="h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
+            {/* 文件名最多两行：单行 truncate 时长片名（尤其带 [1080p][x264] 那种）
+                会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
+                第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
             <div
-              className={`truncate ${selected ? 'text-accent' : 'text-primary'}`}
+              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
               title={video.path}
             >
               {video.name}
@@ -799,12 +820,20 @@ function VideoRow({
           </div>
         </div>
       </td>
-      <td className="whitespace-nowrap px-2 py-1.5">
+      <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
         <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
           {statusText}
         </span>
       </td>
-      <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+      {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
+
+          底色要**不透明**，否则左侧滚过来的文字会透上来叠在按钮上。行状态色
+          （选中蓝 / 光标灰 / hover）改由这格自己带——不能靠 tr 或绝对定位的
+          覆盖层，前者会被这格的底色盖住，后者在表格布局里定位不可靠。 */}
+      <td
+        className={`sticky right-0 border-l border-line/70 px-3 py-1.5 align-top transition-colors ${rowBg}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 四个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 索引 / 移除）。
             按钮内边距收到 px-1.5，四项合计约 156px，比原来的「播放+⋯」73px
             多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}

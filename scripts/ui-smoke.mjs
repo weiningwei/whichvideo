@@ -504,9 +504,10 @@ export default mod
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
   // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
   // 状态列仍需禁止换行：中文可逐字断行，列被压窄会竖排成多行。
+  // align-top 是配套的——文件名可占两行，状态徽标要与其顶端对齐而不是被拉高中间。
   check(
-    '状态列禁止换行（中文可逐字断行，列被压窄会竖排成多行）',
-    /<td class="whitespace-nowrap px-2 py-1\.5"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
+    '状态列禁止换行且顶端对齐（中文可逐字断行；文件名两行时不居中）',
+    /<td class="whitespace-nowrap px-2 py-1\.5 align-top[^"]*"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
     libraryHtml.match(/<td class="[^"]*"><span[^>]*>已索引<\/span><\/td>/)?.[0] ?? '没找到状态单元格'
   )
   // 元信息合并进视频列第二行（用 · 分隔）；目录已由第一行的 title 提供，不再重复
@@ -608,8 +609,8 @@ export default mod
       '按 [data-video-id] 定位后调整 scrollTop'
     )
     check(
-      '键盘焦点有独立视觉提示（淡灰竖条，与选中蓝条区分）',
-      src.includes('w-[2px] bg-disabled/60') && src.includes('bg-ink-800/70'),
+      '键盘焦点有独立视觉提示（淡灰竖条 + 稍亮底色，与选中蓝条区分）',
+      src.includes('w-[2px] bg-disabled/60') && src.includes('bg-row-focus'),
       '焦点灰条 / 选中蓝条'
     )
     check(
@@ -664,8 +665,72 @@ export default mod
     )
     check(
       '操作列宽度已相应放宽到 180px',
-      src.includes('w-[180px]') && src.includes('min-w-[540px]'),
-      '列宽 180px，表格 min-w 540px'
+      src.includes('w-[180px]') && src.includes('min-w-[480px]'),
+      '列宽 180px，表格 min-w 480px'
+    )
+
+    // 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍必须看得见、点得到。
+    // 这类问题 ui-smoke 的静态检查容易漏，所以逐条钉住关键前提。
+    check(
+      '操作列吸附在右侧（横向滚动时按钮不被推出视野）',
+      /<th[^>]*sticky right-0[^>]*w-\[180px\]/.test(libraryHtml) &&
+        /<td[^>]*sticky right-0[^>]*border-l/.test(libraryHtml),
+      '表头与数据格都带 sticky right-0'
+    )
+    // 吸附列的底色必须不透明，否则左侧滚过来的内容会透上来叠在按钮上。
+    // 实现上不是「给 td 加不透明色 + 内层覆盖层」（absolute 在表格布局里不可靠），
+    // 而是改用预先混好的 row-* 实色——两个断言各守一半，都必要。
+    check(
+      '吸附列底色用的是不透明实色（不是 bg-accent/12 这类半透明叠色）',
+      src.includes('const rowBg =') &&
+        src.includes("'bg-row-selected'") &&
+        src.includes("'bg-row-focus'") &&
+        !/sticky right-0[^`]*bg-accent\//.test(src),
+      'rowBg 走 row-* token，吸附格不再直接挂半透明色'
+    )
+    check(
+      'row-* 三个色值在深浅两套主题里都定义（预混不透明色）',
+      (() => {
+        const css = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
+        return (
+          css.includes('--color-row-selected') &&
+          css.includes('--color-row-focus') &&
+          css.includes('--color-row-hover') &&
+          (css.split("[data-theme='light']")[1] ?? '').includes('--color-row-selected')
+        )
+      })(),
+      '深浅两侧齐备'
+    )
+    check(
+      '行底色落在每个 td 上而不是 tr（否则吸附格与半透明 tr 背景叠出色差）',
+      src.includes('const rowBg =') && !/className={`group cursor-pointer[^`]*\$\{rowBg\}/.test(src),
+      'rowBg 只用于 td'
+    )
+    check(
+      '分组标题行拆成两格（colSpan 会盖住吸附列、让分隔线断开）',
+      src.includes('colSpan={2}') && !src.includes('colSpan={3}'),
+      '标题格 colSpan=2 + 一个空的吸附格'
+    )
+
+    // 分组标题行的吸附格同样要实色——它也是 sticky，标题行滚动时会浮起来
+    check(
+      '分组标题行的吸附格也是实色（不挂半透明色）',
+      /<td className="sticky right-0[^"]*bg-row-group"/.test(libraryHtml) ||
+        /<td className="sticky right-0[^"]*bg-row-group/.test(src),
+      'bg-row-group'
+    )
+
+    // 文件名多行：单行 truncate 时长片名（[1080p][x264] 那种）看不出是什么剧，
+    // 而横向滚动才能看全名很反直觉。
+    check(
+      '文件名最多两行显示（line-clamp-2 + break-all）',
+      src.includes('line-clamp-2') && src.includes('break-all'),
+      '超长片名换行而非截断'
+    )
+    check(
+      '元信息行保持单行（目录路径重复前缀多，展开反而更吵）',
+      /<div className="truncate text-\[10\.5px\] text-muted"/.test(src),
+      '第二行仍 truncate'
     )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
