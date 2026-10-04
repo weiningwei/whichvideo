@@ -748,6 +748,27 @@ export default mod
       /<div className="truncate text-\[10\.5px\] text-muted"/.test(src),
       '第二行仍 truncate'
     )
+
+    // 选中提示分两档：单选 = 蓝竖条 + 淡蓝底 + 标题染蓝；多选 = **只有**前两者。
+    // 此前标题只要 selected 就染蓝，Shift 连选一段后满屏蓝字，既吵又读不出重点。
+    check(
+      '标题只在单选时染蓝（多选不染色）',
+      src.includes('const titleAccent = selected && selectedCount === 1') &&
+        /titleAccent \? 'text-accent' : 'text-primary'/.test(src) &&
+        !/selected \? 'text-accent' : 'text-primary'/.test(src),
+      'titleAccent 需要 selectedCount === 1'
+    )
+    check(
+      '多选的提示与单选一致（不额外加效果）',
+      src.includes("? 'bg-row-selected'") && !/selectedCount > 1[\s\S]{0,80}bg-/.test(src),
+      '底色与竖条不因选中数量改变'
+    )
+    check(
+      'VideoRow 拿到了选中总数（用来区分单选与多选）',
+      /selectedCount=\{selectedVideoIds\.size\}/.test(src) &&
+        src.includes('selectedCount: number'),
+      '两处调用点都传了 selectedCount'
+    )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
   check('视频库页显示监听中状态', libraryHtml.includes('监听中'))

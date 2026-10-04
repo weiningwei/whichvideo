@@ -617,6 +617,7 @@ export function LibraryView(props: Props) {
                       video={video}
                       roots={roots}
                       focused={focusedVideoId === video.id}
+                      selectedCount={selectedVideoIds.size}
                       onOpen={props.onOpen}
                       onReveal={props.onReveal}
                       onRemove={props.onRemoveVideo}
@@ -635,6 +636,7 @@ export function LibraryView(props: Props) {
                     video={video}
                     roots={roots}
                     focused={focusedVideoId === video.id}
+                    selectedCount={selectedVideoIds.size}
                     onOpen={props.onOpen}
                     onReveal={props.onReveal}
                     onRemove={props.onRemoveVideo}
@@ -766,6 +768,7 @@ function VideoRow({
   video,
   roots,
   focused,
+  selectedCount,
   onOpen,
   onReveal,
   onRemove,
@@ -777,6 +780,11 @@ function VideoRow({
   roots: string[]
   /** 键盘焦点所在行（↑/↓ 移动），用于显示淡灰焦点条 */
   focused: boolean
+  /**
+   * 当前页选中总数。用来区分单选与多选：多选时选中提示与单选完全一致
+   * （蓝竖条 + 淡蓝底），不给标题额外染色——一片蓝既吵又读不出重点。
+   */
+  selectedCount: number
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
@@ -820,6 +828,15 @@ function VideoRow({
   const selected = isVideoSelected(video.id)
 
   /**
+   * 标题染蓝**只在单选时**。
+   *
+   * 此前是 `selected ? 'text-accent'`，于是 Shift 连选一段后整片标题都变蓝 ——
+   * 多选时满屏蓝字既吵、又读不出"从哪到哪"的重点在哪。选中提示靠左侧竖条与
+   * 淡蓝底已经足够（两者单选多选表现一致），文字保持正常色即可。
+   */
+  const titleAccent = selected && selectedCount === 1
+
+  /**
    * 行底色。用 `--color-row-*` 这几个**不透明**的实色，不是 bg-accent/12 那种
    * 半透明叠色 —— 操作列是 sticky 的，会浮在左侧单元格之上，半透明底色会让
    * 滚过来的文字透上来叠在按钮上（这几个色值已在 index.css 里预先混好）。
@@ -855,7 +872,7 @@ function VideoRow({
                 会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
                 第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
             <div
-              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
+              className={`line-clamp-2 break-all ${titleAccent ? 'text-accent' : 'text-primary'}`}
               title={video.path}
             >
               {video.name}
