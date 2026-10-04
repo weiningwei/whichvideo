@@ -168,6 +168,56 @@ export function LibraryView(props: Props) {
   }
 
   /**
+   * 鼠标点到某一行时用：**光标移到该行**，再按修饰键决定选区怎么变。
+   *
+   * 上一版只把方向键与光标打通了，忘了点击这条路 —— 于是光标一直停在初始
+   * 位置（第一个视频），点第 3 个再按 ↑ 就从第一个开始算，直接跳回第一个。
+   * 光标与选中既然是同一个东西，**两条入口必须都改它**。
+   */
+  const focusRow = (index: number) => {
+    setFocusedIndex(index)
+    const item = navigableItems[index]
+    if (item?.type === 'video' && item.video) {
+      toggleVideoSelection(item.video.id, false, false)
+    }
+  }
+
+  /** Shift+点击：与上次选中的位置之间连选，光标跟着走到目标行 */
+  const selectRowRange = (index: number) => {
+    setFocusedIndex(index)
+    const item = navigableItems[index]
+    if (item?.type === 'video' && item.video) {
+      toggleVideoSelection(item.video.id, true, false)
+    }
+  }
+
+  /** Ctrl+点击：只切换这一行的选中，其余不动，光标也走到该行 */
+  const toggleRowSelection = (index: number) => {
+    setFocusedIndex(index)
+    const item = navigableItems[index]
+    if (item?.type === 'video' && item.video) {
+      toggleVideoSelection(item.video.id, false, true)
+    }
+  }
+
+  /**
+   * 点整行的统一入口。**按 video.id 反查行下标**，而不是靠 map 回调里的位置参数
+   * 去算偏移 —— 分组视图下每个分组前面都插了一个标题，偏移量很容易算错，
+   * 而算错的症状恰好是"点到第三个却把光标放到第一个"这种，极难从界面上看出来。
+   */
+  const handleRowClick = (videoId: number, shiftKey: boolean, ctrlKey: boolean) => {
+    const index = navigableItems.findIndex((it) => it.type === 'video' && it.video?.id === videoId)
+    if (index === -1) {
+      // 理论上到不了（行都是从 navigableItems 渲染的）；真发生了至少别动光标
+      toggleVideoSelection(videoId, shiftKey, ctrlKey)
+      return
+    }
+    if (ctrlKey) toggleRowSelection(index)
+    else if (shiftKey) selectRowRange(index)
+    else focusRow(index)
+  }
+
+  /**
    * 拿到"该被操作的那个视频"：有选中就用第一个选中的，否则用焦点处的。
    *
    * 这样 Delete / 播放这类操作在"多选"和"只看一行"两种心智下都自然：
@@ -572,7 +622,7 @@ export function LibraryView(props: Props) {
                       onRemove={props.onRemoveVideo}
                       onReindex={(id) => props.onReindex([id])}
                       isVideoSelected={isVideoSelected}
-                      onToggleSelect={() => toggleVideoSelection(video.id, false, false)}
+                      onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
                     />
                   )) : []
 
@@ -590,7 +640,7 @@ export function LibraryView(props: Props) {
                     onRemove={props.onRemoveVideo}
                     onReindex={(id) => props.onReindex([id])}
                     isVideoSelected={isVideoSelected}
-                    onToggleSelect={() => toggleVideoSelection(video.id, false, false)}
+                    onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
                   />
                 ))
               )}
@@ -721,7 +771,7 @@ function VideoRow({
   onRemove,
   onReindex,
   isVideoSelected,
-  onToggleSelect
+  onRowClick
 }: {
   video: VideoRecord
   roots: string[]
@@ -732,8 +782,12 @@ function VideoRow({
   onRemove: (id: number) => void
   onReindex: (id: number) => void
   isVideoSelected: (videoId: number) => boolean
-  /** 点击整行切换选中（复选框已移除） */
-  onToggleSelect: () => void
+  /**
+   * 点击整行。**必须同时移动光标**——光标与选中是同一个东西，只改选中会让
+   * 光标留在原地，之后按 ↑/↓ 从旧位置起算（点第三个再按 ↑ 跳回第一个）。
+   * 修饰键一起传上来，是为了支持 Shift 连选与 Ctrl 点选。
+   */
+  onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   useEffect(() => {
@@ -781,7 +835,7 @@ function VideoRow({
   return (
     <tr
       data-video-id={video.id}
-      onClick={onToggleSelect}
+      onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
       className="group cursor-pointer border-b border-line/40"
     >
       <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>

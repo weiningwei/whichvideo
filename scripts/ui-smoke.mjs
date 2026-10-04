@@ -535,8 +535,24 @@ export default mod
     check(
       '整行可点击切换选中（操作列 stopPropagation 避免误触）',
       src.includes('cursor-pointer border-b border-line/40') &&
-        src.includes('onToggleSelect={() => toggleVideoSelection(video.id, false, false)}'),
+        src.includes('onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}'),
       '点击整行即切换'
+    )
+    // 点击必须同时移动光标。上一版只把方向键打通了、忘了点击这条路，
+    // 于是点第三个视频再按 ↑ 会从初始位置（第一个）起算 —— 又跳回第一个。
+    check(
+      '点击整行会同步移动光标（不只是改选中）',
+      /const handleRowClick = \(videoId: number/.test(src) &&
+        /setFocusedIndex\(index\)/.test(src) &&
+        /focusRow = \(index: number\)/.test(src) &&
+        /focusRow\(index\)/.test(src),
+      'focusRow 里 setFocusedIndex + 改选中'
+    )
+    check(
+      '点击按 videoId 反查行下标（不靠 map 位置参数算偏移）',
+      src.includes('navigableItems.findIndex((it) => it.type === \'video\'') &&
+        src.includes('handleRowClick(video.id'),
+      'findIndex 反查，分组视图下偏移量不会算错'
     )
     check(
       '分组标题选中态也改为竖条（不再是复选框）',
