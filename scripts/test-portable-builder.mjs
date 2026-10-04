@@ -326,40 +326,58 @@ function main() {
     check('挪动失败会退回"删除"并如实告知', source.includes('已随目录一起清掉'))
   }
 
-  console.log('\n=== 场景 5c：输出里的路径用相对路径，不暴露开发机绝对路径 ===')
+  console.log('\n=== 场景 5c：路径的可见性分两种，区别对待 ===')
   {
-    // 绝对路径不该出现在给用户看的输出里：日志会发到 issue、说明文件会跟着产品走，
-    // 都是开发机的目录结构，换台机器那些路径也全错。
+    /*
+     * 原则：**终端输出给开发者自己看，可以用绝对路径**（他要知道自己机器上
+     * 产物落在哪，贴 issue 时反而需要这个）；**跟着产品走、给终端用户看的文件
+     * 里不能出现开发机路径**。
+     *
+     * 曾经把两者搞反了：给 12 处 console 输出套上 displayPath 转成相对路径，
+     * 结果开发者自己在终端里看不到绝对路径，还得自己拼 —— 而真正该干净的
+     * 便携版说明.txt 本来就是相对描述，一直没问题。
+     */
     const source = readFileSync(builder, 'utf8')
-    check('脚本有 displayPath 辅助函数', /function displayPath\(abs\)/.test(source))
-    check('仓库内路径显示为相对（release\\…）', source.includes("relative(root, abs)"))
-    check('仓库外路径显示为 ..\\ 前缀', source.includes('`..\\\\${up}`'))
-    // 关键：显示层换成相对，但报告字段必须仍是绝对路径 —— 自检靠它做 startsWith/join 判定。
-    // 不能用 displayPath 包裹报告里的任何路径字段。
-    const reportFields = ['targetDir,', 'preferredTargetDir,', 'outsideRoot,', 'outsideDir: outside.dir ?? null']
+    check('终端输出直接给绝对路径（开发者自己看）', !/function displayPath/.test(source))
     check(
-      '测试报告里的路径字段保持绝对（自检依赖）',
-      reportFields.every((f) => source.includes(f)) &&
-        !/writeTestReport\(\{[\s\S]{0,900}?(targetDir|outsideDir|outsideRoot):\s*displayPath/.test(source),
-      'outsideDir/targetDir/outsideRoot 都不走 displayPath'
+      '产物就绪提示包含绝对路径',
+      /绿色版目录已就绪：\$\{targetDir\}/.test(source) &&
+        /可执行文件：\$\{join\(targetDir, 'WhichVideo\.exe'\)\}/.test(source)
     )
-    const displayUses = (source.match(/displayPath\(/g) ?? []).length
-    check('多处输出已改用 displayPath', displayUses >= 10, `${displayUses} 处`)
-    // 内部逻辑不能被误伤
     check(
-      '内部逻辑仍用绝对路径（existsSync / join / rename 不受影响）',
-      /if \(existsSync\(dest\)\)/.test(source) && /mkdirSync\(dest, \{ recursive: true \}\)/.test(source)
+      '仓库外拷贝的落点也给绝对路径',
+      /仓库外副本已就绪：\$\{outside\.dir\}/.test(source) &&
+        /正在拷贝一份到仓库外：\$\{outsideRoot\}/.test(source)
+    )
+    check(
+      '测试报告字段是绝对路径（自检靠它做 startsWith / join 判定）',
+      ['targetDir,', 'preferredTargetDir,', 'outsideRoot,', 'outsideDir: outside.dir ?? null'].every((f) =>
+        source.includes(f)
+      )
     )
 
-    // 兜底：全仓扫一遍，确认文档与注释里没有残留开发机真实路径。
-    // 判定用「本机仓库根 / 父目录的真实绝对路径」而不是硬编码盘符 ——
-    // 这样换台机器跑这条断言同样有效。
-    // 注意 escapeRe 已会转义反斜杠，不能再预先 replace 一次，否则匹配不到。
+    // 真正该检查的：跟着产品走的便携版说明里不能有开发机路径
+    const noteMatch = source.match(/便携版说明\.txt[\s\S]{0,1200}?\.join\('\\r\\n'\)/)
+    const note = noteMatch ? noteMatch[0] : ''
+    const noteHasRealPath = new RegExp(escapeRe(root), 'i').test(note) ||
+      new RegExp(escapeRe(dirname(root)), 'i').test(note)
+    check(
+      '便携版说明.txt 里没有开发机真实路径',
+      note.length > 0 && !noteHasRealPath,
+      note.length === 0 ? '没找到说明模板' : noteHasRealPath ? '说明里混进了构建机路径' : '干净'
+    )
+    check(
+      '便携版说明用「本目录 / 本文件夹」这类相对描述',
+      note.includes('本目录') && note.includes('本文件夹'),
+      '用户读得懂，也不暴露构建机结构'
+    )
+
+    // 文档与注释：同理不该写死开发机路径（这里指的是文档，不是运行期日志）
     const leakPatterns = [
       { label: '仓库根绝对路径', re: new RegExp(escapeRe(root), 'i') },
       { label: '仓库父目录绝对路径', re: new RegExp(escapeRe(dirname(root)), 'i') }
     ]
-    const scanTargets = [
+    const docTargets = [
       'README.md',
       'AGENTS.md',
       'docs/how-search-works.md',
@@ -370,7 +388,7 @@ function main() {
       'scripts/lib/probe-portable-location.ps1'
     ]
     const leaks = []
-    for (const rel of scanTargets) {
+    for (const rel of docTargets) {
       const p = join(root, rel)
       if (!existsSync(p)) continue
       const text = readFileSync(p, 'utf8')

@@ -32,7 +32,7 @@ import {
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -51,28 +51,6 @@ let targetDir = preferredTargetDir
 const outsideRoot = process.env.WHICHVIDEO_OUTSIDE_DIR
   ? resolve(process.env.WHICHVIDEO_OUTSIDE_DIR)
   : resolve(root, '..')
-
-/**
- * 给人看的路径：能相对就相对。
- *
- * 打包输出会被贴到 issue、说明文件会跟着产品走，暴露开发机的目录结构没有好处，
- * 而且换一台机器那些路径就全错了。
- *
- * 仓库内 → `release\WhichVideo-portable`
- * 仓库外 → `..\WhichVideo-portable`
- * 都不是   → 原样返回（比如自检指向 tmp\ 里的目录，相对仓库根反而更难懂）
- *
- * 内部逻辑一律用绝对路径，这里只负责显示。
- */
-function displayPath(abs) {
-  if (!abs) return ''
-  const text = String(abs)
-  const rel = relative(root, abs)
-  if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return rel
-  const up = relative(outsideRoot, abs)
-  if (up && !up.startsWith('..') && !isAbsolute(up)) return `..\\${up}`
-  return text
-}
 
 const sleepSync = (ms) => {
   const end = Date.now() + ms
@@ -236,10 +214,10 @@ function clearTargetDirectory() {
   const removed = removeWithRetry(targetDir)
   if (removed || !existsSync(targetDir)) return
 
-  console.log(`  目标目录被占用，尝试改名挪开：${displayPath(targetDir)}`)
+  console.log(`  目标目录被占用，尝试改名挪开：${targetDir}`)
   const aside = moveAside(targetDir)
   if (aside) {
-    console.log(`  已挪到 ${displayPath(aside)}（确认无用后可删除）`)
+    console.log(`  已挪到 ${aside}（确认无用后可删除）`)
     removeWithRetry(aside, 3)
     return
   }
@@ -348,15 +326,15 @@ function copyOutsideRepository(sourceDir) {
     if (existsSync(dest)) {
       const removed = removeWithRetry(dest)
       if (!removed && existsSync(dest)) {
-        console.log(`  仓库外的同名目录被占用，尝试改名挪开：${displayPath(dest)}`)
+        console.log(`  仓库外的同名目录被占用，尝试改名挪开：${dest}`)
         const aside = moveAside(dest)
         if (aside) {
-          console.log(`  已挪到 ${displayPath(aside)}（确认无用后可删除）`)
+          console.log(`  已挪到 ${aside}（确认无用后可删除）`)
           removeWithRetry(aside, 3)
         } else {
           // 连改名都不行：换带时间戳的目录名继续，别让"外面那份正在运行"挡死打包
           dest = `${preferred}-${stamp()}`
-          console.log(`  删除和改名都失败，改为输出到：${displayPath(dest)}`)
+          console.log(`  删除和改名都失败，改为输出到：${dest}`)
         }
       }
     }
@@ -700,14 +678,14 @@ function main() {
     'utf8'
   )
 
-  console.log(`\n绿色版目录已就绪：${displayPath(targetDir)}`)
-  console.log(`  可执行文件：${displayPath(join(targetDir, 'WhichVideo.exe'))}`)
+  console.log(`\n绿色版目录已就绪：${targetDir}`)
+  console.log(`  可执行文件：${join(targetDir, 'WhichVideo.exe')}`)
   const fileCount = countFiles(targetDir)
   console.log(`  文件数量：${fileCount}`)
   console.log('  拷走整个文件夹即可迁移；运行后会自动生成 data\\ 子目录。')
 
   // 再拷一份到仓库外面，方便直接运行验证（不落在本项目目录里，避免被索引/杀软锁住）
-  console.log(`\n正在拷贝一份到仓库外：${displayPath(outsideRoot)}`)
+  console.log(`\n正在拷贝一份到仓库外：${outsideRoot}`)
   const outside = copyOutsideRepository(targetDir)
   if (outside.skipped) {
     console.log('  （已通过 WHICHVIDEO_SKIP_OUTSIDE_COPY 跳过）')
@@ -716,16 +694,16 @@ function main() {
     // 但必须显眼地报出来，并给出下一步该做什么。
     console.error('\n⚠ 拷贝到仓库外失败（release 里的绿色版仍然可用）：')
     console.error(`  原因：${outside.error}`)
-    console.error(`  目标位置：${displayPath(outside.dir ?? join(outsideRoot, 'WhichVideo-portable'))}`)
+    console.error(`  目标位置：${outside.dir ?? join(outsideRoot, 'WhichVideo-portable')}`)
     console.error('  处理：手动拷走 release\\WhichVideo-portable 即可；或先关掉正在运行的绿色版再重试。')
   } else {
-    console.log(`  ✓ 仓库外副本已就绪：${displayPath(outside.dir)}`)
+    console.log(`  ✓ 仓库外副本已就绪：${outside.dir}`)
     console.log(`    文件数量：${outside.fileCount}（${(outside.bytes / 1024 / 1024).toFixed(1)} MB，与源一致）`)
     if (outside.dataPreserved) {
       console.log('    已保留原有的 data\\（索引库与配置），不需要重新导入视频。')
     }
     if (outside.fallback) console.log('    注意：同名目录被占用，本次用了带时间戳的新目录。')
-    console.log(`    直接运行：${displayPath(join(outside.dir, 'WhichVideo.exe'))}`)
+    console.log(`    直接运行：${join(outside.dir, 'WhichVideo.exe')}`)
   }
 
   writeTestReport({
@@ -762,7 +740,7 @@ if (isDirectRun) {
         '处理完占用后重新运行： pnpm build:portable'
       ]
       console.error(lines.join('\n'))
-      console.log(`BUILD_LOCKED ${displayPath(targetDir)}`)
+      console.log(`BUILD_LOCKED ${targetDir}`)
       writeTestReport({ ok: false, reason: 'copy-locked', error: message, hints })
     } else {
       console.error(`\n构建绿色版失败：${message}`)

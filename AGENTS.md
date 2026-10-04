@@ -43,6 +43,20 @@ Windows 上 Electron 是 GUI 子系统程序，stdout 不接控制台，启动�
 
 两份目录的占用处理完全一致。`pnpm build:portable` 报 EPERM 是目标目录被占用（绿色版仍在运行、编辑器 plugin_host / VS Code 索引了 `release`、资源管理器停在该目录、杀软扫描）。脚本会**重试删除 → 改名成 `.old-<时间戳>` 挪开 → 仍失败则输出到 `WhichVideo-portable-<日期>-<时间>` 继续**，旧 `data\` 不会静默删除。排查占用者：
 
+**路径出现在哪里，按可见性分两种，别搞反：**
+
+| 去处 | 用什么路径 | 理由 |
+| --- | --- | --- |
+| 终端输出（`console.log` / `error`） | **绝对路径** | 开发者自己看，要知道自己机器上落在哪；贴 issue 时也需要 |
+| `便携版说明.txt`（跟着产品走） | **相对描述** | 终端用户看的，不该出现构建机目录结构 |
+| README / docs / 注释 | **相对路径** | 会公开流传，且换台机器就对不上 |
+| `WHICHVIDEO_TEST_REPORT` 的字段 | **绝对路径** | 自检靠它做 `startsWith` / `join` 判定 |
+
+曾把第一格也做成相对（加了个 `displayPath()`），结果开发者自己在终端里看不到
+绝对路径，而真正该干净的说明文件一直是好的 —— 判断标准搞反了。`test:pack`
+的场景 5c 现在按这张表来查：断言说明文件与文档无泄漏，同时断言终端输出**保留**
+绝对路径。
+
 ```bash
 node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
 pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
