@@ -545,34 +545,49 @@ export default mod
       (html.match(/line-clamp-2 break-all [^"]*text-accent/g) ?? []).length
 
     check(
-      '单选时标题染蓝（强调当前项）',
+      '单选时标题染蓝',
       titleAccentCount(renderWith([1])) === 1,
       `实际 ${titleAccentCount(renderWith([1]))} 处`
     )
+    // 单选与多选必须**完全一致**：竖条 + 淡蓝底 + 标题染蓝，三样各自独立生效。
+    // 曾按选中数量分过两档（多选只留竖条），想的是"少即是多"，实际破坏了风格
+    // 统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己处于哪种状态。
     check(
-      '多选时标题不染蓝（Shift 连选 / Ctrl 点选都一样）',
-      titleAccentCount(renderWith([1, 2])) === 0,
+      '多选时标题同样染蓝（与单选一致）',
+      titleAccentCount(renderWith([1, 2])) === 2,
       `实际 ${titleAccentCount(renderWith([1, 2]))} 处`
     )
-    // 选中提示本身不能因为多选而消失 —— 左侧竖条必须仍在
     const multiHtml = renderWith([1, 2])
     check(
-      '多选时左侧蓝竖条仍在（唯一的选中提示）',
+      '多选时左侧蓝竖条仍在',
       (multiHtml.match(/absolute inset-y-0 left-0 w-\[2px\] bg-accent/g) ?? []).length === 2,
       '两行都有蓝竖条'
     )
-    // 多选不再铺整行淡蓝底：那层底会把标题、状态徽标、操作按钮全染一遍
-    // （btn-bg 是半透明的，底色直接透上来，四个按钮连边框一起泛蓝）。
     check(
-      '多选时不铺整行淡蓝底（否则按钮/徽标会被染蓝）',
-      (multiHtml.match(/bg-row-selected/g) ?? []).length === 0,
-      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处`
+      '多选时同样铺整行淡蓝底（与单选一致）',
+      (multiHtml.match(/bg-row-selected/g) ?? []).length >= 4,
+      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 3 个）`
+    )
+    // 核心断言：把单选与多选的渲染结果按"选中提示"维度逐项比对。
+    // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、标题染色 1 个。
+    // 样本固定渲染 2 行视频，单选命中 1 行、多选命中 2 行，所以各项应恰好翻倍。
+    const countOf = (html, re) => (html.match(re) ?? []).length
+    const BAR = /absolute inset-y-0 left-0 w-\[2px\] bg-accent/g
+    const ROW_BG = /bg-row-selected/g
+    const TITLE = /line-clamp-2 break-all [^"]*text-accent/g
+    const one = renderWith([1])
+    const both = renderWith([1, 2])
+    const single = [countOf(one, BAR), countOf(one, ROW_BG), countOf(one, TITLE)]
+    const multi = [countOf(both, BAR), countOf(both, ROW_BG), countOf(both, TITLE)]
+    check(
+      '单选 1 行 → 竖条 1、淡蓝底 3（三格）、标题 1',
+      single[0] === 1 && single[1] === 3 && single[2] === 1,
+      `实际 ${single.join('/')}`
     )
     check(
-      '单选时铺淡蓝底并染蓝标题（强调当前项）',
-      (renderWith([1]).match(/bg-row-selected/g) ?? []).length >= 2 &&
-        titleAccentCount(renderWith([1])) === 1,
-      '单选保留完整提示'
+      '多选 2 行 → 三项都恰好翻倍（与单选逐项一致）',
+      multi[0] === single[0] * 2 && multi[1] === single[1] * 2 && multi[2] === single[2] * 2,
+      `期望 ${single.map((n) => n * 2).join('/')}，实际 ${multi.join('/')}`
     )
   }
   // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
@@ -822,30 +837,25 @@ export default mod
       '第二行仍 truncate'
     )
 
-    // 选中提示分两档：
-    //   单选 = 蓝竖条 + 淡蓝底 + 标题染蓝（强调当前操作项）
-    //   多选 = **只有蓝竖条**，不铺底色、不染标题
-    // 此前不分单选多选都铺整行淡蓝底，那层底会把行里所有元素染一遍：
-    // 状态徽标（本身是 accent 蓝）分不清是状态还是选中，操作按钮的 btn-bg
-    // 是半透明的、底色直接透上来，四个按钮连边框一起泛蓝。
+    // 选中提示**单选多选完全一致**：蓝竖条 + 淡蓝底 + 标题染蓝。
+    // 曾按 selectedCount 分过两档（多选只留竖条），想"少即是多"，实际破坏了
+    // 风格统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己在哪种状态。
     check(
-      '标题只在单选时染蓝（多选不染色）',
-      src.includes('const singleSelected = selected && selectedCount === 1') &&
-        src.includes('const titleAccent = singleSelected') &&
-        /titleAccent \? 'text-accent' : 'text-primary'/.test(src) &&
-        !/selected \? 'text-accent' : 'text-primary'/.test(src),
-      'titleAccent 走 singleSelected'
+      '标题直接用 selected 染色（没有按选中数量分档）',
+      /selected \? 'text-accent' : 'text-primary'/.test(src) && !src.includes('titleAccent'),
+      '不分档'
     )
     check(
-      '多选不铺淡蓝底（rowBg 走空串分支）',
-      /const rowBg = singleSelected[\s\S]{0,120}: selected[\s\S]{0,40}\? ''/.test(src),
-      "多选时 rowBg 为空，只留左侧竖条"
+      'rowBg 直接用 selected（没有 singleSelected 之类的中间变量）',
+      /const rowBg = selected\s*\n(\s*)\? 'bg-row-selected'/.test(src) && !src.includes('singleSelected'),
+      '选中即铺底色'
     )
+    // 反向守护：别把 selectedCount 之类的分档变量加回来。
+    // 它看起来很有用（"要不要强调当前项"），但会让单选与多选长得不一样。
     check(
-      'VideoRow 拿到了选中总数（用来区分单选与多选）',
-      /selectedCount=\{selectedVideoIds\.size\}/.test(src) &&
-        src.includes('selectedCount: number'),
-      '两处调用点都传了 selectedCount'
+      '没有引入按选中数量分档的变量（避免单选多选长得不一样）',
+      !/selectedCount|singleSelected|isMultiSelect/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')),
+      '源码里（剥掉注释后）不应出现分档变量'
     )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))

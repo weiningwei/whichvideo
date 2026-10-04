@@ -622,7 +622,6 @@ export function LibraryView(props: Props) {
                       video={video}
                       roots={roots}
                       focused={focusedVideoId === video.id}
-                      selectedCount={selectedVideoIds.size}
                       onOpen={props.onOpen}
                       onReveal={props.onReveal}
                       onRemove={props.onRemoveVideo}
@@ -641,7 +640,6 @@ export function LibraryView(props: Props) {
                     video={video}
                     roots={roots}
                     focused={focusedVideoId === video.id}
-                    selectedCount={selectedVideoIds.size}
                     onOpen={props.onOpen}
                     onReveal={props.onReveal}
                     onRemove={props.onRemoveVideo}
@@ -773,7 +771,6 @@ function VideoRow({
   video,
   roots,
   focused,
-  selectedCount,
   onOpen,
   onReveal,
   onRemove,
@@ -785,11 +782,6 @@ function VideoRow({
   roots: string[]
   /** 键盘焦点所在行（↑/↓ 移动），用于显示淡灰焦点条 */
   focused: boolean
-  /**
-   * 当前页选中总数。用来区分单选与多选：多选时选中提示与单选完全一致
-   * （蓝竖条 + 淡蓝底），不给标题额外染色——一片蓝既吵又读不出重点。
-   */
-  selectedCount: number
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
@@ -831,38 +823,27 @@ function VideoRow({
           : '待索引'
 
   const selected = isVideoSelected(video.id)
-  const singleSelected = selected && selectedCount === 1
 
   /**
-   * 选中提示分两档，**多选只留左侧竖条**。
+   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底 + 标题染蓝，三样一起上。
    *
-   * 此前不分单选多选都给整行铺 `bg-row-selected`，看着"选中提示很明确"，实际
-   * 代价很大：那层淡蓝底铺满整行，会把行里所有元素都染一遍 ——
-   *   - 视频标题整片偏蓝（已通过 titleAccent 单独处理）
-   *   - 状态徽标「待索引 / 索引中」本来就是 accent 蓝，叠在一起分不清是状态还是选中
-   *   - 操作按钮的 `btn-bg` 是**半透明**的（见 index.css 的 --color-btn-bg，
-   *     末两位带 alpha），底色直接透上来，四个按钮连边框一起泛蓝（截图里最刺眼的
-   *     就是这个）
-   * 选中范围靠左侧那列竖条已经能看全，竖条占地最小且不遮挡任何内容。
+   * 曾经按选中数量分过两档（多选只留竖条），想的是"少即是多"，实际反而破坏了
+   * 风格统一：单选时标题是蓝的、底是蓝的，多选时标题黑、底白，同一个交互在
+   * 两种状态下长得不一样，用户得先想"我现在是单选还是多选"才知道该期待什么。
    *
-   * 单选时保留淡蓝底 + 标题染蓝，用来强调"当前操作的是这一项"。
+   * 这里刻意不做 `selectedCount` 之类的分档。多选就是"多个行各自被选中"，
+   * 每行的呈现与它单独被选中时没有区别 —— 这才是"统一"。
+   *
+   * 已知代价（接受，不额外处理）：淡蓝底铺满整行会与行内元素叠加 ——
+   * 状态徽标「待索引 / 索引中」本身就是 accent 蓝；操作按钮的 btn-bg 是
+   * 半透明的，底色会透上来让按钮泛蓝。这两处的蓝本来就存在，淡蓝底只是
+   * 让它们更明显一点，并不改变信息含义（一个说状态，一个说可点）。
    */
-  const titleAccent = singleSelected
-
-  /**
-   * 行底色。用 `--color-row-*` 这几个**不透明**的实色，不是 bg-accent/12 那种
-   * 半透明叠色 —— 操作列是 sticky 的，会浮在左侧单元格之上，半透明底色会让
-   * 滚过来的文字透上来叠在按钮上（这几个色值已在 index.css 里预先混好）。
-   *
-   * 只给 td、不给 tr：tr 若也有背景，与吸附格叠加后同一行会出现两种色块。
-   */
-  const rowBg = singleSelected
+  const rowBg = selected
     ? 'bg-row-selected'
-    : selected
-      ? '' // 多选：不铺底色，只有左侧竖条
-      : focused
-        ? 'bg-row-focus'
-        : 'hover:bg-row-hover'
+    : focused
+      ? 'bg-row-focus'
+      : 'hover:bg-row-hover'
 
   return (
     <tr
@@ -887,7 +868,7 @@ function VideoRow({
                 会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
                 第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
             <div
-              className={`line-clamp-2 break-all ${titleAccent ? 'text-accent' : 'text-primary'}`}
+              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
               title={video.path}
             >
               {video.name}
