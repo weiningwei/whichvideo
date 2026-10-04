@@ -83,7 +83,7 @@ export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
                                 +
                               </span>
                             )}
-                            <kbd className="rounded border border-line bg-ink-900/70 px-1 py-0.5 font-mono text-[10.5px] text-slate-200">
+                            <kbd className="rounded border border-line bg-ink-900/70 px-1 py-0.5 font-mono text-[10.5px] text-secondary">
                               {renderKeys(k)}
                             </kbd>
                           </span>

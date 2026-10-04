@@ -96,6 +96,24 @@ export function LibraryView(props: Props) {
   const [focusedIndex, setFocusedIndex] = useState(0)
 
   /**
+   * 只有视频行的下标（跳过分组标题）。
+   *
+   * 方向键在这份列表上移动，因此 ↑↓ 永远不会停在分组标题上——标题不是视频，
+   * 「选中」无从谈起。分组标题的展开/收起靠 ←→ 与点击标题。
+   */
+  const videoRowIndexes = useMemo(
+    () =>
+      navigableItems.reduce<number[]>((acc, item, i) => {
+        if (item.type === 'video') acc.push(i)
+        return acc
+      }, []),
+    [navigableItems]
+  )
+
+  /** 当前光标在 videoRowIndexes 里的位置（-1 = 尚未落在任何视频行上） */
+  const focusedRowPos = videoRowIndexes.indexOf(focusedIndex)
+
+  /**
    * 焦点所在行的 videoId。
    *
    * 之前焦点只存下标，渲染时再 `focusedIndex === idx` 反查，分组视图下要写
@@ -107,16 +125,46 @@ export function LibraryView(props: Props) {
     return item && item.type === 'video' ? item.video?.id ?? null : null
   }, [navigableItems, focusedIndex])
 
-  const moveSelection = (delta: number) => {
-    if (navigableItems.length === 0) return
-    const next = Math.max(0, Math.min(navigableItems.length - 1, focusedIndex + delta))
-    setFocusedIndex(next)
+  /**
+   * 移动光标，并按修饰键决定要不要动选中区。
+   *
+   * **光标与选中必须是同一个东西**——这是文件管理器式列表的基本模型：
+   * 光标在哪，单选就在哪。此前两者是独立 state，方向键只移动灰竖条、蓝竖条
+   * 留在原地，于是「按方向键切换」看起来毫无反应。
+   *
+   * - 无修饰：单选跟随（清掉旧选中，选中新的一行）
+   * - Shift：从上一次选中的位置连选一段
+   * - Ctrl：只移动光标，已选中的视频保持不动（用于「先框选一批再逐个看过」）
+   */
+  const moveCursor = (delta: number, rangeKey: boolean, ctrlKey: boolean) => {
+    if (videoRowIndexes.length === 0) return
+    // 光标未落在视频行上时（首次进入时可能是 index 0 的分组标题），
+    // 按向下从首行起步、按向上从末行起步——from 取 -1 / length，
+    // 加上 delta 后正好落在两端。
+    const from = focusedRowPos === -1 ? (delta > 0 ? -1 : videoRowIndexes.length) : focusedRowPos
+    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, from + delta))
+    const nextIndex = videoRowIndexes[nextPos]
+    if (nextIndex === undefined) return
+    setFocusedIndex(nextIndex)
+    if (ctrlKey) return
+    const item = navigableItems[nextIndex]
+    if (item?.type === 'video' && item.video) {
+      toggleVideoSelection(item.video.id, rangeKey, false)
+    }
   }
 
-  /** 跳到指定下标（Home / End / PageUp / PageDown 用），越界自动夹紧 */
-  const jumpTo = (index: number) => {
-    if (navigableItems.length === 0) return
-    setFocusedIndex(Math.max(0, Math.min(navigableItems.length - 1, index)))
+  /** 跳到 videoRowIndexes 的指定位置（Home / End / PageUp / PageDown 用）；同样同步单选 */
+  const jumpCursor = (pos: number, rangeKey = false) => {
+    if (videoRowIndexes.length === 0) return
+    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, pos))
+    const nextIndex = videoRowIndexes[nextPos]
+    if (nextIndex === undefined) return
+    setFocusedIndex(nextIndex)
+    if (rangeKey) return
+    const item = navigableItems[nextIndex]
+    if (item?.type === 'video' && item.video) {
+      toggleVideoSelection(item.video.id, false, false)
+    }
   }
 
   /**
@@ -148,30 +196,30 @@ export function LibraryView(props: Props) {
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          moveSelection(1)
+          moveCursor(1, e.shiftKey, mod)
           break
         case 'ArrowUp':
           e.preventDefault()
-          moveSelection(-1)
+          moveCursor(-1, e.shiftKey, mod)
           break
         case 'PageDown':
           e.preventDefault()
-          jumpTo(focusedIndex + PAGE_JUMP)
+          jumpCursor(focusedRowPos + PAGE_JUMP, e.shiftKey)
           break
         case 'PageUp':
           e.preventDefault()
-          jumpTo(focusedIndex - PAGE_JUMP)
+          jumpCursor(focusedRowPos - PAGE_JUMP, e.shiftKey)
           break
         case 'Home':
           if (!mod) {
             e.preventDefault()
-            jumpTo(0)
+            jumpCursor(0, e.shiftKey)
           }
           break
         case 'End':
           if (!mod) {
             e.preventDefault()
-            jumpTo(navigableItems.length - 1)
+            jumpCursor(videoRowIndexes.length - 1, e.shiftKey)
           }
           break
         case 'ArrowRight':
@@ -284,31 +332,54 @@ export function LibraryView(props: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, navigableItems, focusedVideoId, onToggleGroupByFolder])
-  const expandFocusedFolder = () => {
+  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, focusedRowPos, navigableItems, videoRowIndexes, focusedVideoId, onToggleGroupByFolder])
+
+  /**
+   * ←→ 作用于**光标所在视频所属的分组**。
+   *
+   * ↑↓ 只在视频行间移动（跳过分组标题），光标因此永远不会停在标题上——←→ 若还在
+   * 等「光标位于 folder 项」就永远触发不了。改为从光标视频反查其分组：
+   * → 展开该分组，← 收起。与文件管理器一致（光标在文件上，← 收起所在目录）。
+   *
+   * 平铺视图的项不带 folderId（没有分组概念），此时 ←→ 无从谈起。
+   */
+  const focusedFolderId = useMemo(() => {
     const item = navigableItems[focusedIndex]
-    if (item && item.type === 'folder') {
-      toggleFolderExpanded(item.folderId)
-    }
+    return item && item.type === 'video' && 'folderId' in item ? item.folderId : null
+  }, [navigableItems, focusedIndex])
+
+  const expandFocusedFolder = () => {
+    if (focusedFolderId === null) return
+    if (!expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
   }
 
   const collapseFocusedFolder = () => {
-    const item = navigableItems[focusedIndex]
-    if (item && item.type === 'folder') {
-      toggleFolderExpanded(item.folderId)
-    }
+    if (focusedFolderId === null) return
+    if (expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
   }
 
-  const toggleFocusedSelection = (shiftKey: boolean, _ctrlKey: boolean) => {
+  /**
+   * 在光标处切换选中（Space 专用）——与 ↑↓ 的「单选跟随」不同：不动光标、
+   * 也不清掉其他已选中的行，是真正的「加选 / 取消选中」（文件管理器的空格行为）。
+   *
+   * @param rangeKey Shift：与上次选中的位置之间连选
+   * @param toggleKey Ctrl：只切换这一行的选中状态，其余行不动
+   */
+  const toggleFocusedSelection = (rangeKey: boolean, toggleKey: boolean) => {
     const item = navigableItems[focusedIndex]
     if (item && item.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, shiftKey, false)
+      toggleVideoSelection(item.video.id, rangeKey, toggleKey)
     }
   }
 
+  // 列表变化（切分组模式、增删、筛选、折叠）后把光标收回第一个**视频行**。
+  // 不能简单写 0：分组视图里 index 0 是分组标题，光标停在那既没有灰条提示，
+  // 方向键也只能「从旁边起步」，手感上像是坏的。
   useEffect(() => {
-    setFocusedIndex(0)
-  }, [groupByFolder, groupedVideos, videos])
+    setFocusedIndex(videoRowIndexes[0] ?? 0)
+    // 只在列表结构变化时重置；videoRowIndexes 每次重算都是新数组，不能进依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupByFolder, videos, expandedFolderIds])
 
   // 滚动容器：↑/↓ 移动焦点时要把焦点行滚进可视区，否则焦点移出屏幕就看不见了
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -417,7 +488,7 @@ export function LibraryView(props: Props) {
             </thead>
             <tbody>
               {groupByFolder && groupedVideos ? (
-                Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos], groupIdx) => {
+                Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos]) => {
                   const folder = folderId === -1 ? null : folders.find((f) => f.id === folderId)
                   const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
                   const expanded = expandedFolderIds.has(folderId)
@@ -433,17 +504,11 @@ export function LibraryView(props: Props) {
                     })
                   }
 
-                  // navigableItems 里分组标题一定排在各组视频之前，顺序与 groupedVideos
-                  // 的迭代顺序一致，所以下标直接对应（不必再 findIndex 遍历一遍）。
-                  const headerFocused = focusedIndex === groupIdx
-
+                  // 分组标题不再有「键盘焦点」态：↑↓ 只在视频行间移动，光标不会停在标题上。
+                  // 之前用 focusedIndex === groupIdx 判断，但那条件在光标与选中合一后
+                  // 永远不成立，留着只会误导后来人以为标题能被键盘选中。
                   const header = (
-                    <tr
-                      key={`folder-header-${folderId}`}
-                      className={`border-t border-line/40 transition-colors ${
-                        headerFocused ? 'bg-ink-800/70' : 'bg-ink-800/50'
-                      }`}
-                    >
+                    <tr key={`folder-header-${folderId}`} className="border-t border-line/40 bg-ink-800/50 transition-colors">
                       <td colSpan={3} className="px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
                           {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），

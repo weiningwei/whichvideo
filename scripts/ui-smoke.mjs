@@ -566,10 +566,19 @@ export default mod
       !/onClick=\{toggleGroup\}[\s\S]{0,300}?\{displayName\}/.test(src),
       'toggleGroup 的元素内不含 displayName'
     )
+    // 分组标题不再有键盘焦点态：↑↓ 只在视频行间移动，光标不会停在标题上。
+    // 反过来断言「headerFocused 已彻底删除」——留着那个条件只会误导后来人
+    // 以为标题能被键盘选中。剥掉注释再匹配：注释里为了说明历史会提到这两个名字。
+    const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
     check(
-      '分组标题有键盘焦点提示（↑↓ 走到分组时可见）',
-      src.includes('headerFocused') && src.includes("headerFocused ? 'bg-ink-800/70'"),
-      'focusedIndex === groupIdx 时提亮'
+      '分组标题没有键盘焦点态（↑↓ 跳过分组标题）',
+      !codeOnly.includes('headerFocused') && !codeOnly.includes('groupIdx'),
+      'headerFocused / groupIdx 已从代码中移除'
+    )
+    check(
+      '方向键在只含视频行的下标列表上移动（跳过分组标题）',
+      src.includes('videoRowIndexes') && src.includes("if (item.type === 'video') acc.push(i)"),
+      'videoRowIndexes 只收视频行'
     )
     check(
       '分组焦点用下标直取，不做 findIndex 遍历',
@@ -754,7 +763,42 @@ export default mod
       check(`支持 ${k}`, lib.includes(`case '${k}':`))
     }
     check('PageUp/PageDown 一次翻 PAGE_JUMP 行', lib.includes('const PAGE_JUMP'))
-    check('跳转会夹紧到合法范围', lib.includes('Math.max(0, Math.min(navigableItems.length - 1'))
+    check(
+      '跳转会夹紧到合法范围',
+      lib.includes('Math.max(0, Math.min(videoRowIndexes.length - 1'),
+      '夹紧到视频行数而非 navigableItems 长度'
+    )
+
+    // 光标与选中必须合一：方向键移动时同步改选中，否则「按方向键切换」看起来毫无反应。
+    // 这是本项目最容易反复的问题——两套独立 state 写起来很自然，用起来却不跟手。
+    check(
+      '方向键移动光标时同步单选（光标与选中是同一个东西）',
+      lib.includes('moveCursor') &&
+        /moveCursor = \(delta: number, rangeKey: boolean, ctrlKey: boolean\)/.test(lib) &&
+        lib.includes('toggleVideoSelection(item.video.id, rangeKey, false)'),
+      'moveCursor 里调 toggleVideoSelection'
+    )
+    check(
+      'Shift+方向键连选 / Ctrl+方向键只移光标',
+      lib.includes('moveCursor(1, e.shiftKey, mod)') && lib.includes('moveCursor(-1, e.shiftKey, mod)'),
+      '修饰键透传给 moveCursor'
+    )
+    check(
+      'Ctrl+方向键不改动选中区',
+      /if \(ctrlKey\) return/.test(lib),
+      'ctrlKey 时提前返回'
+    )
+    check(
+      '分组视图下方向键跳过标题（↑↓ 只在视频行间走）',
+      lib.includes('const videoRowIndexes = useMemo') && lib.includes('const focusedRowPos'),
+      'videoRowIndexes / focusedRowPos'
+    )
+    check(
+      '←→ 作用于光标所在视频的分组',
+      lib.includes('const focusedFolderId = useMemo') &&
+        lib.includes('expandedFolderIds.has(focusedFolderId)'),
+      '从光标视频反查 folderId，不再等「光标在标题上」'
+    )
 
     // 操作键
     check('Delete 可移除（不删磁盘文件）', lib.includes("case 'Delete':"))

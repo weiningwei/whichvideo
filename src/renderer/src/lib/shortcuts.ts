@@ -53,17 +53,23 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { group: '通用', keys: 'F5', label: '刷新当前页' },
 
   // ---- 列表导航 ----
-  { group: '列表导航', keys: '↑', label: '焦点上移一行' },
-  { group: '列表导航', keys: '↓', label: '焦点下移一行' },
+  // 光标与选中是同一个东西：↑↓ 移动即改选中（与文件管理器一致）。
+  // 分组视图下 ↑↓ 只在视频行之间走，会跳过分组标题。
+  { group: '列表导航', keys: '↑', label: '上移一行（同时改选中）' },
+  { group: '列表导航', keys: '↓', label: '下移一行（同时改选中）' },
+  { group: '列表导航', keys: 'Shift+↑', label: '从选中处往上连选' },
+  { group: '列表导航', keys: 'Shift+↓', label: '从选中处往下连选' },
+  { group: '列表导航', keys: 'Ctrl+↑', label: '只移动光标，不改选中' },
+  { group: '列表导航', keys: 'Ctrl+↓', label: '只移动光标，不改选中' },
   { group: '列表导航', keys: 'Home', label: '跳到第一行' },
   { group: '列表导航', keys: 'End', label: '跳到最后一行' },
   { group: '列表导航', keys: 'PageUp', label: '上翻一页' },
   { group: '列表导航', keys: 'PageDown', label: '下翻一页' },
-  { group: '列表导航', keys: '→', label: '展开分组', onlyGrouped: true },
-  { group: '列表导航', keys: '←', label: '收起分组', onlyGrouped: true },
+  { group: '列表导航', keys: '→', label: '展开光标所在分组', onlyGrouped: true },
+  { group: '列表导航', keys: '←', label: '收起光标所在分组', onlyGrouped: true },
 
   // ---- 选择 ----
-  { group: '选择', keys: 'Space', label: '切换选中（Shift 连选 / Ctrl 点选）' },
+  { group: '选择', keys: 'Space', label: '在光标处切换选中（不移动光标）' },
   { group: '选择', keys: 'Ctrl+A', label: '全选当前页' },
   { group: '选择', keys: 'Escape', label: '取消选择 / 关闭弹层' },
 

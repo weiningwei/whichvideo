@@ -75,6 +75,23 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
 - `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
 
+## 光标与选中
+
+**光标与选中必须是同一个东西。** 文件管理器式的列表里，光标在哪单选就在哪。
+
+此前写成两个独立 state（`focusedIndex` 本地 + `selectedVideoIds` 在 hook 里），语法完全正确、
+静态检查也全绿，但用起来方向键只动灰竖条、蓝竖条留在原地——用户反馈"按方向键没反应"。
+这种错静态断言抓不到，只能靠 `test:cursor` 复刻算法跑行为验证。
+
+约定：
+
+- `videoRowIndexes` 只收视频行，↑↓ 在它上面移动，**跳过分组标题**（标题不是视频，无从"选中"）
+- 无修饰 → 单选跟随；`Shift` → 从上次选中处连选；`Ctrl` → 只移光标、选区不动
+- 光标可能落在标题上（`focusedRowPos === -1`），按 ↓ 从首行起步、按 ↑ **从末行**起步
+  （`from` 取 `-1` / `length`，不是 `0`——取 0 会被夹到首行，按↑没反应）
+- `Space` 不动光标也不清其他行，是真正的加选 / 取消；
+- `←→` 作用于**光标所在视频的分组**（`focusedFolderId`），不再等"光标在标题上"
+
 ## 文档分工
 
 面向的读者不同，别都塞进 README：
@@ -98,6 +115,7 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - `test:path` 转译渲染端后测 `format.ts` 的路径处理，守住「shortDir 不含文件名」与「文件在根目录时 lastIndexOf 返回 -1 不截断文件名」两条性质。改 `shortDir`/`shortPath` 前必须跑它。
 - `test:url` 测 `main/url-image.ts`：网页主图解析（og:image / twitter:image / link / 首个 img、相对地址转绝对、跳过占位图与 data:）与协议校验（拒绝 file:/data:/javascript: 等）。改该文件前必须跑它。
 - `test:icon` 校验图标：ICO 结构与 7 个尺寸、`build/` 与 `out/` 两份是否同步、favicon 是否与 ICO 同源、win.icon / favicon / BrowserWindow icon 是否都接上。改图形或图标接线后必须跑它。
+- `test:cursor` 验证光标算法的**行为**（21 项）：↓ 逐行移动且单选跟随、Ctrl+↓ 只移光标不动选区、分组视图跳过分组标题、光标误落在标题上时按 ↑ 从末行起步、End/Home 夹紧、空列表不崩。ui-smoke 只能静态检查"源码里有没有某个调用"，抓不到"方向键动了但选中没跟着动"这类逻辑错误——**改 LibraryView 的光标/选中逻辑前必须跑它**。
 - `test:network` 守住隐私边界：除 `main/url-image.ts`（链接取图）外源码不得有任何网络请求；9 个核心模块（导入/抽帧/指纹/检索/存储/监听/剪贴板/日志）零联网；链接取图必须用户主动触发、请求头不带本机标识；依赖里无遥测类库；产物里无更新源配置；渲染端 CSP 无 connect-src 放宽。**引入任何联网能力前先想清楚会不会把用户数据带出去**，改完必须跑它。
 - `test:theme` 守住配色纪律：组件里不许出现十六进制颜色或 Tailwind 内置固定色（slate-100 等），语义 token 必须在 `@theme` 与 `[data-theme=light]` 两侧都定义齐全。**在 tsx 里写固定色前先想清楚它是否该 token 化**；确有例外（如 Header 的「WV」压在 accent 渐变上）要登记到该脚本的 `HEX_EXCEPTIONS`，并写明理由。
 - `test:scale` 守住「指纹尺度不变」：视频帧抽到 320 宽、查询图保持原分辨率，两者靠 `toGray` 的盒式重采样 + 均值归一化对齐。改 `toGray` 的采样方式或 `EXTRACT_WIDTH` 时务必跑它。
