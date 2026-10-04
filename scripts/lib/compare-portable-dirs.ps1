@@ -70,18 +70,23 @@ Show-DirFacts '能启动' $Good
 
 Write-Output '############ 父目录 ACL 继承链 ############'
 Write-Output ''
-foreach ($p in @('E:\code\2026-09', 'E:\code\weiningwei')) {
-  Write-Output "--- $p ---"
-  if (Test-Path -LiteralPath $p) {
-    $a = Get-Acl -LiteralPath $p
-    Write-Output "  $($a.Sddl)"
-    $d = @($a.Access | Where-Object { $_.AccessControlType -eq 'Deny' })
-    Write-Output "  Deny 条目数：$($d.Count)"
-    foreach ($x in $d) { Write-Output "      DENY $($x.IdentityReference) : $($x.FileSystemRights)" }
-  } else {
-    Write-Output '  （不存在）'
-  }
+# 逐级向上看权限继承。用相对定位而不是写死盘符：不同机器的仓库路径不一样，
+# 而"管控区根目录在哪"只能从当前路径反推。
+# 最多回溯 6 层，再往上是盘根，对定位 Deny 没有额外信息。
+$cursor = (Resolve-Path -LiteralPath (Split-Path -Parent $Bad)).Path
+$depth = 0
+while ($cursor -and $depth -lt 6) {
+  Write-Output "--- $cursor ---"
+  $a = Get-Acl -LiteralPath $cursor
+  Write-Output "  $($a.Sddl)"
+  $d = @($a.Access | Where-Object { $_.AccessControlType -eq 'Deny' })
+  Write-Output "  Deny 条目数：$($d.Count)"
+  foreach ($x in $d) { Write-Output "      DENY $($x.IdentityReference) : $($x.FileSystemRights)" }
   Write-Output ''
+  $parent = Split-Path -Parent $cursor
+  if (-not $parent -or $parent -eq $cursor) { break }
+  $cursor = $parent
+  $depth++
 }
 
 Write-Output '############ 关键差异小结 ############'

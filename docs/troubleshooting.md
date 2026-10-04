@@ -32,8 +32,8 @@ Windows 上删不掉也改不了名。常见占用者：
 2. **编辑器**：Sublime Text 的 `plugin_host-3.3.exe`、VS Code 的 `Code.exe` 等在索引本项目时会持有目录句柄
 3. **资源管理器停在那个目录**、或杀毒软件正在扫描刚生成的 exe
 
-> 注意：占用跟进程 exe 在哪**没有关系**。Sublime 装在 `D:\SublimeText`，但它的 `plugin_host`
-> 进程只要把项目目录当作当前工作目录（CWD）或扫描了 `release`，就会锁住这里。
+> 注意：占用跟进程 exe 在哪**没有关系**。编辑器装在哪都行，但它的索引/插件进程
+> 只要把项目目录当作当前工作目录（CWD）或扫描了 `release`，就会锁住这里。
 
 **想知道到底是谁占着？** 仓库带了一个诊断脚本，会读每个进程的真实工作目录并点名占用者：
 
@@ -103,7 +103,7 @@ node scripts/probe-electron-startup.mjs
 - **智能应用控制 / WDAC / AppLocker**：`pwsh -File scripts/lib/check-app-control.ps1` 一次性检查
 - **杀毒软件**：240MB 未签名 exe 常被静默拦截，临时加白名单试一次
 - **Zone.Identifier**：右键 exe → 属性，若底部有「解除锁定」就勾选
-- **换目录**：复制到 `D:\test\` 或桌面再试（排除 E 盘权限 / OneDrive / 网络盘）
+- **换目录**：复制到别的分区或桌面再试（排除所在盘权限受限、OneDrive 同步、网络盘等问题）
 
 **打包"成功"了，但双击还是没反应？**
 先确认包里装的是不是这次的代码 —— 这个坑真实发生过：`electron-builder` 那一步失败（它内部的

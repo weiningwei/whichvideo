@@ -34,6 +34,9 @@ const stubBuildDir = join(work, 'build')
 /** 仓库外拷贝的落点：必须指向 tmp，否则自检会往真实的上一级目录里写东西 */
 const outsideRoot = join(work, 'outside')
 
+/** 把字符串里的正则元字符转义，用于"按本机真实路径搜泄漏"这类断言 */
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 function ensureStubBuild() {
   mkdirSync(join(stubBuildDir, 'main'), { recursive: true })
   mkdirSync(join(stubBuildDir, 'renderer'), { recursive: true })
@@ -321,6 +324,67 @@ function main() {
     check('输出里说明已保留 data\\', source.includes('不需要重新导入视频'))
     // 挪不动时不能静默丢索引库
     check('挪动失败会退回"删除"并如实告知', source.includes('已随目录一起清掉'))
+  }
+
+  console.log('\n=== 场景 5c：输出里的路径用相对路径，不暴露开发机绝对路径 ===')
+  {
+    // 绝对路径不该出现在给用户看的输出里：日志会发到 issue、说明文件会跟着产品走，
+    // 都是开发机的目录结构，换台机器那些路径也全错。
+    const source = readFileSync(builder, 'utf8')
+    check('脚本有 displayPath 辅助函数', /function displayPath\(abs\)/.test(source))
+    check('仓库内路径显示为相对（release\\…）', source.includes("relative(root, abs)"))
+    check('仓库外路径显示为 ..\\ 前缀', source.includes('`..\\\\${up}`'))
+    // 关键：显示层换成相对，但报告字段必须仍是绝对路径 —— 自检靠它做 startsWith/join 判定。
+    // 不能用 displayPath 包裹报告里的任何路径字段。
+    const reportFields = ['targetDir,', 'preferredTargetDir,', 'outsideRoot,', 'outsideDir: outside.dir ?? null']
+    check(
+      '测试报告里的路径字段保持绝对（自检依赖）',
+      reportFields.every((f) => source.includes(f)) &&
+        !/writeTestReport\(\{[\s\S]{0,900}?(targetDir|outsideDir|outsideRoot):\s*displayPath/.test(source),
+      'outsideDir/targetDir/outsideRoot 都不走 displayPath'
+    )
+    const displayUses = (source.match(/displayPath\(/g) ?? []).length
+    check('多处输出已改用 displayPath', displayUses >= 10, `${displayUses} 处`)
+    // 内部逻辑不能被误伤
+    check(
+      '内部逻辑仍用绝对路径（existsSync / join / rename 不受影响）',
+      /if \(existsSync\(dest\)\)/.test(source) && /mkdirSync\(dest, \{ recursive: true \}\)/.test(source)
+    )
+
+    // 兜底：全仓扫一遍，确认文档与注释里没有残留开发机真实路径。
+    // 判定用「本机仓库根 / 父目录的真实绝对路径」而不是硬编码盘符 ——
+    // 这样换台机器跑这条断言同样有效。
+    // 注意 escapeRe 已会转义反斜杠，不能再预先 replace 一次，否则匹配不到。
+    const leakPatterns = [
+      { label: '仓库根绝对路径', re: new RegExp(escapeRe(root), 'i') },
+      { label: '仓库父目录绝对路径', re: new RegExp(escapeRe(dirname(root)), 'i') }
+    ]
+    const scanTargets = [
+      'README.md',
+      'AGENTS.md',
+      'docs/how-search-works.md',
+      'docs/troubleshooting.md',
+      'scripts/build-portable-folder.mjs',
+      'scripts/fetch-ffmpeg.mjs',
+      'scripts/lib/compare-portable-dirs.ps1',
+      'scripts/lib/probe-portable-location.ps1'
+    ]
+    const leaks = []
+    for (const rel of scanTargets) {
+      const p = join(root, rel)
+      if (!existsSync(p)) continue
+      const text = readFileSync(p, 'utf8')
+      for (const { label, re } of leakPatterns) {
+        text.split('\n').forEach((line, i) => {
+          if (re.test(line)) leaks.push(`${rel}:${i + 1} 含${label}`)
+        })
+      }
+    }
+    check(
+      '文档与注释里没有开发机真实路径（扫 8 个文件 × 2 种模式）',
+      leaks.length === 0,
+      leaks.length ? leaks.slice(0, 4).join(' | ') : '干净'
+    )
   }
 
   console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')

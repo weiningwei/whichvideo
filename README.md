@@ -36,7 +36,7 @@ pnpm install
 
 # 2. 准备 ffmpeg（三选一）
 pnpm fetch:ffmpeg              # 联网自动下载（默认，多源回退）
-pnpm fetch:ffmpeg --from "D:\program\ffmpeg\bin"   # 复用本机已装的
+pnpm fetch:ffmpeg --from "<你本机 ffmpeg 的 bin 目录>"   # 复用本机已装的
 # 或：把 ffmpeg.exe / ffprobe.exe 手动放进 resources/bin
 
 # 3. 开发模式运行
