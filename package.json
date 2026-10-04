@@ -32,11 +32,12 @@
     "test:url": "node scripts/build-core.mjs && node scripts/test-url-image.mjs",
     "test:icon": "node scripts/test-icon.mjs",
     "test:theme": "node scripts/test-theme.mjs",
+    "test:network": "node scripts/test-network.mjs",
     "test:scale": "node scripts/build-core.mjs && node scripts/test-hash-scale.mjs",
     "test:output": "node scripts/build-core.mjs && node scripts/test-build-output.mjs",
     "test:startup": "node scripts/build-core.mjs && node scripts/startup-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:hash && npm run test:path && npm run test:url && npm run test:icon && npm run test:theme && npm run test:url && npm run test:scale && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
+    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:hash && npm run test:path && npm run test:url && npm run test:icon && npm run test:theme && npm run test:network && npm run test:url && npm run test:scale && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui",
     "rebuild:native": "electron-builder install-app-deps"
   },
   "dependencies": {
