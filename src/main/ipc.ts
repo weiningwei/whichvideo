@@ -359,14 +359,22 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   ipcMain.handle(IPC.searchPath, (_e, filePath: string) => {
+    const started = Date.now()
     const image = loadImageFromPath(filePath)
-    if (!image) throw new Error(`无法读取图片：${filePath}`)
+    if (!image) {
+      log(`检索(文件)失败：无法读取图片 ${filePath}`)
+      return { ...emptyResponse(0, 0, started), error: `无法读取图片：${filePath}` }
+    }
     return performSearch(image, '文件')
   })
 
   ipcMain.handle(IPC.searchDataUrl, (_e, dataUrl: string) => {
+    const started = Date.now()
     const image = loadImageFromDataUrl(dataUrl)
-    if (!image) throw new Error('无法解析拖入/粘贴的图片数据')
+    if (!image) {
+      log(`检索(拖入/粘贴)失败：无法解析图片数据`)
+      return { ...emptyResponse(0, 0, started), error: '无法解析拖入/粘贴的图片数据' }
+    }
     return performSearch(image, '拖入/粘贴')
   })
 
