@@ -188,7 +188,13 @@ console.log('=== 实现与 useLibrary 的算法保持一致 ===')
     /const clearSelection[\s\S]{0,200}lastSelectedRef\.current = null/.test(hookSrc),
     'clearSelection 里要重置 ref'
   )
-  const viewSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+  // 视频行已拆到 VideoRow.tsx、光标逻辑在 useVideoCursor.ts：按合并源码查，
+  // 检查范围与拆分前（都在 LibraryView.tsx 里）完全一致。
+  const viewSrc = [
+    readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
+    readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+    readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8')
+  ].join('\n')
   const viewCode = viewSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
   check(
     '选中时文件名染强调色（单选多选共用同一个 selected 条件）',

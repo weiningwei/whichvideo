@@ -1,22 +1,9 @@
-import { useEffect, useMemo, useState, useRef, type ReactNode, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
-import { formatBytes, formatDuration, shortDir } from '../lib/format'
+import { blockModifierTextSelection } from '../lib/selection'
+import { useVideoCursor, PAGE_JUMP } from '../hooks/useVideoCursor'
 import { SidePanel } from './SidePanel'
-
-/**
- * 拦掉「带修饰键的按下」顺带启动的浏览器原生文本选中。
- *
- * 行多选走 Shift/Ctrl 点击，而 Shift+按下会把标题与按钮用 ::selection 蓝底盖住；
- * Ctrl 点击不启动文本选中，于是看着像「只有 Shift 有 bug」。只拦带修饰键的按下
- * 并清掉残留选区：普通点击/拖选不受影响，文件名仍能选中复制。
- * 整行 select-none 也能关掉蓝底，但会连文件名的双击/拖选一起干掉 —— 别走回头路。
- */
-const blockModifierTextSelection = (e: MouseEvent) => {
-  if (e.shiftKey || e.ctrlKey || e.metaKey) {
-    e.preventDefault()
-    window.getSelection()?.removeAllRanges()
-  }
-}
+import { VideoRow } from './VideoRow'
 
 interface Props {
   folders: WatchedFolder[]
@@ -50,9 +37,6 @@ interface Props {
   /** 右侧「索引设置」页的内容（由 App 传入，合并到同一栏切换） */
   sideSettings: ReactNode
 }
-
-/** PageUp / PageDown 一次跳多少行。按"一屏大约能看 15 行"取整。 */
-const PAGE_JUMP = 15
 
 const STATE_STYLE: Record<string, { text: string; cls: string }> = {
   watching: { text: '监听中', cls: 'border-ok/40 bg-ok/10 text-ok' },
@@ -89,148 +73,12 @@ export function LibraryView(props: Props) {
   // 注：原先这里有两个 useEffect 用来同步表头/分组复选框的 indeterminate 态。
   // 复选框已全部移除（选中改为竖条提示 + 整行点击），故不再需要这两个 ref。
 
-  // 键盘导航与快捷操作
-
-  const navigableItems = useMemo(() => {
-    if (!groupByFolder || !groupedVideos) {
-      return videos.map((v, idx) => ({ type: 'video' as const, video: v, index: idx }))
-    }
-    const items: { type: 'folder' | 'video'; folderId: number; video?: VideoRecord; index: number }[] = []
-    let idx = 0
-    for (const [folderId, folderVideos] of groupedVideos) {
-      items.push({ type: 'folder', folderId, index: idx++ })
-      for (const v of folderVideos) {
-        if (expandedFolderIds.has(folderId)) {
-          items.push({ type: 'video', folderId, video: v, index: idx++ })
-        }
-      }
-    }
-    return items
-  }, [groupByFolder, groupedVideos, expandedFolderIds])
-
-  const [focusedIndex, setFocusedIndex] = useState(0)
-
-  /**
-   * 只有视频行的下标（跳过分组标题）。
-   *
-   * 方向键在这份列表上移动，因此 ↑↓ 永远不会停在分组标题上——标题不是视频，
-   * 「选中」无从谈起。分组标题的展开/收起靠 ←→ 与点击标题。
-   */
-  const videoRowIndexes = useMemo(
-    () =>
-      navigableItems.reduce<number[]>((acc, item, i) => {
-        if (item.type === 'video') acc.push(i)
-        return acc
-      }, []),
-    [navigableItems]
-  )
-
-  /** 当前光标在 videoRowIndexes 里的位置（-1 = 尚未落在任何视频行上） */
-  const focusedRowPos = videoRowIndexes.indexOf(focusedIndex)
-
-  /**
-   * 焦点所在行的 videoId。
-   *
-   * 之前焦点只存下标，渲染时再 `focusedIndex === idx` 反查，分组视图下要写
-   * `navigableItems.findIndex(...)` 那种绕的匹配，既难读又容易错。改为直接从
-   * navigableItems 派生 video.id，渲染时只需 `focusedVideoId === video.id`。
-   */
-  const focusedVideoId = useMemo(() => {
-    const item = navigableItems[focusedIndex]
-    return item && item.type === 'video' ? item.video?.id ?? null : null
-  }, [navigableItems, focusedIndex])
-
-  /**
-   * 移动光标，并按修饰键决定要不要动选中区。
-   *
-   * **光标与选中必须是同一个东西**——这是文件管理器式列表的基本模型：
-   * 光标在哪，单选就在哪。此前两者是独立 state，方向键只移动灰竖条、蓝竖条
-   * 留在原地，于是「按方向键切换」看起来毫无反应。
-   *
-   * - 无修饰：单选跟随（清掉旧选中，选中新的一行）
-   * - Shift：从上一次选中的位置连选一段
-   * - Ctrl：只移动光标，已选中的视频保持不动（用于「先框选一批再逐个看过」）
-   */
-  const moveCursor = (delta: number, rangeKey: boolean, ctrlKey: boolean) => {
-    if (videoRowIndexes.length === 0) return
-    // 光标未落在视频行上时（首次进入时可能是 index 0 的分组标题），
-    // 按向下从首行起步、按向上从末行起步——from 取 -1 / length，
-    // 加上 delta 后正好落在两端。
-    const from = focusedRowPos === -1 ? (delta > 0 ? -1 : videoRowIndexes.length) : focusedRowPos
-    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, from + delta))
-    const nextIndex = videoRowIndexes[nextPos]
-    if (nextIndex === undefined) return
-    setFocusedIndex(nextIndex)
-    if (ctrlKey) return
-    const item = navigableItems[nextIndex]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, rangeKey, false)
-    }
-  }
-
-  /** 跳到 videoRowIndexes 的指定位置（Home / End / PageUp / PageDown 用）；同样同步单选 */
-  const jumpCursor = (pos: number, rangeKey = false) => {
-    if (videoRowIndexes.length === 0) return
-    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, pos))
-    const nextIndex = videoRowIndexes[nextPos]
-    if (nextIndex === undefined) return
-    setFocusedIndex(nextIndex)
-    if (rangeKey) return
-    const item = navigableItems[nextIndex]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, false, false)
-    }
-  }
-
-  /**
-   * 鼠标点到某一行时用：**光标移到该行**，再按修饰键决定选区怎么变。
-   *
-   * 上一版只把方向键与光标打通了，忘了点击这条路 —— 于是光标一直停在初始
-   * 位置（第一个视频），点第 3 个再按 ↑ 就从第一个开始算，直接跳回第一个。
-   * 光标与选中既然是同一个东西，**两条入口必须都改它**。
-   */
-  const focusRow = (index: number) => {
-    setFocusedIndex(index)
-    const item = navigableItems[index]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, false, false)
-    }
-  }
-
-  /** Shift+点击：与上次选中的位置之间连选，光标跟着走到目标行 */
-  const selectRowRange = (index: number) => {
-    setFocusedIndex(index)
-    const item = navigableItems[index]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, true, false)
-    }
-  }
-
-  /** Ctrl+点击：只切换这一行的选中，其余不动，光标也走到该行 */
-  const toggleRowSelection = (index: number) => {
-    setFocusedIndex(index)
-    const item = navigableItems[index]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, false, true)
-    }
-  }
-
-  /**
-   * 点整行的统一入口。**按 video.id 反查行下标**，而不是靠 map 回调里的位置参数
-   * 去算偏移 —— 分组视图下每个分组前面都插了一个标题，偏移量很容易算错，
-   * 而算错的症状恰好是"点到第三个却把光标放到第一个"这种，极难从界面上看出来。
-   */
-  const handleRowClick = (videoId: number, shiftKey: boolean, ctrlKey: boolean) => {
-    const index = navigableItems.findIndex((it) => it.type === 'video' && it.video?.id === videoId)
-    if (index === -1) {
-      // 理论上到不了（行都是从 navigableItems 渲染的）；真发生了至少别动光标
-      toggleVideoSelection(videoId, shiftKey, ctrlKey)
-      return
-    }
-    if (ctrlKey) toggleRowSelection(index)
-    else if (shiftKey) selectRowRange(index)
-    else focusRow(index)
-  }
+  // 键盘导航与快捷操作（光标状态与导航原语在 useVideoCursor 里）
+  const {
+    navigableItems, videoRowIndexes, focusedIndex, focusedRowPos, focusedVideoId,
+    moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick,
+    expandFocusedFolder, collapseFocusedFolder, scrollRef
+  } = useVideoCursor({ videos, groupByFolder, groupedVideos, expandedFolderIds, toggleVideoSelection, toggleFolderExpanded })
 
   /**
    * 拿到"该被操作的那个视频"：有选中就用第一个选中的，否则用焦点处的。
@@ -243,13 +91,13 @@ export function LibraryView(props: Props) {
       for (const v of videos) if (selectedVideoIds.has(v.id)) return v
       return null
     }
-    return navigableItems[focusedIndex]?.video ?? null
+    const item = navigableItems[focusedIndex]
+    return item && item.type === 'video' ? item.video ?? null : null
   }
 
   /** 当前操作会作用到几个视频（用于决定要不要二次确认） */
   const getTargetCount = (): number =>
     selectedVideoIds.size > 0 ? selectedVideoIds.size : focusedVideoId === null ? 0 : 1
-
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -398,72 +246,6 @@ export function LibraryView(props: Props) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, focusedRowPos, navigableItems, videoRowIndexes, focusedVideoId, onToggleGroupByFolder])
-
-  /**
-   * ←→ 作用于**光标所在视频所属的分组**。
-   *
-   * ↑↓ 只在视频行间移动（跳过分组标题），光标因此永远不会停在标题上——←→ 若还在
-   * 等「光标位于 folder 项」就永远触发不了。改为从光标视频反查其分组：
-   * → 展开该分组，← 收起。与文件管理器一致（光标在文件上，← 收起所在目录）。
-   *
-   * 平铺视图的项不带 folderId（没有分组概念），此时 ←→ 无从谈起。
-   */
-  const focusedFolderId = useMemo(() => {
-    const item = navigableItems[focusedIndex]
-    return item && item.type === 'video' && 'folderId' in item ? item.folderId : null
-  }, [navigableItems, focusedIndex])
-
-  const expandFocusedFolder = () => {
-    if (focusedFolderId === null) return
-    if (!expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
-  }
-
-  const collapseFocusedFolder = () => {
-    if (focusedFolderId === null) return
-    if (expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
-  }
-
-  /**
-   * 在光标处切换选中（Space 专用）——与 ↑↓ 的「单选跟随」不同：不动光标、
-   * 也不清掉其他已选中的行，是真正的「加选 / 取消选中」（文件管理器的空格行为）。
-   *
-   * @param rangeKey Shift：与上次选中的位置之间连选
-   * @param toggleKey Ctrl：只切换这一行的选中状态，其余行不动
-   */
-  const toggleFocusedSelection = (rangeKey: boolean, toggleKey: boolean) => {
-    const item = navigableItems[focusedIndex]
-    if (item && item.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, rangeKey, toggleKey)
-    }
-  }
-
-  // 列表变化（切分组模式、增删、筛选、折叠）后把光标收回第一个**视频行**。
-  // 不能简单写 0：分组视图里 index 0 是分组标题，光标停在那既没有灰条提示，
-  // 方向键也只能「从旁边起步」，手感上像是坏的。
-  useEffect(() => {
-    setFocusedIndex(videoRowIndexes[0] ?? 0)
-    // 只在列表结构变化时重置；videoRowIndexes 每次重算都是新数组，不能进依赖
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupByFolder, videos, expandedFolderIds])
-
-  // 滚动容器：↑/↓ 移动焦点时要把焦点行滚进可视区，否则焦点移出屏幕就看不见了
-  const scrollRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (focusedVideoId === null || !scrollRef.current) return
-    const box = scrollRef.current
-    const row = box.querySelector<HTMLElement>(`[data-video-id="${focusedVideoId}"]`)
-    if (!row) return
-    const rowTop = row.offsetTop
-    const rowBottom = rowTop + row.offsetHeight
-    const viewTop = box.scrollTop
-    const viewBottom = viewTop + box.clientHeight
-    const margin = 28 // 留点余量，别让行贴着上下边缘
-    if (rowTop < viewTop + margin) {
-      box.scrollTop = Math.max(0, rowTop - margin)
-    } else if (rowBottom > viewBottom - margin) {
-      box.scrollTop = rowBottom - box.clientHeight + margin
-    }
-  }, [focusedVideoId])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -795,180 +577,6 @@ function FolderCard({
         {folder.lastScanAt ? ` · 上次扫描 ${new Date(folder.lastScanAt).toLocaleString('zh-CN')}` : ''}
       </div>
     </div>
-  )
-}
-
-function VideoRow({
-  video,
-  roots,
-  focused,
-  onOpen,
-  onReveal,
-  onRemove,
-  onReindex,
-  isVideoSelected,
-  onRowClick
-}: {
-  video: VideoRecord
-  roots: string[]
-  /** 键盘焦点所在行（↑/↓ 移动），用于显示淡灰焦点条 */
-  focused: boolean
-  onOpen: (id: number) => void
-  onReveal: (id: number) => void
-  onRemove: (id: number) => void
-  onReindex: (id: number) => void
-  isVideoSelected: (videoId: number) => boolean
-  /**
-   * 点击整行。**必须同时移动光标**——光标与选中是同一个东西，只改选中会让
-   * 光标留在原地，之后按 ↑/↓ 从旧位置起算（点第三个再按 ↑ 跳回第一个）。
-   * 修饰键一起传上来，是为了支持 Shift 连选与 Ctrl 点选。
-   */
-  onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
-}) {
-  const [thumb, setThumb] = useState<string | null>(null)
-  useEffect(() => {
-    let alive = true
-    void window.whichvideo.videos.thumbnail(video.id).then((d) => {
-      if (alive) setThumb(d)
-    })
-    return () => {
-      alive = false
-    }
-  }, [video.id, video.indexedAt])
-
-  const statusCls =
-    video.status === 'ready'
-      ? 'border-ok/40 bg-ok/10 text-ok'
-      : video.status === 'failed'
-        ? 'border-bad/40 bg-bad/10 text-bad'
-        : video.status === 'indexing'
-          ? 'border-accent/40 bg-accent/10 text-accent'
-          : 'border-warn/40 bg-warn/10 text-warn'
-  const statusText =
-    video.status === 'ready'
-      ? '已索引'
-      : video.status === 'failed'
-        ? '索引失败'
-        : video.status === 'indexing'
-          ? '索引中'
-          : '待索引'
-
-  const selected = isVideoSelected(video.id)
-
-  /**
-   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。
-   *
-   * 曾经分过两档（多选只留竖条），又取消过（单选多选都三样），现在定为
-   * **标题与按钮都不参与染色**。理由：那两处蓝色不是"选中信号"，而是噪声 ——
-   *   - 标题染成 accent 蓝后，一眼扫过去分不清是"这一项被选中"还是"这几项都选中"，
-   *     反而不如竖条 + 底色来得明确
-   *   - 操作按钮的 btn-bg 是半透明的，淡蓝底会从底下透上来把按钮连边框一起染蓝，
-   *     看着像"按钮被激活了"，实际它们只是可点
-   * 于是蓝色只留给左侧竖条与行底色 —— 这两处占地最小、语义最准。
-   *
-   * 仍然不做 `selectedCount` 之类的分档：多选就是"多个行各自被选中"，
-   * 每行的呈现与它单独被选中时没有区别。
-   */
-  const rowBg = selected
-    ? 'bg-row-selected'
-    : focused
-      ? 'bg-row-focus'
-      : 'hover:bg-row-hover'
-
-  return (
-    <tr
-      data-video-id={video.id}
-      onMouseDown={blockModifierTextSelection}
-      onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
-      className="group cursor-pointer border-b border-line/40"
-    >
-      <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
-        {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
-            选中 = accent 蓝条；仅键盘光标 = 淡灰条。两者同时存在时以选中为准。 */}
-        {selected ? (
-          <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
-        ) : focused ? (
-          <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
-        ) : null}
-        <div className="flex items-start gap-2.5">
-          <div className="mt-0.5 h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
-            {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
-          </div>
-          <div className="min-w-0 flex-1">
-            {/* 文件名最多两行：单行 truncate 时长片名（尤其带 [1080p][x264] 那种）
-                会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
-                第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
-            {/* 选中时文件名染强调色（与状态徽标同色）——单选多选走同一个
-                `selected` 条件，天然一致，不分档。 */}
-            <div
-              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
-              title={video.path}
-            >
-              {video.name}
-            </div>
-            <div className="truncate text-[10.5px] text-muted" title={video.path}>
-              {/* 目录（不含文件名，避免与上一行重复）· 时长 · 体积 · 帧数 */}
-              {[
-                shortDir(video.path, roots),
-                formatDuration(video.duration),
-                formatBytes(video.size),
-                `${video.frameCount} 帧`
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </div>
-          </div>
-        </div>
-      </td>
-      <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
-        <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
-          {statusText}
-        </span>
-      </td>
-      {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
-
-          底色要**不透明**，否则左侧滚过来的文字会透上来叠在按钮上。行状态色
-          （选中蓝 / 光标灰 / hover）改由这格自己带——不能靠 tr 或绝对定位的
-          覆盖层，前者会被这格的底色盖住，后者在表格布局里定位不可靠。 */}
-      <td
-        className={`sticky right-0 border-l border-line/70 px-3 py-1.5 align-top transition-colors ${rowBg}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 四个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 索引 / 移除）。
-            按钮内边距收到 px-1.5，四项合计约 156px，比原来的「播放+⋯」73px
-            多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
-        <div className="flex items-center justify-end gap-1">
-          <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onOpen(video.id)}
-            title="用系统播放器打开"
-          >
-            播放
-          </button>
-          <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onReveal(video.id)}
-            title="在资源管理器中定位该文件"
-          >
-            定位
-          </button>
-          <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onReindex(video.id)}
-            title="重新抽帧并重建指纹"
-          >
-            索引
-          </button>
-          <button
-            className={`btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onRemove(video.id)}
-            title="只从索引库移除记录，不会删除磁盘文件"
-          >
-            移除
-          </button>
-        </div>
-      </td>
-    </tr>
   )
 }
 

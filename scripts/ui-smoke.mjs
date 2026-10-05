@@ -632,8 +632,15 @@ export default mod
   )
   // 选中态改为左侧竖条提示。竖条只在 isVideoSelected 为真时渲染，而 mock 的
   // selectedVideoIds 是空集，SSR 走不到该分支，故静态检查源码。
+  // 视频行与光标逻辑已拆到 VideoRow.tsx / useVideoCursor.ts：按合并源码查，
+  // 检查范围与拆分前（单文件时代）完全一致。
   {
-    const src = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    const src = [
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
+    ].join('\n')
     check(
       '选中提示用左侧竖条（绝对定位，不占列宽）',
       src.includes('w-[2px] bg-accent') && src.includes('absolute inset-y-0 left-0'),
@@ -774,7 +781,12 @@ export default mod
     'RowMenu 组件已删除'
   )
   {
-    const src = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    const src = [
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
+    ].join('\n')
     const codeNoComments = src
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^[ \t]*\/\/.*$/gm, '')
@@ -988,7 +1000,12 @@ export default mod
 
   console.log('\n=== 8. 快捷键 ===')
   {
-    const lib = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
+    const lib = [
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
+    ].join('\n')
     const app = readFileSync(join(root, 'src', 'renderer', 'src', 'App.tsx'), 'utf8')
     const sc = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'shortcuts.ts'), 'utf8')
 

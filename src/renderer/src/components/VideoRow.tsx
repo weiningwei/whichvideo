@@ -1,0 +1,178 @@
+import { useEffect, useState } from 'react'
+import type { VideoRecord } from '@shared/types'
+import { formatBytes, formatDuration, shortDir } from '../lib/format'
+import { blockModifierTextSelection } from '../lib/selection'
+
+export function VideoRow({
+  video,
+  roots,
+  focused,
+  onOpen,
+  onReveal,
+  onRemove,
+  onReindex,
+  isVideoSelected,
+  onRowClick
+}: {
+  video: VideoRecord
+  roots: string[]
+  /** 键盘焦点所在行（↑/↓ 移动），用于显示淡灰焦点条 */
+  focused: boolean
+  onOpen: (id: number) => void
+  onReveal: (id: number) => void
+  onRemove: (id: number) => void
+  onReindex: (id: number) => void
+  isVideoSelected: (videoId: number) => boolean
+  /**
+   * 点击整行。**必须同时移动光标**——光标与选中是同一个东西，只改选中会让
+   * 光标留在原地，之后按 ↑/↓ 从旧位置起算（点第三个再按 ↑ 跳回第一个）。
+   * 修饰键一起传上来，是为了支持 Shift 连选与 Ctrl 点选。
+   */
+  onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
+}) {
+  const [thumb, setThumb] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.whichvideo.videos.thumbnail(video.id).then((d) => {
+      if (alive) setThumb(d)
+    })
+    return () => {
+      alive = false
+    }
+  }, [video.id, video.indexedAt])
+
+  const statusCls =
+    video.status === 'ready'
+      ? 'border-ok/40 bg-ok/10 text-ok'
+      : video.status === 'failed'
+        ? 'border-bad/40 bg-bad/10 text-bad'
+        : video.status === 'indexing'
+          ? 'border-accent/40 bg-accent/10 text-accent'
+          : 'border-warn/40 bg-warn/10 text-warn'
+  const statusText =
+    video.status === 'ready'
+      ? '已索引'
+      : video.status === 'failed'
+        ? '索引失败'
+        : video.status === 'indexing'
+          ? '索引中'
+          : '待索引'
+
+  const selected = isVideoSelected(video.id)
+
+  /**
+   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。
+   *
+   * 曾经分过两档（多选只留竖条），又取消过（单选多选都三样），现在定为
+   * **标题与按钮都不参与染色**。理由：那两处蓝色不是"选中信号"，而是噪声 ——
+   *   - 标题染成 accent 蓝后，一眼扫过去分不清是"这一项被选中"还是"这几项都选中"，
+   *     反而不如竖条 + 底色来得明确
+   *   - 操作按钮的 btn-bg 是半透明的，淡蓝底会从底下透上来把按钮连边框一起染蓝，
+   *     看着像"按钮被激活了"，实际它们只是可点
+   * 于是蓝色只留给左侧竖条与行底色 —— 这两处占地最小、语义最准。
+   *
+   * 仍然不做 `selectedCount` 之类的分档：多选就是"多个行各自被选中"，
+   * 每行的呈现与它单独被选中时没有区别。
+   */
+  const rowBg = selected
+    ? 'bg-row-selected'
+    : focused
+      ? 'bg-row-focus'
+      : 'hover:bg-row-hover'
+
+  return (
+    <tr
+      data-video-id={video.id}
+      onMouseDown={blockModifierTextSelection}
+      onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
+      className="group cursor-pointer border-b border-line/40"
+    >
+      <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
+        {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
+            选中 = accent 蓝条；仅键盘光标 = 淡灰条。两者同时存在时以选中为准。 */}
+        {selected ? (
+          <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
+        ) : focused ? (
+          <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
+        ) : null}
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
+            {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
+          </div>
+          <div className="min-w-0 flex-1">
+            {/* 文件名最多两行：单行 truncate 时长片名（尤其带 [1080p][x264] 那种）
+                会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
+                第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
+            {/* 选中时文件名染强调色（与状态徽标同色）——单选多选走同一个
+                `selected` 条件，天然一致，不分档。 */}
+            <div
+              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
+              title={video.path}
+            >
+              {video.name}
+            </div>
+            <div className="truncate text-[10.5px] text-muted" title={video.path}>
+              {/* 目录（不含文件名，避免与上一行重复）· 时长 · 体积 · 帧数 */}
+              {[
+                shortDir(video.path, roots),
+                formatDuration(video.duration),
+                formatBytes(video.size),
+                `${video.frameCount} 帧`
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
+        <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
+          {statusText}
+        </span>
+      </td>
+      {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
+
+          底色要**不透明**，否则左侧滚过来的文字会透上来叠在按钮上。行状态色
+          （选中蓝 / 光标灰 / hover）改由这格自己带——不能靠 tr 或绝对定位的
+          覆盖层，前者会被这格的底色盖住，后者在表格布局里定位不可靠。 */}
+      <td
+        className={`sticky right-0 border-l border-line/70 px-3 py-1.5 align-top transition-colors ${rowBg}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 四个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 索引 / 移除）。
+            按钮内边距收到 px-1.5，四项合计约 156px，比原来的「播放+⋯」73px
+            多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
+        <div className="flex items-center justify-end gap-1">
+          <button
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
+            onClick={() => onOpen(video.id)}
+            title="用系统播放器打开"
+          >
+            播放
+          </button>
+          <button
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
+            onClick={() => onReveal(video.id)}
+            title="在资源管理器中定位该文件"
+          >
+            定位
+          </button>
+          <button
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
+            onClick={() => onReindex(video.id)}
+            title="重新抽帧并重建指纹"
+          >
+            索引
+          </button>
+          <button
+            className={`btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10 ${selected ? 'bg-surface-2 text-white' : ''}`}
+            onClick={() => onRemove(video.id)}
+            title="只从索引库移除记录，不会删除磁盘文件"
+          >
+            移除
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+}
