@@ -122,12 +122,12 @@ export function VideoRow({
       <div className="flex items-center gap-1.5 text-[10px] text-muted">
         <span className="whitespace-nowrap flex items-center gap-1">
           <span>已用 {formatDuration(Math.round(elapsedMs / 1000))}</span>
-          <span className="text-line">|</span>
+          <span className="text-line">·</span>
           <span>剩余 {remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
         </span>
         <span className="whitespace-nowrap text-primary ml-auto">{frameProgress.done}/{frameProgress.total}</span>
       </div>
-      <div className="h-1.5 bg-line rounded-full overflow-hidden relative" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
+      <div className="h-2 bg-line rounded-full overflow-hidden relative" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
         <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
         <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/90 select-none pointer-events-none whitespace-nowrap">
           {Math.round((frameProgress.done / frameProgress.total) * 100)}%
