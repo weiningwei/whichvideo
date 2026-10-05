@@ -362,6 +362,17 @@ export class Indexer {
     return count
   }
 
+  /** 手动/文件监听移除视频时同步清理 Indexer 内部状态 */
+  removeVideo(videoId: number): void {
+    // 从队列移除
+    this.queued.delete(videoId)
+    this.queue = this.queue.filter((id) => id !== videoId)
+    // 若正在处理，active 计数会在 process 的 finally 里自然递减
+    // 这里仅标记数据库状态，process 完成后会检查视频是否仍存在
+    this.broadcastStatus()
+    this.broadcastStats()
+  }
+
   private async pump(): Promise<void> {
     const settings = this.getSettings()
     while (this.active < Math.max(1, settings.concurrency) && this.queue.length > 0) {

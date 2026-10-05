@@ -317,6 +317,7 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.videosList, (_e, query: VideoQuery) => db.listVideos(query ?? {}))
   ipcMain.handle(IPC.videosGet, (_e, videoId: number) => db.getVideo(videoId))
   ipcMain.handle(IPC.videosRemove, (_e, videoId: number) => {
+    indexer.removeVideo(videoId)
     db.removeVideo(videoId)
     searchIndex.rebuild()
     broadcast({ type: 'video-removed', videoId, path: '' })
