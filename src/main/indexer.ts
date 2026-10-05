@@ -15,6 +15,7 @@ import {
 import { normalizePath, pathKeyOf } from '@shared/types'
 import { makeThumbnail, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
 import { extractAndHash, scanVideoFiles, statFile, type EventEmitter } from './scan'
+import { log, logError } from './logger'
 import type { LibraryDatabase } from './db'
 import type { FrameSearchIndex } from './search'
 
@@ -312,12 +313,18 @@ export class Indexer {
 
   /** 启动时恢复未完成的索引任务 */
   resumePending(): void {
+    let stale = 0
     for (const video of this.db.listPendingVideos()) {
-      if (video.status === 'indexing') this.db.setVideoStatus(video.id, 'pending')
+      if (video.status === 'indexing') {
+        // 上次进程没走完（崩溃/断电/强杀）留下的假"索引中"，改回 pending 重新排队
+        stale++
+        this.db.setVideoStatus(video.id, 'pending')
+      }
       this.queued.add(video.id)
       this.queue.push(video.id)
     }
     if (this.queue.length) {
+      log(`恢复索引队列：${this.queue.length} 个待处理${stale ? `（含 ${stale} 个崩溃残留的索引中）` : ''}`)
       this.startedAt = Date.now()
       this.broadcastStatus()
       void this.pump()
@@ -353,6 +360,7 @@ export class Indexer {
         .catch((err: unknown) => {
           this.failed++
           this.lastError = err instanceof Error ? err.message : String(err)
+          logError('索引失败', err)
           this.db.setVideoStatus(videoId, 'failed', this.lastError)
           const video = this.db.getVideo(videoId)
           if (video) this.emit({ type: 'video-updated', video })
@@ -370,6 +378,7 @@ export class Indexer {
         })
     }
     if (this.queue.length === 0 && this.active === 0) {
+      if (!this.finishedAt) log('索引队列已全部完成')
       this.finishedAt = this.finishedAt ?? Date.now()
       this.scheduleIndexRebuild()
       this.broadcastStatus()
@@ -384,6 +393,7 @@ export class Indexer {
 
     this.currentPath = video.path
     this.db.setVideoStatus(videoId, 'indexing')
+    log(`索引开始：${video.path}`)
     this.emit({ type: 'video-updated', video: { ...video, status: 'indexing' as VideoStatus } })
     this.broadcastStatus()
 
@@ -419,6 +429,7 @@ export class Indexer {
     const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
     const thumbnail = await makeThumbnail(video.path, thumbTime, t)
     this.db.replaceFrames(videoId, frames, thumbnail)
+    log(`索引完成：${video.path}（${frames.length} 帧）`)
 
     this.scheduleIndexRebuild()
     const updated = this.db.getVideo(videoId)

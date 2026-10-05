@@ -910,3 +910,16 @@ process.on('uncaughtException', (err) => {
     showFatalInWindow(`主进程异常：${err.message}\n\n${err.stack ?? ''}`)
   }
 })
+
+// Electron 自带子进程（GPU / 工具进程）异常退出的取证：索引期间硬死过一次、
+// JS 级 handler（uncaught/unhandledRejection）全都没写日志，GPU oom 这类
+// 只有这里能看到 reason。
+app.on('child-process-gone', (_e, details) => {
+  logError('子进程异常退出', new Error(`type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`))
+})
+
+// 退出的最后一笔：正常退出必有这行；下次再"软件直接关闭"却没有它 = 硬死
+// （OOM / 被外部强杀 / 原生层崩溃），排查时先看这条在不在。
+process.on('exit', (code) => {
+  log(`进程退出 code=${code}`)
+})

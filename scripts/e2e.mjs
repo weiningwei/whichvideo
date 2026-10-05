@@ -335,6 +335,14 @@ async function main() {
   const firstId = injected[0].video.id
   db.setVideoStatus(firstId, 'pending')
   check('可按状态筛选待索引', db.listVideos({ status: 'pending' }).total === 1)
+  // 崩溃残留恢复：listPendingVideos 必须连 'indexing' 一起返回 —— 少了这一档，
+  // 崩溃重启后 resumePending 捞不到卡死的行，状态永远停在"索引中"（真实用户遇到过）。
+  db.setVideoStatus(firstId, 'indexing')
+  check(
+    '崩溃残留的「索引中」在恢复列表里',
+    db.listPendingVideos().some((v) => v.id === firstId),
+    `listPendingVideos ${db.listPendingVideos().length} 条`
+  )
   db.setVideoStatus(firstId, 'ready')
   const removed = db.removeVideo(injected[1].video.id)
   index.rebuild()
@@ -459,6 +467,17 @@ async function main() {
     const rowA = pipeDb.findByPath(videoA)
     check('视频 A 索引完成', rowA?.status === 'ready', `状态 ${rowA?.status} 帧 ${rowA?.frameCount}`)
     check('写入了缩略图', !!pipeDb.getThumbnail(rowA.id))
+
+    // 端到端复刻崩溃恢复：卡在 indexing → resumePending 捞回 → 重新索引回 ready。
+    // 若 listPendingVideos 漏掉 'indexing'，这里会停在 indexing 上被判失败。
+    pipeDb.setVideoStatus(rowA.id, 'indexing')
+    pipeIndexer.resumePending()
+    check('resumePending 接管崩溃残留任务并跑完', await idle(), JSON.stringify(pipeIndexer.status()))
+    check(
+      '崩溃残留的视频被重新索引回 ready',
+      pipeDb.getVideo(rowA.id)?.status === 'ready',
+      `状态 ${pipeDb.getVideo(rowA.id)?.status}`
+    )
 
     const folder = await pipeIndexer.importFolder(join(work, 'series'), { pinned: true })
     check('递归导入文件夹', folder.scanned === 1, JSON.stringify(folder))

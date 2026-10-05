@@ -509,9 +509,11 @@ export class LibraryDatabase {
   }
 
   listPendingVideos(limit = 100000): VideoRecord[] {
+    // 'indexing' 必须在列：崩溃/断电/强杀留下的假"索引中"只能靠启动恢复
+    // （indexer.resumePending）捞回来。少这一档，重启后状态永远卡在"索引中"。
     const rows = this.db
       .prepare(
-        `SELECT * FROM videos WHERE status IN ('pending', 'failed') ORDER BY added_at ASC LIMIT ?`
+        `SELECT * FROM videos WHERE status IN ('pending', 'failed', 'indexing') ORDER BY added_at ASC LIMIT ?`
       )
       .all(limit) as VideoRow[]
     return rows.map(rowToVideo)
