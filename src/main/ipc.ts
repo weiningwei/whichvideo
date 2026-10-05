@@ -22,6 +22,7 @@ import {
   type WatchedFolder
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
+import type { ErrorCode } from '@shared/result'
 import { log, logError } from './logger'
 import { readClipboardImageBytes } from './clipboard'
 import { describeUrlForLog, fetchImageFromUrl } from './url-image'
@@ -82,6 +83,22 @@ function emptyResponse(width: number, height: number, started: number): SearchRe
   }
 }
 
+/**
+ * 统一的失败响应：四条检索入口共用同一形状。
+ * 界面读 error 展示文案，errorCode（见 shared/result.ts）供测试断言与分支。
+ * 失败一律返回而不是抛异常——用户能看懂"网页里没找到图片"比
+ * "Error invoking remote method"有用得多。
+ */
+function failResponse(
+  started: number,
+  code: ErrorCode,
+  message: string,
+  width = 0,
+  height = 0
+): SearchResponse {
+  return { ...emptyResponse(width, height, started), error: message, errorCode: code }
+}
+
 /* ------------------------------------------------------------------ *
  * 注册
  * ------------------------------------------------------------------ */
@@ -134,7 +151,13 @@ export function registerIpc(deps: IpcDeps): void {
     const imageData = nativeImageToImageData(image)
     if (!imageData) {
       log(`检索(${source})：图片无法转成位图 ${size.width}x${size.height}`)
-      return emptyResponse(size.width, size.height, started)
+      return failResponse(
+        started,
+        'decode-failed',
+        '图片无法转成位图',
+        size.width,
+        size.height
+      )
     }
 
     const vector = queryVectorFromImage(imageData)
@@ -363,7 +386,7 @@ export function registerIpc(deps: IpcDeps): void {
     const image = loadImageFromPath(filePath)
     if (!image) {
       log(`检索(文件)失败：无法读取图片 ${filePath}`)
-      return { ...emptyResponse(0, 0, started), error: `无法读取图片：${filePath}` }
+      return failResponse(started, 'decode-failed', `无法读取图片：${filePath}`)
     }
     return performSearch(image, '文件')
   })
@@ -373,7 +396,7 @@ export function registerIpc(deps: IpcDeps): void {
     const image = loadImageFromDataUrl(dataUrl)
     if (!image) {
       log(`检索(拖入/粘贴)失败：无法解析图片数据`)
-      return { ...emptyResponse(0, 0, started), error: '无法解析拖入/粘贴的图片数据' }
+      return failResponse(started, 'decode-failed', '无法解析拖入/粘贴的图片数据')
     }
     return performSearch(image, '拖入/粘贴')
   })
@@ -387,22 +410,19 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   // 链接输入：URL → 字节 → NativeImage，之后与其它三条输入完全同一条链路。
-  // 失败时把原因作为 error 返回（界面直接显示），而不是抛异常——用户能看懂
-  // "网页里没找到图片"比"Error invoking remote method"有用得多。
   ipcMain.handle(IPC.searchUrl, async (_e, url: string) => {
     const started = Date.now()
     const result = await fetchImageFromUrl(String(url ?? ''))
-    if (!result.ok || !result.data) {
+    if (!result.ok) {
       log(`检索(链接)失败：${result.message}`)
-      const size = { width: 0, height: 0 }
-      return { ...emptyResponse(size.width, size.height, started), error: result.message }
+      return failResponse(started, result.code, result.message)
     }
 
     const image = nativeImage.createFromBuffer(result.data)
     if (image.isEmpty()) {
       const message = '图片已下载但无法解码（可能不是有效的图片格式）'
       log(`检索(链接)：${message} — ${describeUrlForLog(result)}`)
-      return { ...emptyResponse(0, 0, started), error: message }
+      return failResponse(started, 'decode-failed', message)
     }
 
     const size = image.getSize()

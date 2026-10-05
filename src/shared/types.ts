@@ -2,6 +2,7 @@
  * 主进程 <-> 渲染进程共享的类型定义。
  * 这里只放纯类型，不能 import electron / node 模块，渲染端也要用。
  */
+import type { ErrorCode } from './result'
 
 /** 视频文件生命周期状态 */
 export type VideoStatus =
@@ -132,8 +133,13 @@ export interface SearchResponse {
   /** 是否存在分数可接受的匹配 */
   found: boolean
   matches: SearchMatch[]
-  /** 检索失败时的原因（成功时无此字段）。链接输入失败会带上具体说明 */
+  /** 检索失败时的原因（成功时无此字段）。四条输入路径失败都会带上 */
   error?: string
+  /**
+   * 失败原因的机器可读分类（与 error 成对出现），
+   * 供测试断言与界面分支使用，定义见 shared/result.ts。
+   */
+  errorCode?: ErrorCode
   /**
    * 链接输入时记录实际取图的地址（可能与用户贴的不同：跟随过重定向，
    * 或从网页里解析出了主图）。界面用它显示"正在搜：https://…"，便于核对来源。

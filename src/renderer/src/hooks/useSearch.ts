@@ -33,23 +33,28 @@ export function useSearch(): UseSearchReturn {
     lastSearchInput = input
     setSearching(true)
     setSearchError(null)
+    // 四条输入路径的失败都以 error/errorCode 返回（而非抛异常），
+    // 必须统一接住——否则文件/拖入/粘贴失败会静默变成"没有结果"。
+    const applyResponse = (response: SearchResponse): void => {
+      setSearch(response)
+      if (response.error) setSearchError(response.error)
+    }
     try {
       if (input.path) {
         const response = await window.whichvideo.search.byPath(input.path)
-        setSearch(response)
+        applyResponse(response)
         setQueryImage(`file://${input.path}`)
         setQueryLabel(input.label ?? input.path)
       } else if (input.dataUrl) {
         const response = await window.whichvideo.search.byDataUrl(input.dataUrl)
-        setSearch(response)
+        applyResponse(response)
         setQueryImage(input.dataUrlPreview ?? input.dataUrl)
         setQueryLabel(input.label ?? '图片')
       } else if (input.url) {
         const response = await window.whichvideo.search.byUrl(input.url)
-        setSearch(response)
+        applyResponse(response)
         setQueryImage(null)
         setQueryLabel(response.queryImageUrl ?? input.label ?? input.url)
-        if (response.error) setSearchError(response.error)
       } else {
         const clipboard = await window.whichvideo.search.byClipboard()
         if (!clipboard) {

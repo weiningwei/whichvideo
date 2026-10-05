@@ -20,22 +20,23 @@
  */
 import { createHash } from 'node:crypto'
 import { MAX_BYTES, TIMEOUT_MS, MAX_REDIRECTS, MAX_IMAGE_FETCHES, USER_AGENT } from './constants'
+import { fail, type Fail, type Result } from '@shared/result'
 
-export interface FetchImageResult {
-  ok: boolean
-  /** 成功时为 PNG/原始格式的字节；失败时为空 */
-  data: Buffer | null
-  /** 图片类型（image/png 等），仅成功时有值 */
-  contentType: string | null
+/** 成功载荷：字节 + 类型 + 实际取图地址 */
+export interface FetchOk {
+  /** PNG/原始格式的字节 */
+  data: Buffer
+  /** 图片类型（image/png 等） */
+  contentType: string
   /** 最终实际取图的地址（可能与请求地址不同：重定向或从网页里解析出的图片） */
-  finalUrl: string | null
-  /** 失败原因 / 成功路径的简短说明，直接展示给用户 */
-  message: string
+  finalUrl: string
 }
 
-function failure(message: string, finalUrl: string | null = null): FetchImageResult {
-  return { ok: false, data: null, contentType: null, finalUrl, message }
-}
+/**
+ * 取图结果：失败分支带 `code`（机器可读，见 shared/result.ts）与
+ * `message`（人可读，直接展示）。
+ */
+export type FetchImageResult = Result<FetchOk>
 
 /** 只放行 http/https，顺带挡掉 javascript: 之类的伪协议 */
 function isHttpUrl(raw: string): boolean {
@@ -48,9 +49,7 @@ function isHttpUrl(raw: string): boolean {
 }
 
 /** fetchBytes 的返回：用可辨识联合（discriminated union）让 `ok` 能窄化出对应字段 */
-type FetchOutcome =
-  | { ok: true; bytes: Buffer; contentType: string; finalUrl: string }
-  | { ok: false; message: string }
+type FetchOutcome = { ok: true; bytes: Buffer; contentType: string; finalUrl: string } | Fail
 
 /**
  * 带超时与体积上限的 fetch。手动处理重定向以便计数——
@@ -74,16 +73,16 @@ async function fetchBytes(url: string): Promise<FetchOutcome> {
 
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get('location')
-        if (!location) return { ok: false, message: `重定向缺少 Location（HTTP ${res.status}）` }
+        if (!location) return fail('http-error', `重定向缺少 Location（HTTP ${res.status}）`)
         // 每一跳都要重新校验，防止重定向到 file: 之类
         const next = new URL(location, current).toString()
-        if (!isHttpUrl(next)) return { ok: false, message: '重定向到了不支持的协议' }
+        if (!isHttpUrl(next)) return fail('unsupported-protocol', '重定向到了不支持的协议')
         current = next
         continue
       }
 
       if (!res.ok) {
-        return { ok: false, message: `HTTP ${res.status} ${res.statusText}`.trim() }
+        return fail('http-error', `HTTP ${res.status} ${res.statusText}`.trim())
       }
 
       const contentType = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
@@ -91,12 +90,12 @@ async function fetchBytes(url: string): Promise<FetchOutcome> {
       // 先看 Content-Length，超了直接拒绝，不必真去下载
       const declared = Number(res.headers.get('content-length') ?? '')
       if (Number.isFinite(declared) && declared > MAX_BYTES) {
-        return { ok: false, message: `图片过大（${(declared / 1024 / 1024).toFixed(1)} MB，上限 10 MB）` }
+        return fail('too-large', `图片过大（${(declared / 1024 / 1024).toFixed(1)} MB，上限 10 MB）`)
       }
 
       // 流式读取，边读边累加，超限立刻掐断——避免"声明小实际大"的情况
       const reader = res.body?.getReader()
-      if (!reader) return { ok: false, message: '响应没有可读的响应体' }
+      if (!reader) return fail('http-error', '响应没有可读的响应体')
       const chunks: Buffer[] = []
       let total = 0
       for (;;) {
@@ -106,24 +105,24 @@ async function fetchBytes(url: string): Promise<FetchOutcome> {
         total += value.byteLength
         if (total > MAX_BYTES) {
           await reader.cancel().catch(() => undefined)
-          return { ok: false, message: '图片过大（超过 10 MB 上限）' }
+          return fail('too-large', '图片过大（超过 10 MB 上限）')
         }
         chunks.push(Buffer.from(value))
       }
-      if (total === 0) return { ok: false, message: '响应体为空' }
+      if (total === 0) return fail('http-error', '响应体为空')
 
       return { ok: true, bytes: Buffer.concat(chunks), contentType, finalUrl: current }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('abort') || msg.includes('AbortError')) {
-        return { ok: false, message: `请求超时（${TIMEOUT_MS / 1000} 秒）` }
+        return fail('timeout', `请求超时（${TIMEOUT_MS / 1000} 秒）`)
       }
-      return { ok: false, message: `请求失败：${msg}` }
+      return fail('network', `请求失败：${msg}`)
     } finally {
       clearTimeout(timer)
     }
   }
-  return { ok: false, message: `重定向超过 ${MAX_REDIRECTS} 跳` }
+  return fail('too-many-redirects', `重定向超过 ${MAX_REDIRECTS} 跳`)
 }
 
 const IMG_EXT = /\.(jpe?g|png|webp|bmp|gif|avif|jfif)(?:$|[?#])/i
@@ -182,23 +181,17 @@ export function pickImageFromHtml(html: string, baseUrl: string): string | null 
  */
 export async function fetchImageFromUrl(rawUrl: string): Promise<FetchImageResult> {
   const input = rawUrl.trim()
-  if (!input) return failure('请输入图片链接')
+  if (!input) return fail('invalid-input', '请输入图片链接')
   if (!isHttpUrl(input)) {
-    return failure('只支持 http / https 开头的链接')
+    return fail('unsupported-protocol', '只支持 http / https 开头的链接')
   }
 
   const first = await fetchBytes(input)
-  if (!first.ok) return failure(first.message, input)
+  if (!first.ok) return fail(first.code, first.message)
 
   // 情况一：直接就是图片
   if (first.contentType.startsWith('image/')) {
-    return {
-      ok: true,
-      data: first.bytes,
-      contentType: first.contentType,
-      finalUrl: first.finalUrl,
-      message: `已获取图片（${(first.bytes.length / 1024).toFixed(0)} KB）`
-    }
+    return { ok: true, data: first.bytes, contentType: first.contentType, finalUrl: first.finalUrl }
   }
 
   // 非图片也不像网页：有些站点会返回 application/octet-stream，用扩展名兜一下
@@ -207,15 +200,14 @@ export async function fetchImageFromUrl(rawUrl: string): Promise<FetchImageResul
       ok: true,
       data: first.bytes,
       contentType: first.contentType || 'image/jpeg',
-      finalUrl: first.finalUrl,
-      message: `已获取图片（${(first.bytes.length / 1024).toFixed(0)} KB）`
+      finalUrl: first.finalUrl
     }
   }
 
   if (!first.contentType.includes('html') && !first.contentType.includes('text/')) {
-    return failure(
-      `该链接返回的不是图片（Content-Type: ${first.contentType || '未知'}）`,
-      first.finalUrl
+    return fail(
+      'no-image',
+      `该链接返回的不是图片（Content-Type: ${first.contentType || '未知'}）`
     )
   }
 
@@ -224,38 +216,32 @@ export async function fetchImageFromUrl(rawUrl: string): Promise<FetchImageResul
   try {
     html = new TextDecoder('utf-8', { fatal: false }).decode(first.bytes)
   } catch {
-    return failure('网页内容解码失败', first.finalUrl)
+    return fail('decode-failed', '网页内容解码失败')
   }
 
   const imageUrl = pickImageFromHtml(html, first.finalUrl)
   if (!imageUrl) {
-    return failure('这个网页里没找到图片（og:image 与 <img> 都没有）', first.finalUrl)
+    return fail('no-image', '这个网页里没找到图片（og:image 与 <img> 都没有）')
   }
 
   // 解析出的地址可能与原页同域也可能跨域，只再取一次，不再递归
   for (let i = 1; i < MAX_IMAGE_FETCHES; i++) {
     if (!isHttpUrl(imageUrl)) break
     const img = await fetchBytes(imageUrl)
-    if (!img.ok) return failure(`找到主图但下载失败：${img.message}`, imageUrl)
+    if (!img.ok) return fail(img.code, `找到主图但下载失败：${img.message}`)
     if (img.contentType.startsWith('image/')) {
-      return {
-        ok: true,
-        data: img.bytes,
-        contentType: img.contentType,
-        finalUrl: img.finalUrl,
-        message: `已从网页取到主图（${(img.bytes.length / 1024).toFixed(0)} KB）`
-      }
+      return { ok: true, data: img.bytes, contentType: img.contentType, finalUrl: img.finalUrl }
     }
     break
   }
 
-  return failure('找到的地址仍然不是图片，请直接贴图片直链', imageUrl)
+  return fail('no-image', '找到的地址仍然不是图片，请直接贴图片直链')
 }
 
 /** 给日志用的短标识：取文件名并附内容指纹前 8 位，便于区分两次请求 */
 export function describeUrlForLog(result: FetchImageResult): string {
   if (!result.ok) return `失败(${result.message})`
-  const bytes = result.data ?? Buffer.alloc(0)
+  const bytes = result.data
   const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 8)
   const name = (() => {
     try {

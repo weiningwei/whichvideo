@@ -13,7 +13,7 @@
  *
  * 运行： node scripts/build-core.mjs && node scripts/test-url-image.mjs
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -135,25 +135,42 @@ async function main() {
   console.log('')
   console.log('=== 协议校验（安全边界）===')
   const reject = [
-    ['file: 协议', 'file:///C:/Windows/System32/config/SAM'],
-    ['file: 本地图片', 'file:///E:/secret.png'],
-    ['data: 内联数据', 'data:image/png;base64,iVBORw0KGgo='],
-    ['javascript: 伪协议', 'javascript:alert(1)'],
-    ['ftp: 协议', 'ftp://example.com/a.jpg'],
-    ['chrome: 协议', 'chrome://settings'],
-    ['无协议的裸路径', 'E:\\Media\\poster.jpg'],
-    ['空字符串', ''],
-    ['纯空格', '   ']
+    ['file: 协议', 'file:///C:/Windows/System32/config/SAM', 'unsupported-protocol'],
+    ['file: 本地图片', 'file:///E:/secret.png', 'unsupported-protocol'],
+    ['data: 内联数据', 'data:image/png;base64,iVBORw0KGgo=', 'unsupported-protocol'],
+    ['javascript: 伪协议', 'javascript:alert(1)', 'unsupported-protocol'],
+    ['ftp: 协议', 'ftp://example.com/a.jpg', 'unsupported-protocol'],
+    ['chrome: 协议', 'chrome://settings', 'unsupported-protocol'],
+    ['无协议的裸路径', 'E:\\Media\\poster.jpg', 'unsupported-protocol'],
+    ['空字符串', '', 'invalid-input'],
+    ['纯空格', '   ', 'invalid-input']
   ]
-  for (const [label, input] of reject) {
+  for (const [label, input, expectCode] of reject) {
     const res = await fetchImageFromUrl(input)
-    check(`拒绝 ${label}`, res.ok === false && res.data === null, res.message)
+    check(
+      `拒绝 ${label}`,
+      res.ok === false && res.code === expectCode && !!res.message,
+      `code=${res.ok ? '(成功)' : res.code} — ${res.message}`
+    )
   }
   check(
     '拒绝时明确说明是协议问题',
     (await fetchImageFromUrl('file:///C:/x.png')).message.includes('只支持 http'),
     '提示只支持 http / https'
   )
+  // 错误码必须是 shared/result.ts 枚举里的成员——防止调用点手写拼错的字符串
+  //（TS 编译期拦得住模块内，拦不住测试里的期望值）。
+  {
+    const sharedSrc = readFileSync(join(root, 'src', 'shared', 'result.ts'), 'utf8')
+    const enumBlock = sharedSrc.match(/export type ErrorCode =([\s\S]*?)\n\n/)?.[1] ?? ''
+    const defined = new Set([...enumBlock.matchAll(/'([a-z-]+)'/g)].map((m) => m[1]))
+    const expectCodes = reject.map(([, , code]) => code)
+    check(
+      '测试里的期望错误码都在 ErrorCode 枚举里',
+      expectCodes.length > 0 && expectCodes.every((c) => defined.has(c)),
+      expectCodes.filter((c) => !defined.has(c)).join(', ') || `${expectCodes.length} 个均合法`
+    )
+  }
 
   console.log('')
   console.log('=== 日志标识 describeUrlForLog ===')
@@ -161,14 +178,13 @@ async function main() {
     ok: true,
     data: Buffer.from('fake-png-bytes'),
     contentType: 'image/png',
-    finalUrl: 'https://cdn.example.com/poster.jpg',
-    message: ''
+    finalUrl: 'https://cdn.example.com/poster.jpg'
   }
   const logLine = describeUrlForLog(okRes)
   check('成功时含文件名与体积', logLine.includes('poster.jpg') && logLine.includes('14B'), logLine)
   check(
     '失败时给出原因',
-    describeUrlForLog({ ok: false, data: null, contentType: null, finalUrl: null, message: '超时' }).includes('超时'),
+    describeUrlForLog({ ok: false, code: 'timeout', message: '超时' }).includes('超时'),
     '失败(超时)'
   )
   // 同样的字节应得到同样的指纹，便于日志里区分两次不同的请求
