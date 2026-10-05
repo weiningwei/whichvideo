@@ -70,9 +70,6 @@ export function LibraryView(props: Props) {
     return groups
   }, [videos, folders, groupByFolder])
 
-  // 注：原先这里有两个 useEffect 用来同步表头/分组复选框的 indeterminate 态。
-  // 复选框已全部移除（选中改为竖条提示 + 整行点击），故不再需要这两个 ref。
-
   // 键盘导航与快捷操作（光标状态与导航原语在 useVideoCursor 里）
   const {
     navigableItems, videoRowIndexes, focusedIndex, focusedRowPos, focusedVideoId,
@@ -148,7 +145,6 @@ export function LibraryView(props: Props) {
           }
           break
 
-        // Enter：有选中就播放第一个选中的；否则播放焦点处的
         case 'Enter': {
           if (onButton) return
           e.preventDefault()
@@ -163,7 +159,6 @@ export function LibraryView(props: Props) {
           toggleFocusedSelection(e.shiftKey, mod)
           break
 
-        // Ctrl+L 定位文件 / Ctrl+R 重建索引
         case 'l':
         case 'L':
           if (!mod) return

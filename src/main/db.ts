@@ -621,7 +621,6 @@ interface RawFrameRow {
   time_ms: number
 }
 
-/** uint64 → 8 字节 little-endian */
 export function u64ToLe(value: number): Uint8Array {
   const out = new Uint8Array(8)
   const big = BigInt.asUintN(64, BigInt(value))

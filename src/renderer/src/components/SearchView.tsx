@@ -14,7 +14,6 @@ interface Props {
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
   onSearchClipboard: () => void
-  /** 从 http(s) 链接取图并检索（图片直链或普通网页均可） */
   onSearchUrl: (url: string) => void
   onReSearch: () => void
   onClear: () => void
@@ -44,7 +43,6 @@ export function SearchView(props: Props) {
 
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
-  /** 链接输入框的内容（图片直链或网页地址） */
   const [urlInput, setUrlInput] = useState('')
 
   /**
@@ -75,7 +73,6 @@ export function SearchView(props: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Ctrl+V 粘贴图片
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items
@@ -185,7 +182,6 @@ export function SearchView(props: Props) {
               {searching && <span className="self-center text-[12px] text-accent">比对中…</span>}
             </div>
 
-            {/* 链接输入：贴图片直链或普通网页都行，主进程会解析出主图后检索 */}
             <div className="mt-2.5 flex items-center gap-2">
               <input
                 ref={urlInputRef}

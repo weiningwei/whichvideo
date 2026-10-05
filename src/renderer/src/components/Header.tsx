@@ -22,12 +22,10 @@ interface Props {
   onImportFiles: () => void
   onImportFolder: () => void
   busy: string | null
-  /** 当前主题模式（dark / light / system） */
   themeMode: ThemeMode
   /** system 模式解析后的实际主题，仅用于提示文案 */
   themeResolved: ResolvedTheme
   onCycleTheme: () => void
-  /** 打开快捷键帮助面板 */
   onShowShortcuts: () => void
 }
 

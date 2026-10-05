@@ -139,7 +139,6 @@ const openDatabases: { close: () => void }[] = []
  * 判定逻辑见 ./datadir.ts，这里只负责与 Electron 对接。
  * ------------------------------------------------------------------ */
 
-/** 判断目录能否写入（不存在时尝试创建） */
 function isWritableDir(dir: string): boolean {
   try {
     mkdirSync(dir, { recursive: true })

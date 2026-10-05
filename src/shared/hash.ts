@@ -196,7 +196,6 @@ function encodeChannel(
   const mean = grid.length ? sum / grid.length : 0
   const bits = Math.min(maxBits, grid.length)
   for (let bit = 0; bit < bits; bit++) {
-    // 等距抽样：256 格取 128 格时步长为 2，均匀落在网格各处
     const i = grid.length === bits ? bit : Math.floor((bit * grid.length) / bits)
     if (grid[i] >= mean) {
       const pos = bitOffset + bit

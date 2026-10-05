@@ -14,7 +14,6 @@ interface Props {
 }
 
 export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
-  // 打开时 Esc 关闭、Tab 不逃出面板（焦点陷阱），点遮罩也能关
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {

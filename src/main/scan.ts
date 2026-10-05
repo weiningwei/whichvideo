@@ -9,10 +9,10 @@
  *   · 少量帧：每个时间点一个 `-ss` 精确跳转（scan.ts::extractAndHashBySeek）
  *   · 大量帧：单次全片解码 + fps 采样（scan.ts::extractAndHashByFullScan）
  */
-import { existsSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
-import { basename, extname, join, relative, sep } from 'node:path'
-import { isVideoFile, normalizePath, pathKeyOf, type AppSettings, type LibraryEvent } from '@shared/types'
+import { join, relative, sep } from 'node:path'
+import { isVideoFile, pathKeyOf, type AppSettings, type LibraryEvent } from '@shared/types'
 import { computeSignature, type ImageDataLike } from '@shared/hash'
 import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } from './media'
 import { quantizeColor } from '@shared/framepack'
@@ -246,7 +246,6 @@ export function statFile(filePath: string): { size: number; mtimeMs: number } | 
   }
 }
 
-/** 判断 dir 是否位于 root 之内（含自身） */
 export function isInside(root: string, dir: string): boolean {
   const r = pathKeyOf(root)
   const d = pathKeyOf(dir)
@@ -258,9 +257,3 @@ export function relativeDir(root: string, dir: string): string {
   const rel = relative(root, dir)
   return rel === '' ? '.' : rel.split(sep).join('/')
 }
-
-export function videoName(filePath: string): string {
-  return basename(filePath, extname(filePath))
-}
-
-export { existsSync, normalizePath }

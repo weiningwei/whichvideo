@@ -241,7 +241,6 @@ function stamp() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
-/** 目录里所有普通文件的总字节数（用来核对拷贝是否完整） */
 /** 递归统计目录占用字节；excludeDirName 的含义同 countFiles */
 function directorySize(dir, excludeDirName) {
   let total = 0
@@ -468,7 +467,6 @@ function runElectronBuilder() {
   const packedAsar = join(unpackedDir, 'resources', 'app.asar')
   const outMain = join(root, 'out', 'main', 'index.js')
   const outMtime = statSync(outMain).mtimeMs
-  const staleBefore = !existsSync(packedAsar) || statSync(packedAsar).mtimeMs < outMtime
 
   console.log('运行 electron-builder（--win dir）…')
   const r = spawnSync(
@@ -503,7 +501,6 @@ function runElectronBuilder() {
   }
 
   console.log(`  ✓ 本次打包产物已更新（app.asar ${new Date(statSync(packedAsar).mtimeMs).toLocaleString('zh-CN')}）`)
-  void staleBefore
   assertPackageFreshness()
 }
 

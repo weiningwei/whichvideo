@@ -194,7 +194,6 @@ export class FrameSearchIndex {
   }
 }
 
-/** 结构指纹与内存缓冲区的汉明距离（64 字节） */
 function hammingInBuffer(a: Uint8Array, b: Uint8Array, bOffset: number): number {
   let dist = 0
   for (let i = 0; i < STRUCT_BYTES; i += 4) {
@@ -216,5 +215,3 @@ function popcount(x: number): number {
   x = (x + (x >>> 4)) & 0x0f0f0f0f
   return (x * 0x01010101) >>> 24
 }
-
-export { FRAME_STRIDE }

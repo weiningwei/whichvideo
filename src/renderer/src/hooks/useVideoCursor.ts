@@ -36,7 +36,6 @@ export function useVideoCursor({
   toggleVideoSelection,
   toggleFolderExpanded
 }: UseVideoCursorArgs) {
-  // 分组视图：标题 + 展开的视频行；平铺视图：纯视频列表
   const navigableItems = useMemo<NavigableItem[]>(() => {
     if (!groupByFolder || !groupedVideos) {
       return videos.map((v, idx) => ({ type: 'video' as const, video: v, index: idx }))

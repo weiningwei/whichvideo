@@ -5,7 +5,7 @@
  * 为避免 WebView/Electron 打包路径问题，watcher 只监听磁盘目录。
  */
 import { existsSync, statSync } from 'node:fs'
-import { normalizePath, pathKeyOf, type LibraryEvent, type WatchedFolder } from '@shared/types'
+import { isVideoFile, normalizePath, pathKeyOf, type LibraryEvent, type WatchedFolder } from '@shared/types'
 import type { LibraryDatabase } from './db'
 import type { Indexer } from './indexer'
 
@@ -55,7 +55,6 @@ export class FolderWatcher {
     return [...this.entries.values()].filter((e) => e.ready).length
   }
 
-  /** 按数据库中的文件夹配置重建全部监听 */
   async syncAll(): Promise<void> {
     if (this.starting) return
     this.starting = true
@@ -137,12 +136,12 @@ export class FolderWatcher {
     })
     watcher.on('change', (...args: unknown[]) => {
       const filePath = String(args[0])
-      if (!isVideo(filePath)) return
+      if (!isVideoFile(filePath)) return
       this.handleUpsert(filePath)
     })
     watcher.on('unlink', (...args: unknown[]) => {
       const filePath = String(args[0])
-      if (!isVideo(filePath)) return
+      if (!isVideoFile(filePath)) return
       this.indexer.onFileRemoved(normalizePath(filePath))
       this.emit({ type: 'notice', level: 'info', message: `文件已移除：${filePath}` })
     })
@@ -161,7 +160,7 @@ export class FolderWatcher {
   }
 
   private handleUpsert(filePath: string): void {
-    if (!isVideo(filePath)) return
+    if (!isVideoFile(filePath)) return
     const normalized = normalizePath(filePath)
     try {
       if (!statSync(normalized).isFile()) return
@@ -225,27 +224,4 @@ export class FolderWatcher {
       recursive: e.recursive
     }))
   }
-}
-
-function isVideo(filePath: string): boolean {
-  const dot = filePath.lastIndexOf('.')
-  if (dot < 0) return false
-  const ext = filePath.slice(dot).toLowerCase()
-  return [
-    '.mp4',
-    '.mkv',
-    '.avi',
-    '.mov',
-    '.wmv',
-    '.flv',
-    '.webm',
-    '.m4v',
-    '.mpg',
-    '.mpeg',
-    '.ts',
-    '.m2ts',
-    '.rmvb',
-    '.rm',
-    '.3gp'
-  ].includes(ext)
 }

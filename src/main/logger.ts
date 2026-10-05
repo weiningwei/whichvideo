@@ -6,7 +6,7 @@
  * <数据目录>\whichvideo.log，任何启动问题都能事后查。
  */
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 const MAX_LOG_BYTES = 512 * 1024
 
@@ -109,5 +109,3 @@ export function resetLogger(): void {
 export function logFileIn(dir: string): string {
   return join(dir, 'whichvideo.log')
 }
-
-void dirname

@@ -14,7 +14,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
-/** data-theme 上真正落下的值 */
 export type ResolvedTheme = 'dark' | 'light'
 
 const STORAGE_KEY = 'wv-theme'
@@ -52,7 +51,6 @@ export function useTheme() {
     apply(r)
   }, [])
 
-  // 首次挂载 + 模式变化时落地
   useEffect(() => {
     sync(mode)
     try {

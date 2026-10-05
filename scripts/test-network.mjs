@@ -122,7 +122,7 @@ console.log('=== 3. 链接取图的边界 ===')
   // 关键词要精确：'user' 会误伤 User-Agent（那是固定字符串，上一条已单独断言）。
   // 这里只找"可能夹带本机信息/凭据"的字段名。
   const machineKeys = [
-    'hostname', 'username', 'userdir', 'homedir', 'homedir', 'user-agent-token',
+    'hostname', 'username', 'userdir', 'homedir', 'user-agent-token',
     'profile', 'token', 'auth', 'cookie', 'referer', 'origin', 'x-forwarded', 'mac', 'serial'
   ]
   const headerNames = [...headers.matchAll(/['"]([A-Za-z-]+)['"]\s*:/g)].map((m) => m[1].toLowerCase())

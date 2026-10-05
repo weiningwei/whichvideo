@@ -97,7 +97,6 @@ export function useLibrary() {
     setSelectedVideoIds((prev) => {
       const next = new Set(prev)
       if (shiftKey && anchor !== null) {
-        // Range selection
         const allIds = videos.map(v => v.id)
         const start = allIds.indexOf(anchor)
         const end = allIds.indexOf(videoId)

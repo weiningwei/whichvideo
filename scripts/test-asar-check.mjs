@@ -126,7 +126,6 @@ async function main() {
 
   rmSync(work, { recursive: true, force: true })
   console.log(`\n=== asar 校验逻辑：${passed}/${passed + failed} 通过 ===`)
-  void readFileSync
   if (failed) process.exit(1)
 }
 

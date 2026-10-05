@@ -109,10 +109,6 @@ async function getJson(url) {
  * 小工具
  * ------------------------------------------------------------------ */
 
-function log(msg) {
-  console.log(msg)
-}
-
 function whichSync(name) {
   const r = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], { encoding: 'utf8' })
   if (r.status !== 0) return null
@@ -224,8 +220,8 @@ async function download(url, target) {
 
   const total = Number(response.headers.get('content-length') ?? 0)
   const host = response.url ? new URL(response.url).host : ''
-  log(`  地址：${url}${host && !url.includes(host) ? `（→ ${host}）` : ''}`)
-  log(`  大小：${total ? formatBytes(total) : '未知（服务器未给出 Content-Length）'}`)
+  console.log(`  地址：${url}${host && !url.includes(host) ? `（→ ${host}）` : ''}`)
+  console.log(`  大小：${total ? formatBytes(total) : '未知（服务器未给出 Content-Length）'}`)
 
   let received = 0
   let lastPrint = 0
@@ -281,7 +277,7 @@ async function download(url, target) {
 
   rmSync(target, { force: true })
   renameSync(tmpPath, target)
-  log(`  完成：${formatBytes(size)}，用时 ${((Date.now() - started) / 1000).toFixed(0)}s`)
+  console.log(`  完成：${formatBytes(size)}，用时 ${((Date.now() - started) / 1000).toFixed(0)}s`)
 }
 
 function extractZip(zipPath, destDir) {
@@ -318,7 +314,7 @@ function installBinaries(sourceDir, originLabel) {
     copyFileSync(from, to)
     const version = verifyBinary(to)
     if (!version) throw new Error(`${name} 复制后无法执行：${to}`)
-    log(`  ✓ ${name} — ${version}`)
+    console.log(`  ✓ ${name} — ${version}`)
   }
 }
 
@@ -338,7 +334,7 @@ async function main() {
   const targets = EXE_NAMES.map((name) => join(outDir, name))
 
   if (targets.every((p) => existsSync(p)) && !options.force && !options.from && !options.url) {
-    log('resources/bin 下已存在 ffmpeg 与 ffprobe，跳过。需要覆盖请加 --force。')
+    console.log('resources/bin 下已存在 ffmpeg 与 ffprobe，跳过。需要覆盖请加 --force。')
     return
   }
 
@@ -347,15 +343,15 @@ async function main() {
     const src = resolve(options.from)
     if (!existsSync(src)) throw new Error(`路径不存在：${src}`)
     if (statSync(src).isDirectory()) {
-      log(`从本地目录安装：${src}`)
+      console.log(`从本地目录安装：${src}`)
       installBinaries(src, '本地目录')
     } else {
-      log(`从本地压缩包安装：${src}`)
+      console.log(`从本地压缩包安装：${src}`)
       const unpacked = join(cacheDir, 'unpack-local')
       extractZip(src, unpacked)
       installBinaries(unpacked, '本地压缩包')
     }
-    log(`\n完成，产物在 ${outDir}`)
+    console.log(`\n完成，产物在 ${outDir}`)
     return
   }
 
@@ -364,9 +360,9 @@ async function main() {
     const localFfmpeg = whichSync('ffmpeg')
     const localFfprobe = whichSync('ffprobe')
     if (localFfmpeg && localFfprobe) {
-      log(`发现本机已装 ffmpeg，直接复制（不联网）：\n  ${localFfmpeg}\n  ${localFfprobe}`)
+      console.log(`发现本机已装 ffmpeg，直接复制（不联网）：\n  ${localFfmpeg}\n  ${localFfprobe}`)
       installBinaries(dirname(localFfmpeg), '本机安装')
-      log(`\n完成，产物在 ${outDir}`)
+      console.log(`\n完成，产物在 ${outDir}`)
       return
     }
   }
@@ -386,14 +382,14 @@ async function main() {
   let zipPath = null
 
   for (const [index, source] of sources.entries()) {
-    log(`\n[${index + 1}/${sources.length}] ${source.label}`)
+    console.log(`\n[${index + 1}/${sources.length}] ${source.label}`)
     try {
       const url = await source.url()
       if (!url) throw new Error('无法解析出下载地址（release API 里没有该资源）')
       const name = basename(new URL(url).pathname) || 'ffmpeg.zip'
       const target = join(cacheDir, `${source.id}-${name}`)
       if (existsSync(target) && statSync(target).size >= MIN_ZIP_BYTES && !options.force) {
-        log(`  复用已下载的缓存：${target}`)
+        console.log(`  复用已下载的缓存：${target}`)
       } else {
         await download(url, target)
       }
@@ -402,9 +398,9 @@ async function main() {
     } catch (err) {
       const message = describe(err)
       failures.push(`${source.id}: ${message}`)
-      log(`  ✗ ${message}`)
+      console.log(`  ✗ ${message}`)
       if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
-        log('  （检测到代理环境变量；Node 需要 NODE_USE_ENV_PROXY=1 才会走代理）')
+        console.log('  （检测到代理环境变量；Node 需要 NODE_USE_ENV_PROXY=1 才会走代理）')
       }
     }
   }
@@ -424,14 +420,14 @@ async function main() {
     )
   }
 
-  log('\n解压并校验 …')
+  console.log('\n解压并校验 …')
   const unpacked = join(cacheDir, 'unpack')
   extractZip(zipPath, unpacked)
   installBinaries(unpacked, '下载的压缩包')
   rmSync(unpacked, { recursive: true, force: true })
 
-  log(`\n完成，产物在 ${outDir}${sep}`)
-  log('打包时 electron-builder 会把它复制到安装目录的 resources/bin。')
+  console.log(`\n完成，产物在 ${outDir}${sep}`)
+  console.log('打包时 electron-builder 会把它复制到安装目录的 resources/bin。')
 }
 
 try {

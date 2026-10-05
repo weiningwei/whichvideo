@@ -12,7 +12,7 @@ import {
   type VideoRecord,
   type VideoStatus
 } from '@shared/types'
-import { normalizePath, pathKeyOf } from '@shared/types'
+import { normalizePath } from '@shared/types'
 import { makeThumbnail, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
 import { extractAndHash, scanVideoFiles, statFile, type EventEmitter } from './scan'
 import { log, logError } from './logger'
@@ -127,7 +127,6 @@ export class Indexer {
 
   /* ------------------------------ 导入 ------------------------------ */
 
-  /** 导入单个（或多个）视频文件 */
   async importFiles(files: string[], folderId: number | null = null, options: ImportOptions = {}): Promise<ImportResult> {
     const result: ImportResult = { added: 0, duplicates: 0, skipped: 0, scanned: 0, folders: 0 }
     const t = this.tools
@@ -245,7 +244,6 @@ export class Indexer {
 
   /* --------------------------- 外部文件变更 --------------------------- */
 
-  /** 监听器发现新文件/文件被修改 */
   onFileUpsert(filePath: string, folderId: number | null): void {
     try {
       const normalized = normalizePath(filePath)
@@ -280,7 +278,6 @@ export class Indexer {
     }
   }
 
-  /** 监听器发现文件被删除 */
   onFileRemoved(filePath: string): void {
     const video = this.db.findByPath(filePath)
     if (!video) return
@@ -293,7 +290,6 @@ export class Indexer {
     this.broadcastStats()
   }
 
-  /** 监听器发现整个目录被删除 */
   onDirectoryRemoved(dirPath: string): void {
     const ids = this.db.removeVideosUnder(dirPath)
     for (const id of ids) {
@@ -311,7 +307,6 @@ export class Indexer {
 
   /* ------------------------------ 队列 ------------------------------ */
 
-  /** 启动时恢复未完成的索引任务 */
   resumePending(): void {
     let stale = 0
     for (const video of this.db.listPendingVideos()) {
@@ -331,7 +326,6 @@ export class Indexer {
     }
   }
 
-  /** 重新索引（可指定视频，默认全部） */
   async reindex(videoIds?: number[]): Promise<number> {
     const targets = videoIds?.length
       ? videoIds.map((id) => this.db.getVideo(id)).filter((v): v is VideoRecord => !!v)
@@ -444,9 +438,4 @@ export function describeImport(result: ImportResult): string {
   if (result.skipped) parts.push(`跳过 ${result.skipped}`)
   parts.push(`扫描 ${result.scanned}`)
   return parts.join('，')
-}
-
-/** 供调试用：把文件路径映射回监听文件夹的 pathKey */
-export function folderKeyOf(dirPath: string): string {
-  return pathKeyOf(dirPath)
 }

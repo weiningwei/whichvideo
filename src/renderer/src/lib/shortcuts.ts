@@ -15,13 +15,9 @@
 
 /** 单个快捷键的展示信息（帮助面板用） */
 export interface ShortcutDoc {
-  /** 按键名，如 'Enter'、'Delete'、'Ctrl' */
   keys: string
-  /** 做什么 */
   label: string
-  /** 分组标题 */
   group: string
-  /** 是否只在分组视图下生效 */
   onlyGrouped?: boolean
 }
 
@@ -29,7 +25,6 @@ export interface ShortcutDoc {
 export const isMac =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
 
-/** 把逻辑键名转成该平台该显示的样子 */
 export function renderKeys(keys: string): string {
   return keys
     .split('+')

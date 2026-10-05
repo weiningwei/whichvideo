@@ -102,16 +102,6 @@ if ($found -eq 0) {
   Write-Output '  用资源监视器 →「CPU」→「关联的句柄」搜索目录名，能看到具体是谁打开了它们。'
 }
 
-if ($Brief) {
-  # 供脚本调用：一行摘要，便于写进报错信息
-  if ($foundCwd -gt 0) {
-    $unique = ($names | Sort-Object -Unique) -join '、'
-    Write-Output ("HOLDERS {0} 个进程的工作目录停在它（或其上级）：{1}" -f $foundCwd, $unique)
-  } else {
-    Write-Output 'HOLDERS 没有进程把它当作工作目录'
-  }
-}
-
 if ($All) {
   Write-Output ''
   Write-Output '--- 命令行里提到 whichvideo 的进程 ---'

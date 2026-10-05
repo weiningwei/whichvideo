@@ -1,16 +1,12 @@
 import { useState, type ReactNode } from 'react'
 
 interface Props {
-  /** 「+ 添加」等主操作，监听页显示 */
   onAddFolder: () => void
-  /** 监听文件夹列表 */
   folders: ReactNode
-  /** 是否处于拖拽高亮（拖文件夹进来时） */
   folderDrop: boolean
   onDragOver: (e: React.DragEvent) => void
   onDragLeave: () => void
   onDrop: (e: React.DragEvent) => void
-  /** 索引设置面板 */
   settings: ReactNode
   /** 监听目录数量，用于标签上的计数 */
   folderCount: number

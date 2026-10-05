@@ -141,7 +141,6 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
   })
 }
 
-/** ffprobe 读取容器/流信息 */
 export async function probeVideo(filePath: string, tools?: ToolPaths): Promise<VideoProbeInfo> {
   const t = tools ?? requireTools()
   const args = [
@@ -238,7 +237,6 @@ export const DEFAULT_FRAME_BUDGET = 240
  */
 export const SEEK_VS_FULLSCAN_CROSSOVER = 48
 
-/** 帧数是否已越过交叉点（该用单次全片解码了） */
 export function shouldUseFullScan(frameCount: number): boolean {
   return frameCount > SEEK_VS_FULLSCAN_CROSSOVER
 }
@@ -393,7 +391,6 @@ export async function extractFrames(
   return frames
 }
 
-/** 生成 JPEG 缩略图（默认 320 宽） */
 export async function makeThumbnail(
   filePath: string,
   timeSeconds: number,
@@ -441,14 +438,4 @@ export async function isDecodable(filePath: string, tools?: ToolPaths): Promise<
   } catch {
     return false
   }
-}
-
-/** 简易抽帧接口：返回每帧的 RGB24 原始像素（不带头部，调用方按顺序对齐时间点） */
-export async function frameToRgb24(
-  filePath: string,
-  timestamps: number[],
-  tools?: ToolPaths,
-  maxWidth = PROBE_MAX_WIDTH
-): Promise<ExtractedFrame[]> {
-  return extractFrames(filePath, timestamps, tools, { maxWidth })
 }

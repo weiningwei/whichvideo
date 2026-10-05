@@ -58,7 +58,8 @@ function clickRow(items, focusedIndex, videoId) {
 }
 
 /** 复刻 jumpCursor：Home / End / PageUp / PageDown 用 */
-function jump(items, pos) {  const rows = videoRowIndexesOf(items)
+function jump(items, pos) {
+  const rows = videoRowIndexesOf(items)
   if (rows.length === 0) return null
   const nextPos = Math.max(0, Math.min(rows.length - 1, pos))
   return { nextIndex: rows[nextPos] }
