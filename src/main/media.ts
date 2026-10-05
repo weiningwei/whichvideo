@@ -297,6 +297,8 @@ export async function extractFrames(
   const rate = timestamps.length / Math.max(duration, 0.001)
 
   const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin', '-i', filePath]
+  // 启用进度输出到 stderr，供 onProgress 解析
+  if (options.onFrame) args.push('-progress', 'pipe:2')
   const filter = `fps=${rate.toFixed(8)},scale=w='min(${maxWidth},iw)':h=-2`
   args.push(
     '-vf',
