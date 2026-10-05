@@ -500,15 +500,26 @@ export class Indexer {
       }
     }
 
-    this.frameProgress.delete(videoId)
-    const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
-    const thumbnail = await makeThumbnail(video.path, thumbTime, t)
-    // 更新缩略图和最终状态
+    this.frameProgress.set(videoId, { done: currentProcessed.length, total: timestamps.length })
+    this.broadcastStatus()
+
+    // 生成缩略图并更新最终状态（兜底：即使缩略图失败也要标记完成）
+    let thumbnail: Buffer | null = null
+    try {
+      const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
+      thumbnail = await makeThumbnail(video.path, thumbTime, t)
+    } catch (err) {
+      logError('生成缩略图失败', err)
+    }
+    // 更新最终状态（包含帧数、状态、缩略图）
     this.db.setReadyWithThumbnail(videoId, thumbnail)
     log(`索引完成：${video.path}（${allNewFrames.length} 新增帧，总计 ${currentProcessed.length} 帧）`)
 
     this.scheduleIndexRebuild()
     const updated = this.db.getVideo(videoId)
+    // 确保 frameProgress 在发出最终事件后再清理
+    this.frameProgress.delete(videoId)
+    this.broadcastStatus()
     if (updated) this.emit({ type: 'video-updated', video: updated })
   }
 
