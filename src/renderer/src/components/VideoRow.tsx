@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
@@ -66,6 +66,35 @@ export function VideoRow({
     }
   }, [video.id, video.status])
 
+  // 计算已用时间与预估剩余时间
+  const startTimeRef = useRef<number | null>(null)
+  const prevDoneRef = useRef<number>(0)
+  const elapsedMs = frameProgress && video.status === 'indexing'
+    ? Date.now() - (startTimeRef.current ?? Date.now())
+    : 0
+  const remainingMs = (() => {
+    if (!frameProgress || video.status !== 'indexing' || frameProgress.total <= 0) return 0
+    const done = frameProgress.done
+    if (done <= 0) return 0
+    const rate = done / (elapsedMs / 1000) // frames per second
+    if (rate <= 0) return 0
+    return Math.round((frameProgress.total - done) / rate * 1000)
+  })()
+
+  // 初始化/重置开始时间
+  useEffect(() => {
+    if (frameProgress && video.status === 'indexing') {
+      if (startTimeRef.current === null || frameProgress.done < prevDoneRef.current) {
+        // 首次获取到进度，或进度回退（重新开始），记录开始时间
+        startTimeRef.current = Date.now() - (frameProgress.done > 0 ? 0 : 0)
+      }
+      prevDoneRef.current = frameProgress.done
+    } else {
+      startTimeRef.current = null
+      prevDoneRef.current = 0
+    }
+  }, [frameProgress, video.status])
+
   const statusCls =
     video.status === 'ready'
       ? 'border-ok/40 bg-ok/10 text-ok'
@@ -85,10 +114,16 @@ export function VideoRow({
 
   const selected = isVideoSelected(video.id)
 
-  // 帧进度条（仅索引中且有进度数据时显示）
+  // 帧进度条 + 时间显示（仅索引中且有进度数据时显示）
   const frameProgressBar = frameProgress && video.status === 'indexing' && frameProgress.total > 0 ? (
-    <div className="mt-1.5 h-1.5 bg-line rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
-      <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
+    <div className="mt-1.5 space-y-1">
+      <div className="flex items-center justify-between text-[10px] text-muted">
+        <span>已用：{formatDuration(Math.round(elapsedMs / 1000))}</span>
+        <span>剩余：{remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
+      </div>
+      <div className="h-1.5 bg-line rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
+        <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
+      </div>
     </div>
   ) : null
 
