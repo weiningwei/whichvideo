@@ -52,14 +52,24 @@ async function waitFor(predicate, timeout = 8000, label = '条件') {
 
 /** 把编译产物里的 require('electron') 重写到本地桩，并复制成独立模块 */
 function makeScenarioBundle(id) {
-  const source = readFileSync(join(outMain, 'index.js'), 'utf8')
   writeFileSync(
     join(outMain, '__electron_stub.cjs'),
     `const stub = globalThis.__ELECTRON_STUB__\nif (!stub) throw new Error('electron 桩未注入')\nmodule.exports = stub\n`
   )
-  const rewritten = source.replace(/require\((['"])electron\1\)/g, "require('./__electron_stub.cjs')")
+  // 重写必须覆盖目录里所有产物，不能只改 index.js：主进程入口由扫描自动生成，
+  // 新拆出的模块（如 ipc.js）也会 require('electron')——只改入口的话它会
+  // 拿到 npm 包的"二进制路径字符串"，ipcMain 变 undefined，启动即
+  // "Cannot read properties of undefined (reading 'handle')"。
+  for (const name of readdirSync(outMain)) {
+    if (!name.endsWith('.js')) continue
+    const p = join(outMain, name)
+    const source = readFileSync(p, 'utf8')
+    const rewritten = source.replace(/require\((['"])electron\1\)/g, "require('./__electron_stub.cjs')")
+    if (rewritten !== source) writeFileSync(p, rewritten)
+  }
+  const source = readFileSync(join(outMain, 'index.js'), 'utf8')
   const target = join(outMain, `index.scenario-${id}.cjs`)
-  writeFileSync(target, rewritten)
+  writeFileSync(target, source)
   return target
 }
 

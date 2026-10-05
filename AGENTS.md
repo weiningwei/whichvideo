@@ -363,7 +363,8 @@ start explorer.exe
 
 ## 项目结构（主进程链路）
 
-`src/main/index.ts`（窗口/IPC/生命周期）→ `db.ts`（SQLite）· `search.ts`（常驻内存帧索引+打分）· `indexer.ts`（抽帧队列）· `watcher.ts`（chokidar）· `media.ts`（ffmpeg/ffprobe 查找）· `scan.ts`（目录扫描）· `datadir.ts`（便携目录判定）· `logger.ts`（日志）。
+`src/main/index.ts`（启动引导/窗口/数据目录/生命周期）与 `src/main/ipc.ts`（26 个 IPC 处理器；不持有模块级可变量，`db/searchIndex/indexer/watcher/broadcast` 等全部经 `IpcDeps` 在 `registerIpc()` 调用点注入，私有辅助 performSearch/剪贴板/对话框也闭包在内）→ `db.ts`（SQLite）· `search.ts`（常驻内存帧索引+打分）· `indexer.ts`（抽帧队列）· `watcher.ts`（chokidar）· `media.ts`（ffmpeg/ffprobe 查找）· `scan.ts`（目录扫描）· `datadir.ts`（便携目录判定）· `logger.ts`（日志）。
+`ipc.ts` 拆出后 `test:startup` 的 electron 桩重写改成了**目录级**：`startup-smoke.mjs` 曾只重写 `out-startup/main/index.js` 里的 `require('electron')`，新模块 `ipc.js` 漏在外面，Node 里 `require('electron')` 拿到的是二进制路径字符串 → `ipcMain` 为 undefined → 启动报 "Cannot read properties of undefined (reading 'handle')"。再往 `src/main/` 加会 import electron 的文件时不用管这条——脚本已按目录扫。
 `src/shared/` 为主/渲染共用（`types.ts` 含 IPC 频道名，`hash.ts` 指纹，`framepack.ts` 144B/帧内存布局）。
 
 更多面向用户的细节（检索原理、参数、常见问题）见 `README.md`。

@@ -102,8 +102,11 @@ console.log('=== 3. 链接取图的边界 ===')
 {
   const url = readFileSync(join(srcDir, 'main', 'url-image.ts'), 'utf8')
   const main = readFileSync(join(srcDir, 'main', 'index.ts'), 'utf8')
+  // IPC 处理器可能被拆到独立文件（如 ipc.ts）——按 handler 所在的实际文件查
+  const ipcPath = join(srcDir, 'main', 'ipc.ts')
+  const ipcSrc = existsSync(ipcPath) ? readFileSync(ipcPath, 'utf8') : ''
 
-  check('由用户主动触发（IPC 处理器，不在启动流程里）', /ipcMain\.handle\(IPC\.searchUrl/.test(main))
+  check('由用户主动触发（IPC 处理器，不在启动流程里）', /ipcMain\.handle\(IPC\.searchUrl/.test(main + ipcSrc))
   const inBootstrap = /async function bootstrap[\s\S]*?searchUrl/.test(main)
   check('启动流程里不会自动触发', !inBootstrap, '只在用户点「链接检索」时调用')
   check('渲染端只能通过 IPC 调它（未直接暴露 fetch）', /byUrl: \(url: string\) => ipcRenderer\.invoke/.test(readFileSync(join(srcDir, 'preload', 'index.ts'), 'utf8')))
