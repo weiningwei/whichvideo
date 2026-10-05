@@ -156,38 +156,38 @@ console.log('=== 边界 ===')
   check('Ctrl 取消后剩 1 个（标题该染色）', c.size() === 1, '实际 ' + c.size() + ' → ' + JSON.stringify(c.ids()))
 }
 
-console.log('=== 实现与 useLibrary 的算法保持一致 ===')
-{
-  // 源码改动后这条会失败，提醒同步更新本脚本的复刻
-  const hookSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8')
-  const algo = hookSrc.slice(hookSrc.indexOf('const toggleVideoSelection'), hookSrc.indexOf('const clearSelection'))
-  check(
-    '复刻的算法与 useLibrary 里的分支结构一致',
-    algo.includes('} else if (ctrlKey) {') &&
-      algo.includes('next.clear()') &&
-      algo.includes('lastSelectedRef.current = videoId'),
-    'useLibrary 的选中算法变了，本脚本的复刻需要同步'
-  )
-  // 下面这条是本 bug 的核心防线：锚点必须走 ref。
-  // 改回 state（哪怕分支结构没变）会立刻被抓住 —— 那个 bug 正是
-  // typecheck 通过、静态断言全绿、只有真去连选才暴露。
-  check(
-    '连选锚点用 ref 而非 state（否则闭包陈旧导致连选退化成单选）',
-    hookSrc.includes('const lastSelectedRef = useRef<number | null>(null)') &&
-      algo.includes('const anchor = lastSelectedRef.current') &&
-      !hookSrc.includes('useState<number | null>(null)'),
-    'lastSelectedRef 存在，且 toggle 内读的是 ref'
-  )
-  check(
-    '连选条件的判断用的是这个 ref 值',
-    algo.includes('if (shiftKey && anchor !== null)'),
-    '不能改回读 state'
-  )
-  check(
-    'clearSelection 也清了锚点（否则取消后再 Shift 会从旧位置扩展）',
-    /const clearSelection[\s\S]{0,200}lastSelectedRef\.current = null/.test(hookSrc),
-    'clearSelection 里要重置 ref'
-  )
+console.log('=== 实现与 useSelection 的算法保持一致 ===')
+  {
+    // 源码改动后这条会失败，提醒同步更新本脚本的复刻
+    const hookSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useSelection.ts'), 'utf8')
+    const algo = hookSrc.slice(hookSrc.indexOf('const toggleVideoSelection'), hookSrc.indexOf('const clearSelection'))
+    check(
+      '复刻的算法与 useSelection 里的分支结构一致',
+      algo.includes('} else if (ctrlKey) {') &&
+        algo.includes('next.clear()') &&
+        algo.includes('lastSelectedRef.current = videoId'),
+      'useSelection 的选中算法变了，本脚本的复刻需要同步'
+    )
+    // 下面这条是本 bug 的核心防线：锚点必须走 ref。
+    // 改回 state（哪怕分支结构没变）会立刻被抓住 —— 那个 bug 正是
+    // typecheck 通过、静态断言全绿、只有真去连选才暴露。
+    check(
+      '连选锚点用 ref 而非 state（否则闭包陈旧导致连选退化成单选）',
+      hookSrc.includes('const lastSelectedRef = useRef<number | null>(null)') &&
+        algo.includes('const anchor = lastSelectedRef.current') &&
+        !hookSrc.includes('useState<number | null>(null)'),
+      'lastSelectedRef 存在，且 toggle 内读的是 ref'
+    )
+    check(
+      '连选条件的判断用的是这个 ref 值',
+      algo.includes('if (shiftKey && anchor !== null)'),
+      '不能改回读 state'
+    )
+    check(
+      'clearSelection 也清了锚点（否则取消后再 Shift 会从旧位置扩展）',
+      /const clearSelection[\s\S]{0,200}lastSelectedRef\.current = null/.test(hookSrc),
+      'clearSelection 里要重置 ref'
+    )
   // 视频行已拆到 VideoRow.tsx、光标逻辑在 useVideoCursor.ts：按合并源码查，
   // 检查范围与拆分前（都在 LibraryView.tsx 里）完全一致。
   const viewSrc = [
