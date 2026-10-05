@@ -121,10 +121,14 @@ export function VideoRow({
     <div className="mt-1.5 space-y-1">
       <div className="flex items-center justify-between text-[10px] text-muted">
         <span>已用：{formatDuration(Math.round(elapsedMs / 1000))}</span>
+        <span>{frameProgress.done}/{frameProgress.total} 帧</span>
         <span>剩余：{remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
       </div>
-      <div className="h-1.5 bg-line rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
+      <div className="h-1.5 bg-line rounded-full overflow-hidden relative" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
         <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
+        <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white/90 select-none pointer-events-none">
+          {Math.round((frameProgress.done / frameProgress.total) * 100)}%
+        </span>
       </div>
     </div>
   ) : null
