@@ -74,6 +74,7 @@ interface VideoRow {
   added_at: number
   indexed_at: number | null
   folder_id: number | null
+  processed_timestamps: string
 }
 
 interface FolderRow {
@@ -91,6 +92,12 @@ interface FolderRow {
 }
 
 function rowToVideo(r: VideoRow): VideoRecord {
+  let processedTimestamps: number[] = []
+  try {
+    processedTimestamps = r.processed_timestamps ? JSON.parse(r.processed_timestamps) : []
+  } catch {
+    processedTimestamps = []
+  }
   return {
     id: r.id,
     path: r.path,
@@ -109,7 +116,8 @@ function rowToVideo(r: VideoRow): VideoRecord {
     error: r.error,
     addedAt: r.added_at,
     indexedAt: r.indexed_at,
-    folderId: r.folder_id
+    folderId: r.folder_id,
+    processedTimestamps
   }
 }
 
@@ -168,7 +176,8 @@ export class LibraryDatabase {
         added_at INTEGER NOT NULL,
         indexed_at INTEGER,
         folder_id INTEGER REFERENCES image_folders(id) ON DELETE SET NULL,
-        thumbnail BLOB
+        thumbnail BLOB,
+        processed_timestamps TEXT NOT NULL DEFAULT '[]'
       );
       CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
       CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder_id);
@@ -204,6 +213,12 @@ export class LibraryDatabase {
         value TEXT NOT NULL
       );
     `)
+    // 迁移：旧库没有 processed_timestamps 列
+    try {
+      this.db.exec(`ALTER TABLE videos ADD COLUMN processed_timestamps TEXT NOT NULL DEFAULT '[]'`)
+    } catch {
+      /* 列已存在 */
+    }
   }
 
   close(): void {
@@ -454,6 +469,36 @@ export class LibraryDatabase {
     return info.changes > 0
   }
 
+  /** 增量插入帧（不删除已有帧），用于断点续传 */
+  upsertFramesIncremental(videoId: number, frames: NewFrame[]): void {
+    const insertMany = this.db.transaction((rows: NewFrame[]) => {
+      for (const f of rows) {
+        this.insertFrameStmt.run(
+          videoId,
+          f.frameIndex,
+          Math.max(0, Math.round(f.timeMs)),
+          Buffer.from(u64ToLe(f.dhash)),
+          Buffer.from(f.struct.subarray(0, STRUCT_BYTES)),
+          Buffer.from(f.color.subarray(0, COLOR_BYTES)),
+          videoId
+        )
+      }
+      this.db
+        .prepare(
+          `UPDATE videos SET frame_count = (SELECT COUNT(*) FROM frames WHERE video_id = ?) WHERE id = ?`
+        )
+        .run(videoId, videoId)
+    })
+    insertMany(frames)
+  }
+
+  /** 更新已处理的时间点索引（断点续传进度） */
+  updateProcessedTimestamps(videoId: number, processedIndices: number[]): void {
+    this.db
+      .prepare('UPDATE videos SET processed_timestamps = ? WHERE id = ?')
+      .run(JSON.stringify(processedIndices), videoId)
+  }
+
   removeVideosUnder(rootPath: string): number[] {
     const key = pathKeyOf(rootPath)
     const rows = this.db
@@ -595,6 +640,15 @@ export class LibraryDatabase {
       | undefined
     if (!row?.thumbnail) return null
     return `data:image/jpeg;base64,${Buffer.from(row.thumbnail).toString('base64')}`
+  }
+
+  /** 更新缩略图并标记为 ready */
+  setReadyWithThumbnail(videoId: number, thumbnail: Buffer | null): void {
+    this.db
+      .prepare(
+        `UPDATE videos SET thumbnail = COALESCE(?, thumbnail), status = 'ready', error = NULL, indexed_at = ? WHERE id = ?`
+      )
+      .run(thumbnail, Date.now(), videoId)
   }
 
   /** 内置演示/自检用：把一帧的量化颜色还原 */

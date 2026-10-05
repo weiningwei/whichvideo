@@ -40,6 +40,8 @@ export interface VideoRecord {
   indexedAt: number | null
   /** 该文件来自哪个被监听的文件夹 */
   folderId: number | null
+  /** 已处理的时间点索引数组（断点续传用） */
+  processedTimestamps: number[]
 }
 
 /** 文件夹监听状态 */

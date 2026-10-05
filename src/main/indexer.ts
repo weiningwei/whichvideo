@@ -19,6 +19,7 @@ import { extractAndHash, scanVideoFiles, statFile } from './scan'
 import type { EmitLibraryEvent, LibraryFileEvent } from './interfaces'
 import { log, logError } from './logger'
 import type { LibraryDatabase } from './db'
+import type { NewFrame } from './db'
 import type { FrameSearchIndex } from './search'
 
 export interface ImportOptions {
@@ -352,6 +353,8 @@ export class Indexer {
     let count = 0
     for (const video of targets) {
       if (!existsSync(video.path)) continue
+      // 强制重建索引时清空已处理进度
+      this.db.updateProcessedTimestamps(video.id, [])
       this.db.setVideoStatus(video.id, 'pending')
       this.enqueue(video.id, video.path, true)
       count++
@@ -438,19 +441,54 @@ export class Indexer {
     }
 
     const timestamps = planTimestamps(duration, settings.framesPerVideo)
+    // 断点续传：只处理未完成的时间点
+    const processed = video.processedTimestamps ?? []
+    const startIndex = processed.length
+    if (startIndex >= timestamps.length) {
+      log(`索引已完成，跳过：${video.path}`)
+      this.db.setVideoStatus(videoId, 'ready')
+      this.emit({ type: 'video-updated', video: { ...video, status: 'ready' as VideoStatus } })
+      this.broadcastStatus()
+      return
+    }
+
     // 初始化帧进度
-    this.frameProgress.set(videoId, { done: 0, total: timestamps.length })
+    this.frameProgress.set(videoId, { done: startIndex, total: timestamps.length })
     this.broadcastStatus()
-    const frames = await extractAndHash(video.path, timestamps, settings, duration, {
-      onFrame: (done, total) => {
-        this.frameProgress.set(videoId, { done, total })
+
+    // 增量处理：每处理一批就落库、更新进度
+    const batchSize = 32 // 每批处理的帧数
+    let allNewFrames: NewFrame[] = []
+    let currentProcessed = [...processed]
+
+    for (let batchStart = startIndex; batchStart < timestamps.length; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, timestamps.length)
+      const batchFrames = await extractAndHash(video.path, timestamps, settings, duration, {
+        startIndex: batchStart,
+        onFrame: (done, total) => {
+          this.frameProgress.set(videoId, { done, total })
+        }
+      })
+
+      if (batchFrames.length > 0) {
+        // 增量写入数据库
+        this.db.upsertFramesIncremental(videoId, batchFrames)
+        allNewFrames.push(...batchFrames)
+        currentProcessed.push(...timestamps.slice(batchStart, batchEnd))
+        this.db.updateProcessedTimestamps(videoId, currentProcessed)
+
+        // 更新视频记录的 frameCount
+        this.db.setVideoStatus(videoId, 'indexing')
+        this.emit({ type: 'video-updated', video: { ...video, status: 'indexing' as VideoStatus, frameCount: currentProcessed.length } })
       }
-    })
+    }
+
     this.frameProgress.delete(videoId)
     const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
     const thumbnail = await makeThumbnail(video.path, thumbTime, t)
-    this.db.replaceFrames(videoId, frames, thumbnail)
-    log(`索引完成：${video.path}（${frames.length} 帧）`)
+    // 更新缩略图和最终状态
+    this.db.setReadyWithThumbnail(videoId, thumbnail)
+    log(`索引完成：${video.path}（${allNewFrames.length} 新增帧，总计 ${currentProcessed.length} 帧）`)
 
     this.scheduleIndexRebuild()
     const updated = this.db.getVideo(videoId)

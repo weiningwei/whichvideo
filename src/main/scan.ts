@@ -48,6 +48,8 @@ function tools(): ToolPaths {
 export interface ExtractOptions {
   /** 每完成一帧回调 (done, total) */
   onFrame?: (done: number, total: number) => void
+  /** 从哪个时间点索引开始处理（断点续传） */
+  startIndex?: number
 }
 
 export async function extractAndHash(
@@ -81,13 +83,17 @@ async function extractAndHashBySeek(
   timestamps: number[],
   options?: ExtractOptions
 ): Promise<NewFrame[]> {
+  const startIndex = options?.startIndex ?? 0
+  const targetTimestamps = timestamps.slice(startIndex)
+  if (targetTimestamps.length === 0) return []
+
   const t = tools()
 
   const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
-  for (const ts of timestamps) {
+  for (const ts of targetTimestamps) {
     args.push('-ss', ts.toFixed(3), '-i', filePath)
   }
-  for (let i = 0; i < timestamps.length; i++) {
+  for (let i = 0; i < targetTimestamps.length; i++) {
     args.push(
       '-map',
       `${i}:v:0`,
@@ -107,7 +113,7 @@ async function extractAndHashBySeek(
   }
 
   const { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
-  const count = timestamps.length
+  const count = targetTimestamps.length
   if (stdout.length === 0) {
     throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
   }
@@ -129,14 +135,15 @@ async function extractAndHashBySeek(
     const rgb = stdout.subarray(i * frameSize, (i + 1) * frameSize)
     const image: ImageDataLike = { width: EXTRACT_WIDTH, height, channels: 3, order: 'rgb', data: rgb }
     const sig = computeSignature(image)
+    const frameIndex = startIndex + i
     frames.push({
       dhash: sig.dhash,
       struct: sig.struct,
       color: quantizeColor(sig.color),
-      frameIndex: i,
-      timeMs: Math.round(timestamps[i] * 1000)
+      frameIndex,
+      timeMs: Math.round(targetTimestamps[i] * 1000)
     })
-    options?.onFrame?.(i + 1, count)
+    options?.onFrame?.(frameIndex + 1, timestamps.length)
   }
   return frames
 }
@@ -156,10 +163,16 @@ async function extractAndHashByFullScan(
   durationSeconds: number | null,
   options?: ExtractOptions
 ): Promise<NewFrame[]> {
-  const extracted = await extractFrames(filePath, timestamps, tools(), {
+  const startIndex = options?.startIndex ?? 0
+  const targetTimestamps = timestamps.slice(startIndex)
+  if (targetTimestamps.length === 0) return []
+
+  const extracted = await extractFrames(filePath, targetTimestamps, tools(), {
     maxWidth: EXTRACT_WIDTH,
     durationSeconds: durationSeconds ?? undefined,
     onFrame: options?.onFrame
+      ? (done) => options.onFrame!(startIndex + done, timestamps.length)
+      : undefined
   })
   if (extracted.length === 0) {
     throw new Error('抽帧失败：全片解码未取到任何画面')
@@ -170,11 +183,12 @@ async function extractAndHashByFullScan(
     const { rgb, width, height, time } = extracted[i]
     const image: ImageDataLike = { width, height, channels: 3, order: 'rgb', data: rgb }
     const sig = computeSignature(image)
+    const frameIndex = startIndex + i
     frames.push({
       dhash: sig.dhash,
       struct: sig.struct,
       color: quantizeColor(sig.color),
-      frameIndex: i,
+      frameIndex,
       timeMs: Math.round(time * 1000)
     })
   }
