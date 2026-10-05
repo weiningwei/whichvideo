@@ -905,28 +905,28 @@ function VideoRow({
             多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
         <div className="flex items-center justify-end gap-1">
           <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
             onClick={() => onOpen(video.id)}
             title="用系统播放器打开"
           >
             播放
           </button>
           <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
             onClick={() => onReveal(video.id)}
             title="在资源管理器中定位该文件"
           >
             定位
           </button>
           <button
-            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2' : ''}`}
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
             onClick={() => onReindex(video.id)}
             title="重新抽帧并重建指纹"
           >
             索引
           </button>
           <button
-            className={`btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10 ${selected ? 'bg-surface-2' : ''}`}
+            className={`btn btn-danger px-1.5 py-0.5 text-[11px] hover:bg-bad/10 ${selected ? 'bg-surface-2 text-white' : ''}`}
             onClick={() => onRemove(video.id)}
             title="只从索引库移除记录，不会删除磁盘文件"
           >

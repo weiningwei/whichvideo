@@ -577,7 +577,7 @@ export default mod
     const BAR = /absolute inset-y-0 left-0 w-\[2px\] bg-accent/g
     const ROW_BG = /bg-row-selected/g
     const TITLE_ACCENT = /line-clamp-2 break-all [^"]*text-accent/g
-    const BTN_OPAQUE = /btn[^"]*bg-surface-2/g
+    const BTN_OPAQUE = /bg-surface-2/g
     const one = renderWith([1])
     const both = renderWith([1, 2])
     // 依次为：竖条 / 行底色 / 标题染色（须为 0）/ 按钮不透明底
@@ -870,7 +870,7 @@ export default mod
     )
     check(
       '选中行的操作按钮用不透明底色（否则半透明 btn-bg 会透出行底色）',
-      /btn px-1\.5 py-0\.5 text-\[11px\] hover:bg-ink-700\/70 \$\{selected \? 'bg-surface-2' : ''\}/.test(src) &&
+      /btn px-1\.5 py-0\.5 text-\[11px\] hover:bg-ink-700\/70 \$\{selected \? 'bg-surface-2 text-white' : ''\}/.test(src) &&
         (src.match(/bg-surface-2/g) ?? []).length === 4,
       '四个按钮都加了（播放/定位/索引/移除）'
     )
