@@ -77,6 +77,7 @@ export async function extractAndHash(
 /**
  * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，成本约 25 ms/帧，与时长无关。
  * 帧数较少时优于全片解码（无需从头解一遍）。
+ * 为获得实时进度，按子批次（默认 8 帧）分多次调用 ffmpeg。
  */
 async function extractAndHashBySeek(
   filePath: string,
@@ -88,62 +89,70 @@ async function extractAndHashBySeek(
   if (targetTimestamps.length === 0) return []
 
   const t = tools()
-
-  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
-  for (const ts of targetTimestamps) {
-    args.push('-ss', ts.toFixed(3), '-i', filePath)
-  }
-  for (let i = 0; i < targetTimestamps.length; i++) {
-    args.push(
-      '-map',
-      `${i}:v:0`,
-      '-frames:v',
-      '1',
-      '-vf',
-      `scale=w=${EXTRACT_WIDTH}:h=-2`,
-      '-pix_fmt',
-      'rgb24',
-      '-f',
-      'rawvideo',
-      '-an',
-      '-sn',
-      '-dn',
-      'pipe:1'
-    )
-  }
-
-  const { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
-  const count = targetTimestamps.length
-  if (stdout.length === 0) {
-    throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
-  }
-
-  const rowBytes = EXTRACT_WIDTH * 3
-  if (stdout.length % count !== 0) {
-    throw new Error(
-      `抽帧失败：收到 ${stdout.length} 字节，无法均分为 ${count} 帧（部分时间点可能没有可解码画面）`
-    )
-  }
-  const frameSize = stdout.length / count
-  if (frameSize <= 0 || frameSize % rowBytes !== 0) {
-    throw new Error(`抽帧失败：单帧 ${frameSize} 字节不是 ${EXTRACT_WIDTH} 宽 RGB24 的整数倍`)
-  }
-  const height = frameSize / rowBytes
+  const SUB_BATCH = 8 // 子批次大小：每次 ffmpeg 处理这么多帧，平衡性能与进度实时性
 
   const frames: NewFrame[] = []
-  for (let i = 0; i < count; i++) {
-    const rgb = stdout.subarray(i * frameSize, (i + 1) * frameSize)
-    const image: ImageDataLike = { width: EXTRACT_WIDTH, height, channels: 3, order: 'rgb', data: rgb }
-    const sig = computeSignature(image)
-    const frameIndex = startIndex + i
-    frames.push({
-      dhash: sig.dhash,
-      struct: sig.struct,
-      color: quantizeColor(sig.color),
-      frameIndex,
-      timeMs: Math.round(targetTimestamps[i] * 1000)
-    })
-    options?.onFrame?.(frameIndex + 1, timestamps.length)
+  const totalTimestamps = timestamps.length
+
+  for (let batchStart = 0; batchStart < targetTimestamps.length; batchStart += SUB_BATCH) {
+    const batchEnd = Math.min(batchStart + SUB_BATCH, targetTimestamps.length)
+    const batchTimestamps = targetTimestamps.slice(batchStart, batchEnd)
+
+    const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
+    for (const ts of batchTimestamps) {
+      args.push('-ss', ts.toFixed(3), '-i', filePath)
+    }
+    for (let i = 0; i < batchTimestamps.length; i++) {
+      args.push(
+        '-map',
+        `${i}:v:0`,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale=w=${EXTRACT_WIDTH}:h=-2`,
+        '-pix_fmt',
+        'rgb24',
+        '-f',
+        'rawvideo',
+        '-an',
+        '-sn',
+        '-dn',
+        'pipe:1'
+      )
+    }
+
+    const { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
+    const count = batchTimestamps.length
+    if (stdout.length === 0) {
+      throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
+    }
+
+    const rowBytes = EXTRACT_WIDTH * 3
+    if (stdout.length % count !== 0) {
+      throw new Error(
+        `抽帧失败：收到 ${stdout.length} 字节，无法均分为 ${count} 帧（部分时间点可能没有可解码画面）`
+      )
+    }
+    const frameSize = stdout.length / count
+    if (frameSize <= 0 || frameSize % rowBytes !== 0) {
+      throw new Error(`抽帧失败：单帧 ${frameSize} 字节不是 ${EXTRACT_WIDTH} 宽 RGB24 的整数倍`)
+    }
+    const height = frameSize / rowBytes
+
+    for (let i = 0; i < count; i++) {
+      const rgb = stdout.subarray(i * frameSize, (i + 1) * frameSize)
+      const image: ImageDataLike = { width: EXTRACT_WIDTH, height, channels: 3, order: 'rgb', data: rgb }
+      const sig = computeSignature(image)
+      const frameIndex = startIndex + batchStart + i
+      frames.push({
+        dhash: sig.dhash,
+        struct: sig.struct,
+        color: quantizeColor(sig.color),
+        frameIndex,
+        timeMs: Math.round(batchTimestamps[i] * 1000)
+      })
+      options?.onFrame?.(frameIndex + 1, totalTimestamps)
+    }
   }
   return frames
 }
