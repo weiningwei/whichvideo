@@ -647,12 +647,17 @@ export default mod
         src.includes('onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}'),
       '点击整行即切换'
     )
-    // Shift+点击会顺带拉起浏览器原生文本选中，标题与按钮被 ::selection 蓝底盖住。
-    // 这不是我们的选中类，Ctrl 点击复现不了 —— 只有 select-none 能关。
+    // 拦原生文本选中只能拦"带修饰键的按下"这一档。整行 select-none 虽然也关掉了
+    // Shift 的蓝底，但把文件名的双击/拖选复制一起干掉了（用户反馈"文件名的选中
+    // 效果也没有了"）。修饰键是行多选专用，普通点击必须保持可选中文本。
     check(
-      '整行 select-none（Shift 点击不触发浏览器原生文本选中的蓝底）',
-      src.includes('cursor-pointer border-b border-line/40 select-none'),
-      '原生选中高亮已关掉'
+      '只拦带修饰键的按下（普通点击仍可选中文件名复制）',
+      src.includes('const blockModifierTextSelection = (e: MouseEvent) =>') &&
+        src.includes("if (e.shiftKey || e.ctrlKey || e.metaKey)") &&
+        src.includes('window.getSelection()?.removeAllRanges()') &&
+        (src.match(/onMouseDown=\{blockModifierTextSelection\}/g) ?? []).length === 3 &&
+        !src.includes('border-b border-line/40 select-none'),
+      '视频行/分组标题/表头三处都接了，select-none 已移除'
     )
     // 点击必须同时移动光标。上一版只把方向键打通了、忘了点击这条路，
     // 于是点第三个视频再按 ↑ 会从初始位置（第一个）起算 —— 又跳回第一个。

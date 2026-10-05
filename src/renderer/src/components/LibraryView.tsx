@@ -1,7 +1,22 @@
-import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useRef, type ReactNode, type MouseEvent } from 'react'
 import type { VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { SidePanel } from './SidePanel'
+
+/**
+ * 拦掉「带修饰键的按下」顺带启动的浏览器原生文本选中。
+ *
+ * 行多选走 Shift/Ctrl 点击，而 Shift+按下会把标题与按钮用 ::selection 蓝底盖住；
+ * Ctrl 点击不启动文本选中，于是看着像「只有 Shift 有 bug」。只拦带修饰键的按下
+ * 并清掉残留选区：普通点击/拖选不受影响，文件名仍能选中复制。
+ * 整行 select-none 也能关掉蓝底，但会连文件名的双击/拖选一起干掉 —— 别走回头路。
+ */
+const blockModifierTextSelection = (e: MouseEvent) => {
+  if (e.shiftKey || e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    window.getSelection()?.removeAllRanges()
+  }
+}
 
 interface Props {
   folders: WatchedFolder[]
@@ -538,7 +553,7 @@ export function LibraryView(props: Props) {
               阈值定高反而会凭空造出横向滚动条。 */}
           <table className="w-full min-w-[480px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
-              <tr>
+              <tr onMouseDown={blockModifierTextSelection}>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
@@ -572,7 +587,11 @@ export function LibraryView(props: Props) {
                   // 标题行拆成两格而不是一个 colSpan=3：跨三列的 td 会把操作列一起盖住，
                   // 右侧的吸附格与分隔线就断了。第二格留空，只为延续那条竖线。
                   const header = (
-                    <tr key={`folder-header-${folderId}`} className="border-t border-line/40">
+                    <tr
+                      key={`folder-header-${folderId}`}
+                      onMouseDown={blockModifierTextSelection}
+                      className="border-t border-line/40"
+                    >
                       <td colSpan={2} className="bg-row-group px-3 py-2">
                         <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
                           {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
@@ -847,8 +866,9 @@ function VideoRow({
   return (
     <tr
       data-video-id={video.id}
+      onMouseDown={blockModifierTextSelection}
       onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
-      className="group cursor-pointer border-b border-line/40 select-none"
+      className="group cursor-pointer border-b border-line/40"
     >
       <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
         {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
