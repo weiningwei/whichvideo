@@ -111,12 +111,18 @@ console.log('=== 3. 链接取图的边界 ===')
   check('启动流程里不会自动触发', !inBootstrap, '只在用户点「链接检索」时调用')
   check('渲染端只能通过 IPC 调它（未直接暴露 fetch）', /byUrl: \(url: string\) => ipcRenderer\.invoke/.test(readFileSync(join(srcDir, 'preload', 'index.ts'), 'utf8')))
 
-  // 请求头不能带任何本机标识
-  const ua = url.match(/'User-Agent':\s*'([^']+)'/)?.[1] ?? ''
+  // 请求头不能带任何本机标识。UA 字面量的定义处在 constants.ts（单一来源），
+  // url-image.ts 必须引用它而不是自己再写一个字面量（否则两处会漂移）。
+  const constantsSrc = readFileSync(join(srcDir, 'main', 'constants.ts'), 'utf8')
+  const ua = constantsSrc.match(/USER_AGENT\s*=\s*'([^']+)'/)?.[1] ?? ''
   check(
     'User-Agent 是固定字符串，不含本机信息',
     ua === 'WhichVideo/0.1 (local image search)',
     ua
+  )
+  check(
+    'url-image.ts 引用 USER_AGENT 常量（无第二个字面量）',
+    /'User-Agent':\s*USER_AGENT/.test(url) && !/'User-Agent':\s*'/.test(url)
   )
   const headers = url.match(/headers:\s*\{[\s\S]{0,300}?\}/)?.[0] ?? ''
   // 关键词要精确：'user' 会误伤 User-Agent（那是固定字符串，上一条已单独断言）。

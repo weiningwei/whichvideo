@@ -11,9 +11,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { VideoRecord } from '@shared/types'
+import { PAGE_JUMP } from '../constants'
 
-/** PageUp / PageDown 一次跳多少行。按"一屏大约能看 15 行"取整。 */
-export const PAGE_JUMP = 15
+export { PAGE_JUMP }
 
 export type NavigableItem =
   | { type: 'folder'; folderId: number; index: number }

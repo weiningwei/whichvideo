@@ -20,6 +20,7 @@ import {
   quantizedColorfulness,
   quantizedHistogramSimilarity
 } from '@shared/framepack'
+import { DHASH_PRUNE_BITS, STRUCT_PRUNE_BITS } from './constants'
 import {
   COLOR_WEIGHT_MAX,
   COLOR_WEIGHT_MIN,
@@ -28,10 +29,6 @@ import {
 } from '@shared/hash'
 
 const STRUCT_BITS = STRUCT_BYTES * 8
-/** dHash 剪枝阈值：超过该距离的帧不可能成为好匹配 */
-const DHASH_PRUNE_BITS = 24
-/** 结构距离上限：超过则直接丢弃（512bit 中 224bit 不同） */
-const STRUCT_PRUNE_BITS = 224
 
 export interface FrameIndexInfo {
   frames: number

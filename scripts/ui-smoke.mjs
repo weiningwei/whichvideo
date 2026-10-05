@@ -1004,7 +1004,8 @@ export default mod
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
+      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'constants.ts'), 'utf8')
     ].join('\n')
     const app = readFileSync(join(root, 'src', 'renderer', 'src', 'App.tsx'), 'utf8')
     const sc = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'shortcuts.ts'), 'utf8')

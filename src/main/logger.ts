@@ -7,8 +7,7 @@
  */
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-
-const MAX_LOG_BYTES = 512 * 1024
+import { MAX_LOG_BYTES } from './constants'
 
 let logFile: string | null = null
 let logDir: string | null = null

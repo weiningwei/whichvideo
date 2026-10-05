@@ -11,6 +11,9 @@ import { spawn } from 'node:child_process'
 import { accessSync, constants, existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { VideoProbeInfo } from '@shared/types'
+import { PROBE_MAX_WIDTH, FRAME_COUNT_TABLE, DEFAULT_FRAME_BUDGET, SEEK_VS_FULLSCAN_CROSSOVER } from './constants'
+// 帧策略常量的定义处是 constants.ts；这里转出，因为 media 是抽帧策略的对外门面
+export { DEFAULT_FRAME_BUDGET, SEEK_VS_FULLSCAN_CROSSOVER } from './constants'
 
 export interface ToolPaths {
   ffmpeg: string
@@ -179,63 +182,6 @@ export async function probeVideo(filePath: string, tools?: ToolPaths): Promise<V
     videoCodec: stream?.codec_name ?? null
   }
 }
-
-export const PROBE_MAX_WIDTH = 320
-
-/**
- * 每视频抽帧数：按时长插值的分档表。
- *
- * 为什么不再用"固定帧数"：
- * 固定 16 帧对 1 小时的视频等于每 3.75 分钟才一帧，基本搜不到东西；而实测表明
- * **解码耗时只与视频时长有关，与帧数几乎无关**（600 秒视频抽 16 帧与 128 帧都是
- * 约 1.2 秒），所以长视频"省帧"省不到时间，却显著牺牲召回。
- *
- * 帧数是召回率的天花板（不是匹配算法）：
- * 一集剧平均镜头约 5 秒，1 小时 ≈ 720 个镜头。采样间隔 gap = 时长/帧数，
- * 某个镜头至少被采到一帧的概率 ≈ min(1, 5/gap)。最初的表 1 小时只给 56 帧
- * （gap=64s）→ 命中率仅约 8%，也就是说 92% 的镜头在库里根本没有对应指纹——
- * 这类"明明有却搜不到"与算法无关，纯粹是采样太稀。
- *
- * 为什么现在能给出更高的上限：
- * 原本逐点 seek（约 25 ms/帧，线性增长）是指纹之外的主要成本，128 帧就要 4.5 秒/视频。
- * 现在帧数越过交叉点后自动改走"单次全片解码"（成本与帧数无关，只随时长），
- * 于是每加一帧只多付指纹计算（约 2.5 ms/帧）。1 小时 240 帧 = 0.6 秒指纹 + 1.1 秒
- * 解码 ≈ 3.6 秒，与 96 帧（1.0 + 1.1 ≈ 2.1 秒）同量级，帧数却翻 2.5 倍。
- *
- * 为什么仍要封顶 240：
- * 帧数再多，gap 下降的边际收益递减（720 个镜头的覆盖率已接近上限），
- * 而指纹内存与数据库体积线性增长（240 帧 ≈ 34KB/视频，1 万视频 ≈ 340MB 内存索引）。
- *
- * 注意：用户设置里的 `framesPerVideo` 只是**封顶**，真正决定帧数的是下面这张表——
- * 把上限从 240 调到 400，1 小时视频仍然是 240 帧。
- *
- * 表是"时长(秒) → 帧数"的折点，之间线性插值，再取整到偶数。
- */
-export const FRAME_COUNT_TABLE: ReadonlyArray<readonly [seconds: number, frames: number]> = [
-  [0, 8],
-  [30, 10],
-  [60, 12],
-  [300, 24],
-  [900, 48],
-  [1800, 96],
-  [3600, 240],
-  [7200, 240]
-]
-
-export const DEFAULT_FRAME_BUDGET = 240
-
-/**
- * 两条抽帧路径的成本交叉点（帧数）。
- *
- * 逐点 seek（scan.ts::extractAndHash）：约 25 ms/帧，与视频时长无关。
- * 单次全片解码（media.ts::extractFrames）：约等于该时长的解码时间，与帧数无关。
- * 另有指纹计算约 2.5 ms/帧，两条路径都要付。
- *
- * 实测（600 秒视频）：40 帧时两者都是 1.1 秒，交叉点在 44 帧左右。
- * 取 48 作为阈值（略保守，宁可多解一遍也不逐点跳转）。
- * 240 帧时差距显著：逐点 seek 约 6.6 秒 vs 全片解码约 1.7 秒。
- */
-export const SEEK_VS_FULLSCAN_CROSSOVER = 48
 
 export function shouldUseFullScan(frameCount: number): boolean {
   return frameCount > SEEK_VS_FULLSCAN_CROSSOVER

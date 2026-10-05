@@ -19,15 +19,7 @@
  *   · 抓网页时最多再看 1 层图片链接，不递归
  */
 import { createHash } from 'node:crypto'
-
-/** 单个响应体上限（字节） */
-const MAX_BYTES = 10 * 1024 * 1024
-/** 整体超时（毫秒） */
-const TIMEOUT_MS = 15_000
-/** 最多跟随的重定向跳数 */
-const MAX_REDIRECTS = 5
-/** 抓网页时，解析出的图片地址最多再请求几层（1 = 只解析当前页） */
-const MAX_IMAGE_FETCHES = 2
+import { MAX_BYTES, TIMEOUT_MS, MAX_REDIRECTS, MAX_IMAGE_FETCHES, USER_AGENT } from './constants'
 
 export interface FetchImageResult {
   ok: boolean
@@ -75,7 +67,7 @@ async function fetchBytes(url: string): Promise<FetchOutcome> {
         redirect: 'manual',
         headers: {
           // 一些图床会按 UA 拒绝空 UA；这里表明是一个普通的桌面应用
-          'User-Agent': 'WhichVideo/0.1 (local image search)',
+          'User-Agent': USER_AGENT,
           Accept: 'image/*,text/html;q=0.9,*/*;q=0.8'
         }
       })

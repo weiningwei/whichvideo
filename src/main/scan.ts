@@ -17,11 +17,9 @@ import { computeSignature, type ImageDataLike } from '@shared/hash'
 import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } from './media'
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
+import { EXTRACT_WIDTH, MAX_SCAN_DEPTH, DEFAULT_SKIP_DIRS } from './constants'
 
 export type EventEmitter = (event: LibraryEvent) => void
-
-/** 抽帧统一缩放到该宽度，兼顾速度与结构辨识度 */
-const EXTRACT_WIDTH = 320
 
 let cachedTools: ToolPaths | null = null
 
@@ -183,20 +181,6 @@ export interface ScanOptions {
   skipDirs?: Set<string>
   signal?: { cancelled: boolean }
 }
-
-const DEFAULT_SKIP_DIRS = new Set([
-  '$recycle.bin',
-  'system volume information',
-  'node_modules',
-  '.git',
-  'windows',
-  'program files',
-  'program files (x86)',
-  'programdata',
-  'appdata'
-])
-
-const MAX_SCAN_DEPTH = 24
 
 /** 递归列出目录下的视频文件（相对路径），按需回调节流 */
 export async function scanVideoFiles(
