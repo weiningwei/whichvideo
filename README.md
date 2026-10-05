@@ -139,7 +139,7 @@ pnpm build:win                 # NSIS 安装包
 
 ### 4. 动态更新
 
-被监听目录（含子目录，深度 32 层）里发生以下变化时，索引自动同步：
+被监听目录（含子目录，初次扫描最深 24 层、监听最深 32 层）里发生以下变化时，索引自动同步：
 
 | 变化 | 行为 |
 | --- | --- |
@@ -263,19 +263,9 @@ pnpm icon                # 重新生成应用图标
 ```
 
 `pnpm test` 会依次跑 19 套自检（打包配置、启动链路、指纹性质、路径处理、配色
-纪律、图标接线、光标行为、渲染端冒烟等）。各套的作用与单独运行方式见
-[AGENTS.md](AGENTS.md)。
-
-其中 `pnpm test:cursor` 值得单独提一下：它复刻光标移动算法跑**行为**验证，
-而不是检查源码里有没有某个调用。这类"语法正确、类型正确、静态检查全绿，
-但用起来就是不对"的 bug 只能靠它挡住 —— 此前"点第三个视频后按 ↑ 跳回第一个"
-就是靠它钉住的。
-
-另外，打包时 Electron 运行时**默认只下一次**（缓存在
-`%LOCALAPPDATA%\electron\Cache`）。若日志出现 `downloading label=electron`
-且本地明明有缓存，说明校验步骤在联网取 `SHASUMS256.txt` 而网络不通，
-于是回退成重新下载 —— 原因与解法见
-[AGENTS.md 的对应章节](AGENTS.md#打包时反复下载-electron-运行时downloading-labelelectron)。
+纪律、图标接线、光标与连选行为、渲染端冒烟等）。各套的作用与单独运行方式见
+[AGENTS.md](AGENTS.md)。打包与运行遇到怪问题（双击没反应、EPERM、Electron
+运行时反复下载）见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
 更多文档：
 
