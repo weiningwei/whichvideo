@@ -658,13 +658,14 @@ export class LibraryDatabase {
     return `data:image/jpeg;base64,${Buffer.from(row.thumbnail).toString('base64')}`
   }
 
-  /** 更新缩略图并标记为 ready */
+  /** 更新缩略图并标记为 ready，同时刷新帧数 */
   setReadyWithThumbnail(videoId: number, thumbnail: Buffer | null): void {
+    const frameCount = (this.db.prepare('SELECT COUNT(*) AS c FROM frames WHERE video_id = ?').get(videoId) as { c: number }).c
     this.db
       .prepare(
-        `UPDATE videos SET thumbnail = COALESCE(?, thumbnail), status = 'ready', error = NULL, indexed_at = ? WHERE id = ?`
+        `UPDATE videos SET frame_count = ?, thumbnail = COALESCE(?, thumbnail), status = 'ready', error = NULL, indexed_at = ? WHERE id = ?`
       )
-      .run(thumbnail, Date.now(), videoId)
+      .run(frameCount, thumbnail, Date.now(), videoId)
   }
 
   /** 内置演示/自检用：把一帧的量化颜色还原 */
