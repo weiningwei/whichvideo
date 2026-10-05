@@ -647,6 +647,13 @@ export default mod
         src.includes('onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}'),
       '点击整行即切换'
     )
+    // Shift+点击会顺带拉起浏览器原生文本选中，标题与按钮被 ::selection 蓝底盖住。
+    // 这不是我们的选中类，Ctrl 点击复现不了 —— 只有 select-none 能关。
+    check(
+      '整行 select-none（Shift 点击不触发浏览器原生文本选中的蓝底）',
+      src.includes('cursor-pointer border-b border-line/40 select-none'),
+      '原生选中高亮已关掉'
+    )
     // 点击必须同时移动光标。上一版只把方向键打通了、忘了点击这条路，
     // 于是点第三个视频再按 ↑ 会从初始位置（第一个）起算 —— 又跳回第一个。
     check(

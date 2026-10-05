@@ -848,7 +848,7 @@ function VideoRow({
     <tr
       data-video-id={video.id}
       onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
-      className="group cursor-pointer border-b border-line/40"
+      className="group cursor-pointer border-b border-line/40 select-none"
     >
       <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
         {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
