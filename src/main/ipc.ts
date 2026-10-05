@@ -18,7 +18,8 @@ import {
   type SearchMatch,
   type SearchResponse,
   type VideoQuery,
-  type WatchedFolder
+  type WatchedFolder,
+  type FrameProgress
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
 import type { ErrorCode } from '@shared/result'
@@ -323,6 +324,7 @@ export function registerIpc(deps: IpcDeps): void {
   })
   ipcMain.handle(IPC.videosReindex, async (_e, videoIds?: number[]) => indexer.reindex(videoIds))
   ipcMain.handle(IPC.videosThumbnail, (_e, videoId: number) => db.getThumbnail(videoId))
+  ipcMain.handle(IPC.videosFrameProgress, (_e, videoId: number): FrameProgress | null => indexer.getFrameProgress(videoId))
 
   ipcMain.handle(IPC.videosImport, async () => {
     const picked = await showOpenDialog({

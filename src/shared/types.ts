@@ -101,6 +101,13 @@ export interface IndexerStatus {
   lastError: string | null
 }
 
+/** 单视频帧级进度（并发时每个视频独立） */
+export interface FrameProgress {
+  videoId: number
+  done: number
+  total: number
+}
+
 /** 一次搜索中命中的视频 */
 export interface SearchMatch {
   video: VideoRecord
@@ -306,6 +313,7 @@ export interface WhichVideoApi {
     openFile(videoId: number): Promise<void>
     revealFile(videoId: number): Promise<void>
     thumbnail(videoId: number): Promise<string | null>
+    frameProgress(videoId: number): Promise<FrameProgress | null>
   }
   search: {
     byPath(filePath: string): Promise<SearchResponse>
@@ -348,6 +356,7 @@ export const IPC = {
   videosOpen: 'videos:open',
   videosReveal: 'videos:reveal',
   videosThumbnail: 'videos:thumbnail',
+  videosFrameProgress: 'videos:frame-progress',
   searchPath: 'search:path',
   searchDataUrl: 'search:data-url',
   searchClipboard: 'search:clipboard',

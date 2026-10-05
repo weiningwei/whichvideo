@@ -37,19 +37,25 @@ function tools(): ToolPaths {
  * 把视频按给定时间点抽帧并算成指纹，直接输出 rgb24 裸像素到 stdout（不落临时文件）。
  *
  * 两条路径按帧数自动切换（交叉点见 media.ts::SEEK_VS_FULLSCAN_CROSSOVER）：
- * - 少量帧走 extractAndHashBySeek：每个时间点拆成一个 `-ss/-i` 输入，再为每个输入
- *   各写一路 `pipe:1` 输出。ffmpeg 按输出顺序把各帧依次写进同一管道，stdout 就是
- *   N 段等长的裸像素；各帧同源同 scale 滤镜故尺寸一致，用「总字节数 / 时间点数」
- *   即可还原单帧尺寸，无需解析 ffmpeg 日志。成本约 25 ms/帧，与时长无关。
- * - 大量帧走 extractAndHashByFullScan：单次全片解码 + fps 采样，成本与帧数无关。
+ *   · 少量帧走 extractAndHashBySeek：每个时间点拆成一个 `-ss/-i` 输入，再为每个输入
+ *     各写一路 `pipe:1` 输出。ffmpeg 按输出顺序把各帧依次写进同一管道，stdout 就是
+ *     N 段等长的裸像素；各帧同源同 scale 滤镜故尺寸一致，用「总字节数 / 时间点数」
+ *     即可还原单帧尺寸，无需解析 ffmpeg 日志。成本约 25 ms/帧，与时长无关。
+ *   · 大量帧走 extractAndHashByFullScan：单次全片解码 + fps 采样，成本与帧数无关。
  *
  * 哈希与查询图共用 @shared/hash 的同一份实现，保证口径一致。
  */
+export interface ExtractOptions {
+  /** 每完成一帧回调 (done, total) */
+  onFrame?: (done: number, total: number) => void
+}
+
 export async function extractAndHash(
   filePath: string,
   timestamps: number[],
   settings: AppSettings,
-  durationSeconds?: number | null
+  durationSeconds?: number | null,
+  options?: ExtractOptions
 ): Promise<NewFrame[]> {
   if (timestamps.length === 0) return []
 
@@ -61,16 +67,20 @@ export async function extractAndHash(
   // 参数保留以便后续设置（如缩放宽度、抽帧模式）演进时不必改所有调用点。
   void settings
   if (shouldUseFullScan(timestamps.length)) {
-    return extractAndHashByFullScan(filePath, timestamps, durationSeconds ?? null)
+    return extractAndHashByFullScan(filePath, timestamps, durationSeconds ?? null, options)
   }
-  return extractAndHashBySeek(filePath, timestamps)
+  return extractAndHashBySeek(filePath, timestamps, options)
 }
 
 /**
  * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，成本约 25 ms/帧，与时长无关。
  * 帧数较少时优于全片解码（无需从头解一遍）。
  */
-async function extractAndHashBySeek(filePath: string, timestamps: number[]): Promise<NewFrame[]> {
+async function extractAndHashBySeek(
+  filePath: string,
+  timestamps: number[],
+  options?: ExtractOptions
+): Promise<NewFrame[]> {
   const t = tools()
 
   const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
@@ -126,6 +136,7 @@ async function extractAndHashBySeek(filePath: string, timestamps: number[]): Pro
       frameIndex: i,
       timeMs: Math.round(timestamps[i] * 1000)
     })
+    options?.onFrame?.(i + 1, count)
   }
   return frames
 }
@@ -142,11 +153,13 @@ async function extractAndHashBySeek(filePath: string, timestamps: number[]): Pro
 async function extractAndHashByFullScan(
   filePath: string,
   timestamps: number[],
-  durationSeconds: number | null
+  durationSeconds: number | null,
+  options?: ExtractOptions
 ): Promise<NewFrame[]> {
   const extracted = await extractFrames(filePath, timestamps, tools(), {
     maxWidth: EXTRACT_WIDTH,
-    durationSeconds: durationSeconds ?? undefined
+    durationSeconds: durationSeconds ?? undefined,
+    onFrame: options?.onFrame
   })
   if (extracted.length === 0) {
     throw new Error('抽帧失败：全片解码未取到任何画面')

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { VideoRecord } from '@shared/types'
+import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 
@@ -41,6 +41,31 @@ export function VideoRow({
     }
   }, [video.id, video.indexedAt])
 
+  // 帧进度轮询（仅索引中时）
+  const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
+  useEffect(() => {
+    if (video.status !== 'indexing') {
+      setFrameProgress(null)
+      return
+    }
+    let timer: ReturnType<typeof setInterval> | null = null
+    let alive = true
+    const poll = async () => {
+      try {
+        const p = await window.whichvideo.videos.frameProgress(video.id)
+        if (alive) setFrameProgress(p)
+      } catch {
+        // 忽略
+      }
+    }
+    poll()
+    timer = setInterval(poll, 500)
+    return () => {
+      alive = false
+      if (timer) clearInterval(timer)
+    }
+  }, [video.id, video.status])
+
   const statusCls =
     video.status === 'ready'
       ? 'border-ok/40 bg-ok/10 text-ok'
@@ -59,6 +84,13 @@ export function VideoRow({
           : '待索引'
 
   const selected = isVideoSelected(video.id)
+
+  // 帧进度条（仅索引中且有进度数据时显示）
+  const frameProgressBar = frameProgress && video.status === 'indexing' && frameProgress.total > 0 ? (
+    <div className="mt-1.5 h-1.5 bg-line rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
+      <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
+    </div>
+  ) : null
 
   /**
    * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。
@@ -129,6 +161,7 @@ export function VideoRow({
         <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${statusCls}`} title={video.error ?? ''}>
           {statusText}
         </span>
+        {frameProgressBar}
       </td>
       {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
 

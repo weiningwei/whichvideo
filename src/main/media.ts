@@ -106,6 +106,8 @@ interface RunOptions {
   /** 只收集前 N 字节 stdout，防止误用大输出撑爆内存 */
   maxStdoutBytes?: number
   timeoutMs?: number
+  /** ffmpeg -progress 回调 (frame, fps, out_time_ms, progress) */
+  onProgress?: (info: { frame: number; fps: number; out_time_ms: number; progress: string }) => void
 }
 
 export function run(bin: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -123,13 +125,38 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
         }, options.timeoutMs)
       : null
 
+    let progressBuf = ''
+
     child.stdout.on('data', (chunk: Buffer) => {
       if (size >= maxStdout) return
       chunks.push(chunk)
       size += chunk.length
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      if (stderr.length < 64 * 1024) stderr += chunk.toString()
+      const text = chunk.toString()
+      if (stderr.length < 64 * 1024) stderr += text
+      if (options.onProgress) {
+        progressBuf += text
+        const lines = progressBuf.split('\n')
+        progressBuf = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('frame=') || line.startsWith('fps=') || line.startsWith('out_time_ms=') || line.startsWith('progress=')) {
+            const info: Record<string, string> = {}
+            for (const part of line.split('=')) {
+              const [k, v] = part.split('=')
+              if (k && v !== undefined) info[k] = v
+            }
+            if (info.frame || info.fps || info.out_time_ms || info.progress) {
+              options.onProgress({
+                frame: Number(info.frame) || 0,
+                fps: Number(info.fps) || 0,
+                out_time_ms: Number(info.out_time_ms) || 0,
+                progress: info.progress || ''
+              })
+            }
+          }
+        }
+      }
     })
     child.on('error', (err) => {
       settled = true
@@ -259,7 +286,7 @@ export async function extractFrames(
   filePath: string,
   timestamps: number[],
   tools?: ToolPaths,
-  options: { maxWidth?: number; timeoutMs?: number; durationSeconds?: number } = {}
+  options: { maxWidth?: number; timeoutMs?: number; durationSeconds?: number; onFrame?: (done: number, total: number) => void } = {}
 ): Promise<ExtractedFrame[]> {
   if (timestamps.length === 0) return []
   const t = tools ?? requireTools()
@@ -286,8 +313,16 @@ export async function extractFrames(
     'pipe:1'
   )
 
+  // 进度回调：用 ffmpeg -progress 解析帧号
+  let lastFrame = 0
   const { code, stdout, stderr } = await run(t.ffmpeg, args, {
-    timeoutMs: options.timeoutMs ?? 10 * 60_000
+    timeoutMs: options.timeoutMs ?? 10 * 60_000,
+    onProgress: options.onFrame ? (info) => {
+      if (info.frame && info.frame > lastFrame) {
+        lastFrame = info.frame
+        options.onFrame!(Math.min(lastFrame, timestamps.length), timestamps.length)
+      }
+    } : undefined
   })
   if (code !== 0 && stdout.length === 0) {
     throw new Error(`ffmpeg 抽帧失败：${stderr.trim() || `退出码 ${code}`}`)

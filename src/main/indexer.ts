@@ -10,7 +10,8 @@ import {
   type ImportResult,
   type IndexerStatus,
   type VideoRecord,
-  type VideoStatus
+  type VideoStatus,
+  type FrameProgress
 } from '@shared/types'
 import { normalizePath } from '@shared/types'
 import { makeThumbnail, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
@@ -39,6 +40,8 @@ export class Indexer {
   private lastError: string | null = null
   private toolsInstance: ToolPaths | null = null
   private rebuildTimer: NodeJS.Timeout | null = null
+  /** 单视频帧进度：videoId -> {done, total} */
+  private frameProgress = new Map<number, { done: number; total: number }>()
 
   constructor(
     private readonly db: LibraryDatabase,
@@ -435,7 +438,15 @@ export class Indexer {
     }
 
     const timestamps = planTimestamps(duration, settings.framesPerVideo)
-    const frames = await extractAndHash(video.path, timestamps, settings, duration)
+    // 初始化帧进度
+    this.frameProgress.set(videoId, { done: 0, total: timestamps.length })
+    this.broadcastStatus()
+    const frames = await extractAndHash(video.path, timestamps, settings, duration, {
+      onFrame: (done, total) => {
+        this.frameProgress.set(videoId, { done, total })
+      }
+    })
+    this.frameProgress.delete(videoId)
     const thumbTime = duration ? duration * 0.12 : (timestamps[0] ?? 0)
     const thumbnail = await makeThumbnail(video.path, thumbTime, t)
     this.db.replaceFrames(videoId, frames, thumbnail)
@@ -444,6 +455,12 @@ export class Indexer {
     this.scheduleIndexRebuild()
     const updated = this.db.getVideo(videoId)
     if (updated) this.emit({ type: 'video-updated', video: updated })
+  }
+
+  /** 获取单视频帧进度（供 IPC 查询） */
+  getFrameProgress(videoId: number): FrameProgress | null {
+    const p = this.frameProgress.get(videoId)
+    return p ? { videoId, done: p.done, total: p.total } : null
   }
 }
 

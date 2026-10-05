@@ -29,7 +29,8 @@ const api: WhichVideoApi = {
     importImages: () => ipcRenderer.invoke(IPC.videosImportImages),
     openFile: (videoId: number) => ipcRenderer.invoke(IPC.videosOpen, videoId),
     revealFile: (videoId: number) => ipcRenderer.invoke(IPC.videosReveal, videoId),
-    thumbnail: (videoId: number) => ipcRenderer.invoke(IPC.videosThumbnail, videoId)
+    thumbnail: (videoId: number) => ipcRenderer.invoke(IPC.videosThumbnail, videoId),
+    frameProgress: (videoId: number) => ipcRenderer.invoke(IPC.videosFrameProgress, videoId)
   },
   search: {
     byPath: (filePath: string) => ipcRenderer.invoke(IPC.searchPath, filePath),
