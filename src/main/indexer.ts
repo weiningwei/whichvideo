@@ -468,7 +468,9 @@ export class Indexer {
         startIndex: batchStart,
         onFrame: (done, total) => {
           this.frameProgress.set(videoId, { done, total })
-        }
+        },
+        width: video.width,
+        height: video.height
       })
       const batchElapsedMs = Date.now() - batchStartTime
 

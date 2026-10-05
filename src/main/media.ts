@@ -210,8 +210,10 @@ export async function probeVideo(filePath: string, tools?: ToolPaths): Promise<V
   }
 }
 
-export function shouldUseFullScan(frameCount: number): boolean {
-  return frameCount > SEEK_VS_FULLSCAN_CROSSOVER
+export function shouldUseFullScan(frameCount: number, width?: number | null, height?: number | null): boolean {
+  // 4K 视频强制走全片解码：seek 模式对 4K 解码极慢
+  const is4K = (width ?? 0) >= 3840 || (height ?? 0) >= 2160
+  return is4K || frameCount > SEEK_VS_FULLSCAN_CROSSOVER
 }
 
 /** 按视频时长得出的建议抽帧数（未与用户设置取小） */
@@ -296,7 +298,7 @@ export async function extractFrames(
   const duration = options.durationSeconds ?? (timestamps[timestamps.length - 1] * 2 || 1)
   const rate = timestamps.length / Math.max(duration, 0.001)
 
-  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin', '-i', filePath]
+  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin', '-hwaccel', 'auto', '-i', filePath]
   // 启用进度输出到 stderr，供 onProgress 解析
   if (options.onFrame) args.push('-progress', 'pipe:2')
   const filter = `fps=${rate.toFixed(8)},scale=w='min(${maxWidth},iw)':h=-2`

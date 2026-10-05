@@ -18,6 +18,7 @@ import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } f
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
 import { EXTRACT_WIDTH, MAX_SCAN_DEPTH, DEFAULT_SKIP_DIRS } from './constants'
+import { log } from './logger'
 
 let cachedTools: ToolPaths | null = null
 
@@ -50,6 +51,10 @@ export interface ExtractOptions {
   onFrame?: (done: number, total: number) => void
   /** 从哪个时间点索引开始处理（断点续传） */
   startIndex?: number
+  /** 视频宽度（用于 4K 判断） */
+  width?: number | null
+  /** 视频高度（用于 4K 判断） */
+  height?: number | null
 }
 
 export async function extractAndHash(
@@ -68,7 +73,7 @@ export async function extractAndHash(
   // 注：当前两条路径都固定用 EXTRACT_WIDTH 缩放，settings 暂未参与抽帧决策；
   // 参数保留以便后续设置（如缩放宽度、抽帧模式）演进时不必改所有调用点。
   void settings
-  if (shouldUseFullScan(timestamps.length)) {
+  if (shouldUseFullScan(timestamps.length, options?.width, options?.height)) {
     return extractAndHashByFullScan(filePath, timestamps, durationSeconds ?? null, options)
   }
   return extractAndHashBySeek(filePath, timestamps, options)
@@ -89,7 +94,7 @@ async function extractAndHashBySeek(
   if (targetTimestamps.length === 0) return []
 
   const t = tools()
-  const SUB_BATCH = 8 // 子批次大小：每次 ffmpeg 处理这么多帧，平衡性能与进度实时性
+  const SUB_BATCH = 4 // 子批次大小：每次 ffmpeg 处理这么多帧，平衡性能与进度实时性（4K 视频减小以更快出进度）
 
   const frames: NewFrame[] = []
   const totalTimestamps = timestamps.length
@@ -97,10 +102,11 @@ async function extractAndHashBySeek(
   for (let batchStart = 0; batchStart < targetTimestamps.length; batchStart += SUB_BATCH) {
     const batchEnd = Math.min(batchStart + SUB_BATCH, targetTimestamps.length)
     const batchTimestamps = targetTimestamps.slice(batchStart, batchEnd)
+    const batchStartTime = Date.now()
 
     const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
     for (const ts of batchTimestamps) {
-      args.push('-ss', ts.toFixed(3), '-i', filePath)
+      args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
     }
     for (let i = 0; i < batchTimestamps.length; i++) {
       args.push(
@@ -121,7 +127,9 @@ async function extractAndHashBySeek(
       )
     }
 
+    log(`[抽帧] seek批次开始: ${filePath}, ${batchStart}-${batchEnd}/${targetTimestamps.length}, timestamps=${batchTimestamps.map(t => t.toFixed(1)).join(',')}`)
     const { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
+    log(`[抽帧] seek批次完成: ${filePath}, ${batchStart}-${batchEnd}, 耗时=${Date.now() - batchStartTime}ms, 帧数=${batchTimestamps.length}, code=${code}`)
     const count = batchTimestamps.length
     if (stdout.length === 0) {
       throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
