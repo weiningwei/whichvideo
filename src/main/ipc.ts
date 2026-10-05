@@ -15,7 +15,6 @@ import {
   pathKeyOf,
   type AppSettings,
   type ImportResult,
-  type LibraryEvent,
   type SearchMatch,
   type SearchResponse,
   type VideoQuery,
@@ -23,6 +22,7 @@ import {
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
 import type { ErrorCode } from '@shared/result'
+import type { EmitLibraryEvent } from './interfaces'
 import { log, logError } from './logger'
 import { readClipboardImageBytes } from './clipboard'
 import { describeUrlForLog, fetchImageFromUrl } from './url-image'
@@ -40,7 +40,7 @@ export interface IpcDeps {
   dataDir: { dir: string; portable: boolean; source: string }
   toolsReady: boolean
   dbPath: () => string
-  broadcast: (event: LibraryEvent) => void
+  broadcast: EmitLibraryEvent
   getMainWindow: () => BrowserWindow | null
   queryVectorFromImage: typeof import('./search').queryVectorFromImage
 }

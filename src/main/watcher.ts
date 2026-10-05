@@ -5,11 +5,9 @@
  * 为避免 WebView/Electron 打包路径问题，watcher 只监听磁盘目录。
  */
 import { existsSync, statSync } from 'node:fs'
-import { isVideoFile, normalizePath, pathKeyOf, type LibraryEvent, type WatchedFolder } from '@shared/types'
+import { isVideoFile, normalizePath, pathKeyOf, type WatchedFolder } from '@shared/types'
 import type { LibraryDatabase } from './db'
-import type { Indexer } from './indexer'
-
-type Emit = (event: LibraryEvent) => void
+import type { EmitLibraryEvent, EventBus } from './interfaces'
 
 interface WatchEntry {
   folderId: number
@@ -46,8 +44,8 @@ export class FolderWatcher {
 
   constructor(
     private readonly db: LibraryDatabase,
-    private readonly indexer: Indexer,
-    private readonly emit: Emit,
+    private readonly fileEvents: EventBus,
+    private readonly emit: EmitLibraryEvent,
     private readonly awaitWriteMs: () => number
   ) {}
 
@@ -142,7 +140,7 @@ export class FolderWatcher {
     watcher.on('unlink', (...args: unknown[]) => {
       const filePath = String(args[0])
       if (!isVideoFile(filePath)) return
-      this.indexer.onFileRemoved(normalizePath(filePath))
+      this.fileEvents.emit({ type: 'file-removed', path: normalizePath(filePath) })
       this.emit({ type: 'notice', level: 'info', message: `文件已移除：${filePath}` })
     })
     watcher.on('unlinkDir', (...args: unknown[]) => {
@@ -168,13 +166,13 @@ export class FolderWatcher {
       return
     }
     const folderId = this.folderForPath(normalized)
-    this.indexer.onFileUpsert(normalized, folderId)
+    this.fileEvents.emit({ type: 'file-upsert', path: normalized, folderId })
     this.emit({ type: 'notice', level: 'info', message: `发现新视频，已加入索引队列：${normalized}` })
   }
 
   private handleDirRemoved(dir: string): void {
     const normalized = normalizePath(dir)
-    this.indexer.onDirectoryRemoved(normalized)
+    this.fileEvents.emit({ type: 'directory-removed', path: normalized })
   }
 
   /** 找到包含该文件的、层级最深的被监听目录 */

@@ -10,6 +10,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { IPC, type LibraryEvent } from '@shared/types'
 import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
 import { registerIpc } from './ipc'
+import { createEventBus } from './interfaces'
 
 installCrashHandlers()
 
@@ -442,7 +443,10 @@ async function bootstrap(): Promise<void> {
   searchIndex = new core.FrameSearchIndex(db)
   log(`帧索引载入完成：${searchIndex.frameCount} 帧`)
   indexer = new core.Indexer(db, searchIndex, () => db.getSettings(), broadcast)
-  watcher = new core.FolderWatcher(db, indexer, broadcast, () => db.getSettings().awaitWriteMs)
+  // 文件变化经事件总线进 indexer：watcher 不 import indexer，组合关系只存在于这里
+  const fileEvents = createEventBus()
+  fileEvents.on((event) => indexer.handleFileEvent(event))
+  watcher = new core.FolderWatcher(db, fileEvents, broadcast, () => db.getSettings().awaitWriteMs)
 
   toolsReady = !!core.resolveTools(resourceBinDir())
   log(`ffmpeg 可用：${toolsReady}`)

@@ -88,6 +88,25 @@ function main() {
   const coreMissing = coreExpected.filter((n) => !existsSync(join(outMain, `${n}.js`)))
   check('惰性加载的核心模块产物齐全', coreMissing.length === 0, coreMissing.join(', ') || coreExpected.join(', '))
 
+  // 解耦不变量：watcher 与 indexer 之间只允许经过文件事件总线（src/main/interfaces.ts）。
+  // 回退成 watcher 直接 require indexer 也能跑，但模块图会重新缠死——这里按产物拦。
+  const watcherJs = join(outMain, 'watcher.js')
+  if (existsSync(watcherJs)) {
+    const watcherCode = readFileSync(watcherJs, 'utf8')
+    check(
+      "watcher 产物不 require('./indexer')（文件变化走事件总线）",
+      !/require\(\s*['"]\.\/indexer(\.js)?['"]\s*\)/.test(watcherCode)
+    )
+  } else {
+    check('存在 watcher.js（解耦断言的前提）', false)
+  }
+  const indexCodeForWiring = readFileSync(indexJs, 'utf8')
+  check(
+    'index.js 把文件事件接进 indexer.handleFileEvent（组合点在 bootstrap）',
+    /require\(\s*['"]\.\/interfaces(\.js)?['"]\s*\)/.test(indexCodeForWiring) &&
+      indexCodeForWiring.includes('handleFileEvent')
+  )
+
   console.log(`\n=== 主进程产物完整性：${passed}/${passed + failed} 通过 ===`)
   if (failed) process.exit(1)
 }

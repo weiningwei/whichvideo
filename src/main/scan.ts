@@ -12,14 +12,12 @@
 import { statSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
-import { isVideoFile, pathKeyOf, type AppSettings, type LibraryEvent } from '@shared/types'
+import { isVideoFile, pathKeyOf, type AppSettings } from '@shared/types'
 import { computeSignature, type ImageDataLike } from '@shared/hash'
 import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } from './media'
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
 import { EXTRACT_WIDTH, MAX_SCAN_DEPTH, DEFAULT_SKIP_DIRS } from './constants'
-
-export type EventEmitter = (event: LibraryEvent) => void
 
 let cachedTools: ToolPaths | null = null
 

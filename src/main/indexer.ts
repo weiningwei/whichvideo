@@ -14,7 +14,8 @@ import {
 } from '@shared/types'
 import { normalizePath } from '@shared/types'
 import { makeThumbnail, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
-import { extractAndHash, scanVideoFiles, statFile, type EventEmitter } from './scan'
+import { extractAndHash, scanVideoFiles, statFile } from './scan'
+import type { EmitLibraryEvent, LibraryFileEvent } from './interfaces'
 import { log, logError } from './logger'
 import type { LibraryDatabase } from './db'
 import type { FrameSearchIndex } from './search'
@@ -43,7 +44,7 @@ export class Indexer {
     private readonly db: LibraryDatabase,
     private readonly index: FrameSearchIndex,
     private readonly getSettings: () => AppSettings,
-    private readonly emit: EventEmitter
+    private readonly emit: EmitLibraryEvent
   ) {}
 
   /* ------------------------------ 状态 ------------------------------ */
@@ -244,7 +245,22 @@ export class Indexer {
 
   /* --------------------------- 外部文件变更 --------------------------- */
 
-  onFileUpsert(filePath: string, folderId: number | null): void {
+  /** 文件事件总线的唯一入口（订阅点见 index.ts 的 bootstrap） */
+  handleFileEvent(event: LibraryFileEvent): void {
+    switch (event.type) {
+      case 'file-upsert':
+        this.onFileUpsert(event.path, event.folderId)
+        break
+      case 'file-removed':
+        this.onFileRemoved(event.path)
+        break
+      case 'directory-removed':
+        this.onDirectoryRemoved(event.path)
+        break
+    }
+  }
+
+  private onFileUpsert(filePath: string, folderId: number | null): void {
     try {
       const normalized = normalizePath(filePath)
       const existing = this.db.findByPath(normalized)
@@ -278,7 +294,7 @@ export class Indexer {
     }
   }
 
-  onFileRemoved(filePath: string): void {
+  private onFileRemoved(filePath: string): void {
     const video = this.db.findByPath(filePath)
     if (!video) return
     this.db.removeVideo(video.id)
@@ -290,7 +306,7 @@ export class Indexer {
     this.broadcastStats()
   }
 
-  onDirectoryRemoved(dirPath: string): void {
+  private onDirectoryRemoved(dirPath: string): void {
     const ids = this.db.removeVideosUnder(dirPath)
     for (const id of ids) {
       this.queued.delete(id)

@@ -58,6 +58,7 @@ async function main() {
   const { FrameSearchIndex, queryVectorFromImage } = await load('search')
   const { Indexer } = await load('indexer')
   const { FolderWatcher } = await load('watcher')
+  const { createEventBus } = await load('interfaces')
   const { extractAndHash, scanVideoFiles, statFile } = await load('scan')
   const { resolveTools, planTimestamps, probeVideo } = await load('media')
   const { computeSignature, hammingBytes, STRUCT_BYTES } = await import(
@@ -447,7 +448,10 @@ async function main() {
     const pipeDb = new LibraryDatabase(join(work, 'pipe.db'))
     const pipeIndex = new FrameSearchIndex(pipeDb)
     const pipeIndexer = new Indexer(pipeDb, pipeIndex, () => pipeDb.getSettings(), () => {})
-    const pipeWatcher = new FolderWatcher(pipeDb, pipeIndexer, () => {}, () => 400)
+    // 与 index.ts 的 bootstrap 同款接线：文件事件经总线进 indexer
+    const pipeBus = createEventBus()
+    pipeBus.on((event) => pipeIndexer.handleFileEvent(event))
+    const pipeWatcher = new FolderWatcher(pipeDb, pipeBus, () => {}, () => 400)
 
     const idle = async (timeout = 180000) => {
       const start = Date.now()
