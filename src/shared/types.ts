@@ -42,6 +42,8 @@ export interface VideoRecord {
   folderId: number | null
   /** 已处理的时间点索引数组（断点续传用） */
   processedTimestamps: number[]
+  /** 累计已处理毫秒数（断点续传跨会话累计） */
+  processedMs: number
 }
 
 /** 文件夹监听状态 */

@@ -75,6 +75,7 @@ interface VideoRow {
   indexed_at: number | null
   folder_id: number | null
   processed_timestamps: string
+  processed_ms: number
 }
 
 interface FolderRow {
@@ -117,7 +118,8 @@ function rowToVideo(r: VideoRow): VideoRecord {
     addedAt: r.added_at,
     indexedAt: r.indexed_at,
     folderId: r.folder_id,
-    processedTimestamps
+    processedTimestamps,
+    processedMs: r.processed_ms
   }
 }
 
@@ -177,7 +179,8 @@ export class LibraryDatabase {
         indexed_at INTEGER,
         folder_id INTEGER REFERENCES image_folders(id) ON DELETE SET NULL,
         thumbnail BLOB,
-        processed_timestamps TEXT NOT NULL DEFAULT '[]'
+        processed_timestamps TEXT NOT NULL DEFAULT '[]',
+        processed_ms INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
       CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder_id);
@@ -216,6 +219,12 @@ export class LibraryDatabase {
     // 迁移：旧库没有 processed_timestamps 列
     try {
       this.db.exec(`ALTER TABLE videos ADD COLUMN processed_timestamps TEXT NOT NULL DEFAULT '[]'`)
+    } catch {
+      /* 列已存在 */
+    }
+    // 迁移：旧库没有 processed_ms 列
+    try {
+      this.db.exec(`ALTER TABLE videos ADD COLUMN processed_ms INTEGER NOT NULL DEFAULT 0`)
     } catch {
       /* 列已存在 */
     }
@@ -497,6 +506,13 @@ export class LibraryDatabase {
     this.db
       .prepare('UPDATE videos SET processed_timestamps = ? WHERE id = ?')
       .run(JSON.stringify(processedIndices), videoId)
+  }
+
+  /** 增量累加已处理毫秒数（断点续传用） */
+  addProcessedMs(videoId: number, ms: number): void {
+    this.db
+      .prepare('UPDATE videos SET processed_ms = processed_ms + ? WHERE id = ?')
+      .run(ms, videoId)
   }
 
   removeVideosUnder(rootPath: string): number[] {

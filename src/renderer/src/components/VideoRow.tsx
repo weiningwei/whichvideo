@@ -69,14 +69,16 @@ export function VideoRow({
   // 计算已用时间与预估剩余时间
   const startTimeRef = useRef<number | null>(null)
   const prevDoneRef = useRef<number>(0)
-  const elapsedMs = frameProgress && video.status === 'indexing'
+  // 累计已用时间 = 数据库存储的跨会话耗时 + 本次会话耗时
+  const sessionElapsedMs = frameProgress && video.status === 'indexing'
     ? Date.now() - (startTimeRef.current ?? Date.now())
     : 0
+  const elapsedMs = (video.processedMs ?? 0) + sessionElapsedMs
   const remainingMs = (() => {
     if (!frameProgress || video.status !== 'indexing' || frameProgress.total <= 0) return 0
     const done = frameProgress.done
     if (done <= 0) return 0
-    const rate = done / (elapsedMs / 1000) // frames per second
+    const rate = done / (sessionElapsedMs / 1000) // frames per second（基于本次会话速率）
     if (rate <= 0) return 0
     return Math.round((frameProgress.total - done) / rate * 1000)
   })()
@@ -86,7 +88,7 @@ export function VideoRow({
     if (frameProgress && video.status === 'indexing') {
       if (startTimeRef.current === null || frameProgress.done < prevDoneRef.current) {
         // 首次获取到进度，或进度回退（重新开始），记录开始时间
-        startTimeRef.current = Date.now() - (frameProgress.done > 0 ? 0 : 0)
+        startTimeRef.current = Date.now()
       }
       prevDoneRef.current = frameProgress.done
     } else {

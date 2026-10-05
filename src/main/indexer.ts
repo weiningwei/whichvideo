@@ -463,12 +463,14 @@ export class Indexer {
 
     for (let batchStart = startIndex; batchStart < timestamps.length; batchStart += batchSize) {
       const batchEnd = Math.min(batchStart + batchSize, timestamps.length)
+      const batchStartTime = Date.now()
       const batchFrames = await extractAndHash(video.path, timestamps, settings, duration, {
         startIndex: batchStart,
         onFrame: (done, total) => {
           this.frameProgress.set(videoId, { done, total })
         }
       })
+      const batchElapsedMs = Date.now() - batchStartTime
 
       if (batchFrames.length > 0) {
         // 增量写入数据库
@@ -476,6 +478,8 @@ export class Indexer {
         allNewFrames.push(...batchFrames)
         currentProcessed.push(...timestamps.slice(batchStart, batchEnd))
         this.db.updateProcessedTimestamps(videoId, currentProcessed)
+        // 累加处理耗时
+        this.db.addProcessedMs(videoId, batchElapsedMs)
 
         // 更新视频记录的 frameCount
         this.db.setVideoStatus(videoId, 'indexing')
