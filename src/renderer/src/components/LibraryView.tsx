@@ -886,8 +886,10 @@ function VideoRow({
             {/* 文件名最多两行：单行 truncate 时长片名（尤其带 [1080p][x264] 那种）
                 会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
                 第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
+            {/* 选中时文件名染强调色（与状态徽标同色）——单选多选走同一个
+                `selected` 条件，天然一致，不分档。 */}
             <div
-              className="line-clamp-2 break-all text-primary"
+              className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
               title={video.path}
             >
               {video.name}

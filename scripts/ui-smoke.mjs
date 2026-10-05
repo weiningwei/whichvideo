@@ -504,7 +504,7 @@ export default mod
   check('视频库页显示状态"已索引"', libraryHtml.includes('已索引'))
 
   // 上面那份样本 selectedVideoIds 是空集，**永远走不到「选中」分支**，
-  // 所以「多选时标题不染蓝」这条此前只有静态断言、没有被真实渲染验证过。
+  // 所以「选中时文件名染强调色」这条此前只有静态断言、没有被真实渲染验证过。
   // 这里补一份真的选中状态下的渲染，用正则数标题上的 text-accent 个数。
   {
     const two = [{ ...video, id: 1, name: 'Ep01.mkv' }, { ...video, id: 2, name: 'Ep02.mkv' }]
@@ -540,22 +540,20 @@ export default mod
           sideSettings: null
         })
       )
-    // 标题行是 line-clamp-2 的那个 div。数它带不带 text-accent
+    // 标题行是 line-clamp-2 的那个 div。数它带不带 text-accent。
+    // 选中时文件名要染强调色（用户要求"单选多选都要有明显提示"）；
+    // 单选与多选走同一个 `selected` 条件，逐行同规则。
     const titleAccentCount = (html) =>
       (html.match(/line-clamp-2 break-all [^"]*text-accent/g) ?? []).length
 
     check(
-      '选中时视频标题不染蓝（蓝色只留给竖条与行底）',
-      titleAccentCount(renderWith([1])) === 0,
+      '单选时文件名变强调色（text-accent，明显提示）',
+      titleAccentCount(renderWith([1])) === 1,
       `实际 ${titleAccentCount(renderWith([1]))} 处`
     )
-    // 单选与多选必须**完全一致**。选中提示只有两样：左侧竖条 + 淡蓝底。
-    // 标题与操作按钮刻意不参与染色 —— 那两处蓝不是"选中信号"而是噪声：
-    // 标题染蓝后分不清是"这一项被选中"还是"这几项都选中"；按钮的 btn-bg 是
-    // 半透明的，淡蓝底透上来会让它看着像"按钮被激活了"，实际只是可点。
     check(
-      '多选时视频标题同样不染蓝（与单选一致）',
-      titleAccentCount(renderWith([1, 2])) === 0,
+      '多选时每行文件名同样变强调色（与单选一致，逐行同规则）',
+      titleAccentCount(renderWith([1, 2])) === 2,
       `实际 ${titleAccentCount(renderWith([1, 2]))} 处`
     )
     const multiHtml = renderWith([1, 2])
@@ -571,7 +569,7 @@ export default mod
     )
     // 核心断言：把单选与多选的渲染结果按"选中提示"维度逐项比对。
     // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、
-    // 标题 text-accent **0 个**、操作按钮 bg-surface-2 **4 个**（不透明底）。
+    // 标题 text-accent **1 个**、操作按钮 bg-surface-2 **4 个**（不透明底）。
     // 样本固定渲染 2 行视频，单选命中 1 行、多选命中 2 行，所以各项应恰好翻倍。
     const countOf = (html, re) => (html.match(re) ?? []).length
     const BAR = /absolute inset-y-0 left-0 w-\[2px\] bg-accent/g
@@ -580,7 +578,7 @@ export default mod
     const BTN_OPAQUE = /bg-surface-2/g
     const one = renderWith([1])
     const both = renderWith([1, 2])
-    // 依次为：竖条 / 行底色 / 标题染色（须为 0）/ 按钮不透明底
+    // 依次为：竖条 / 行底色 / 标题染色（选中即 1）/ 按钮不透明底
     const single = [
       countOf(one, BAR),
       countOf(one, ROW_BG),
@@ -594,8 +592,8 @@ export default mod
       countOf(both, BTN_OPAQUE)
     ]
     check(
-      '单选 1 行 → 竖条 1、淡蓝底 3、标题染色 0、按钮不透明底 4',
-      single[0] === 1 && single[1] === 3 && single[2] === 0 && single[3] === 4,
+      '单选 1 行 → 竖条 1、淡蓝底 3、标题染色 1、按钮不透明底 4',
+      single[0] === 1 && single[1] === 3 && single[2] === 1 && single[3] === 4,
       `实际 ${single.join('/')}`
     )
     check(
@@ -870,15 +868,14 @@ export default mod
       '第二行仍 truncate'
     )
 
-    // 选中提示**单选多选完全一致**：蓝竖条 + 淡蓝底 + 标题染蓝。
+    // 选中提示**单选多选完全一致**：蓝竖条 + 淡蓝底 + 文件名染强调色。
     // 曾按 selectedCount 分过两档（多选只留竖条），想"少即是多"，实际破坏了
     // 风格统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己在哪种状态。
+    // 文件名染色也走同一个 `selected` 条件（用户要求明显提示），不引入分档变量。
     check(
-      '视频标题恒为 text-primary，选中也不染蓝（蓝色只留给竖条与行底）',
-      /line-clamp-2 break-all text-primary/.test(src) &&
-        !/line-clamp-2 break-all \$\{/.test(src) &&
-        !src.includes('titleAccent'),
-      '标题不参与选中染色'
+      '选中时文件名染强调色，且与单选/多选共用同一个 selected 条件',
+      /line-clamp-2 break-all \$\{selected \? 'text-accent' : 'text-primary'\}/.test(src),
+      '标题条件染色，不分档'
     )
     check(
       '选中行的操作按钮用不透明底色（否则半透明 btn-bg 会透出行底色）',

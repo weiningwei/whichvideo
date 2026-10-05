@@ -129,26 +129,29 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 - **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
 - `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
 
-## 选中提示：只给竖条和行底，标题与按钮不参与
+## 选中提示：竖条 + 行底 + 文件名染强调色，按钮文字不参与
 
-**选中时只有两样变化**：左侧 2px 亮蓝竖条 + 整行淡蓝底 `bg-row-selected`。
-**视频标题恒为 `text-primary`，操作按钮也不参与染色。**
+**选中时三样变化**：左侧 2px 亮蓝竖条 + 整行淡蓝底 `bg-row-selected` +
+**文件名染 `text-accent`**（与状态徽标同色；用户明确要求"单选多选都要有明显
+提示，文件名文字变强调色"）。操作按钮的文字不参与染色。
 
 `VideoRow` 里只有 `selected` 一个判定，不存在 `selectedCount` / `singleSelected`
-这类按选中数量分档的中间变量。四个操作按钮各带
-`${selected ? 'bg-surface-2' : ''}` —— 那是**不透明底**，用来挡住行底色透上来。
+这类按选中数量分档的中间变量 —— 文件名染色与行底共用同一个条件，单选多选天然
+一致。四个操作按钮各带 `${selected ? 'bg-surface-2 text-white' : ''}` ——
+`bg-surface-2` 是**不透明底**，用来挡住行底色透上来；`text-white` 让按钮文字
+在选中行上保持清晰。
 
-### 为什么标题与按钮不染蓝
+### 为什么按钮不染色、原生文本选中要拦
 
-这两处的蓝不是"选中信号"，是噪声：
-
-- **标题染成 accent 蓝**，一眼扫过去分不清是"这一项被选中"还是"这几项都选中"，
-  反而不如竖条 + 底色来得明确
 - **操作按钮**：`btn-bg`（`--color-btn-bg`）末两位带 alpha，是**半透明**的。
   不覆盖的话淡蓝底会从底下透上来，把四个按钮连边框一起染蓝，看着像
   "按钮被激活了" —— 实际它们只是可点。加 `bg-surface-2` 挡掉即可
-
-**蓝色只留给竖条与行底**：这两处占地最小、语义最准。
+- **Shift 点击会拉起浏览器原生文本选中**（`::selection` 蓝底），那是 Chromium
+  的行为、与我们的选中样式是两码事，而且 Ctrl 点击复现不了，看着像"只有 Shift
+  有 bug"。用模块级 `blockModifierTextSelection` 只拦带修饰键的按下（并清残留
+  选区）—— 视频行、分组标题行、表头三处都接了。**不要用整行 `select-none`**：
+  它会把文件名的双击/拖选复制一起干掉（踩过一次，用户反馈"文件名的选中效果
+  没有了"）
 
 ### 不要按选中数量分档
 
@@ -166,8 +169,9 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
 
 ### 测试
 
-ui-smoke 有断言守着「标题 0 处染色 / 按钮 4 个不透明底 / 多选时各项与单选成比例」，
-test:range 同步。反向验证（把标题染回 accent、去掉按钮不透明底）会报 145/151。
+ui-smoke 有断言守着「单选标题染色 1 处 / 多选 2 处 / 按钮 4 个不透明底 / 多选时
+各项与单选成比例」，test:range 同步。反向验证（把文件名改回恒定 `text-primary`、
+去掉按钮不透明底）会报错。
 
 顺带一条容易踩的：`test-theme` 会扫源码里的十六进制色值字面量，
 **注释里也别写具体色值**（如 `#16203380`）—— 会被当成"组件里硬编码颜色"而报错。

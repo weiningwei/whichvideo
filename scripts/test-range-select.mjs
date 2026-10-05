@@ -191,11 +191,9 @@ console.log('=== 实现与 useLibrary 的算法保持一致 ===')
   const viewSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8')
   const viewCode = viewSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
   check(
-    '选中时视频标题不染蓝（蓝色只留给竖条与行底）',
-    /line-clamp-2 break-all text-primary/.test(viewSrc) &&
-      !/line-clamp-2 break-all \$\{/.test(viewSrc) &&
-      !viewCode.includes('titleAccent'),
-    '标题不参与选中染色'
+    '选中时文件名染强调色（单选多选共用同一个 selected 条件）',
+    /line-clamp-2 break-all \$\{selected \? 'text-accent' : 'text-primary'\}/.test(viewSrc),
+    '标题条件染色，不分档'
   )
   check(
     '选中行的操作按钮用不透明底色（阻止半透明 btn-bg 透出行底色）',
