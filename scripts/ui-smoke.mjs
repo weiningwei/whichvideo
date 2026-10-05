@@ -895,6 +895,17 @@ export default mod
       !/selectedCount|singleSelected|isMultiSelect/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')),
       '源码里（剥掉注释后）不应出现分档变量'
     )
+    // 工具条布局必须与选中状态无关：按钮区独立 shrink-0 分区（左侧筛选区怎么
+    // 换行都影响不到它），「已选」计数 invisible 常驻占位（行宽不随选中变化）。
+    // 否则选中一个视频，「已选 N」一出现就把按钮组挤到第二行 —— 用户反馈过。
+    check(
+      '工具条：按钮区独立 shrink-0，选中计数 invisible 常驻占位（选中不改布局）',
+      src.includes('flex min-w-0 flex-1 flex-wrap items-center gap-2') &&
+        src.includes('flex shrink-0 items-center gap-2') &&
+        /selectedVideoIds\.size > 0 \? 'text-tertiary' : 'invisible'/.test(src) &&
+        !src.includes('ml-auto flex gap-2'),
+      '筛选区自己换行、按钮区不换行、计数不条件渲染'
+    )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
   check('视频库页显示监听中状态', libraryHtml.includes('监听中'))

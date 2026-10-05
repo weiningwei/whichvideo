@@ -468,68 +468,80 @@ export function LibraryView(props: Props) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line/70 px-3 py-2.5">
-          <input
-            ref={filterInputRef}
-            value={query.keyword ?? ''}
-            onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
-            placeholder="按文件名 / 目录筛选（/ 聚焦）"
-            className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
-          />
-          <select
-            value={String(query.folderId ?? '')}
-            onChange={(e) =>
-              onSetQuery({
-                ...query,
-                folderId: e.target.value === '' ? null : Number(e.target.value),
-                offset: 0
-              })
-            }
-            className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-          >
-            <option value="">全部监听目录</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={query.status ?? 'all'}
-            onChange={(e) => onSetQuery({ ...query, status: e.target.value as VideoQuery['status'], offset: 0 })}
-            className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-          >
-            <option value="all">全部状态</option>
-            <option value="ready">已索引</option>
-            <option value="pending">待索引</option>
-            <option value="indexing">索引中</option>
-            <option value="failed">索引失败</option>
-          </select>
-          <select
-            value={query.sort ?? 'added'}
-            onChange={(e) => onSetQuery({ ...query, sort: e.target.value as VideoQuery['sort'] })}
-            className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-          >
-            <option value="added">按导入时间</option>
-            <option value="name">按文件名</option>
-            <option value="size">按体积</option>
-            <option value="duration">按时长</option>
-          </select>
-          <span className="text-[11.5px] text-muted">
-            显示 {videos.length} / {total}
-          </span>
-          {/* 选中数量：多选时给出反馈（此前只能靠数竖条），也便于自查
-              「标题染色是否与选中数量一致」——见 test:range 的说明 */}
-          {selectedVideoIds.size > 0 && (
-            <span className="text-[11.5px] text-tertiary">已选 {selectedVideoIds.size}</span>
-          )}
-          <span
-            className="hidden text-[11px] text-tertiary lg:inline"
-            title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
-          >
-            ↑↓ 移动 · Enter 选中
-          </span>
-          <div className="ml-auto flex gap-2">
+        {/* 工具条分两层：左侧筛选区（内容多了自己换行），右侧按钮区独立 shrink-0。
+            此前是单行 flex-wrap + ml-auto，选中时「已选 N」一出现就把整个按钮组
+            挤到第二行（用户反馈：选中视频后三个按钮下移）。拆开后按钮永不换行，
+            计数再用 invisible 常驻占位 —— 选中前后工具条布局零变化。 */}
+        <div className="flex min-w-0 items-center gap-2 border-b border-line/70 px-3 py-2.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <input
+              ref={filterInputRef}
+              value={query.keyword ?? ''}
+              onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
+              placeholder="按文件名 / 目录筛选（/ 聚焦）"
+              className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
+            />
+            <select
+              value={String(query.folderId ?? '')}
+              onChange={(e) =>
+                onSetQuery({
+                  ...query,
+                  folderId: e.target.value === '' ? null : Number(e.target.value),
+                  offset: 0
+                })
+              }
+              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+            >
+              <option value="">全部监听目录</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={query.status ?? 'all'}
+              onChange={(e) => onSetQuery({ ...query, status: e.target.value as VideoQuery['status'], offset: 0 })}
+              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+            >
+              <option value="all">全部状态</option>
+              <option value="ready">已索引</option>
+              <option value="pending">待索引</option>
+              <option value="indexing">索引中</option>
+              <option value="failed">索引失败</option>
+            </select>
+            <select
+              value={query.sort ?? 'added'}
+              onChange={(e) => onSetQuery({ ...query, sort: e.target.value as VideoQuery['sort'] })}
+              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+            >
+              <option value="added">按导入时间</option>
+              <option value="name">按文件名</option>
+              <option value="size">按体积</option>
+              <option value="duration">按时长</option>
+            </select>
+            <span className="text-[11.5px] text-muted">
+              显示 {videos.length} / {total}
+            </span>
+            {/* 选中数量：多选时给出反馈（此前只能靠数竖条），也便于自查
+                「标题染色是否与选中数量一致」——见 test:range 的说明。
+                无选中时用 invisible 常驻占位而不是条件渲染：行宽保持不变，
+                选中瞬间不会把右侧按钮挤到第二行。tabular-nums 让数字等宽。 */}
+            <span
+              className={`text-[11.5px] tabular-nums ${
+                selectedVideoIds.size > 0 ? 'text-tertiary' : 'invisible'
+              }`}
+            >
+              已选 {selectedVideoIds.size}
+            </span>
+            <span
+              className="hidden text-[11px] text-tertiary lg:inline"
+              title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
+            >
+              ↑↓ 移动 · Enter 选中
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <button
               className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
               onClick={onToggleGroupByFolder}
