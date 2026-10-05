@@ -1,310 +1,230 @@
-# AGENTS.md
+# AGENTS.md — WhichVideo 开发指引
 
-Electron + electron-vite + React 19 + Tailwind v4 的本地视频库（以图搜帧）。
-主进程产物是 **CommonJS**（`out/main/index.js`）；渲染端是 React。包管理用 **pnpm**，node >= 22。
+> Electron + electron-vite + React 19 + Tailwind v4 本地视频库（以图搜帧）。
+> 主进程产物 **CommonJS** (`out/main/index.js`)；渲染端 React。包管理 **pnpm**，Node ≥ 22。
 
-## 铁律：从仓库根目录执行命令
+---
 
-`electron.vite.config.ts` 用 `process.cwd()` 解析所有路径，并在启动时校验 `src/main/index.ts` 是否存在；换目录执行会直接抛错。所有 `pnpm` 脚本都假定 CWD = 仓库根。
+## ⚡ 铁律：从仓库根目录执行
 
-## 常用命令
+`electron.vite.config.ts` 用 `process.cwd()` 解析路径并校验 `src/main/index.ts` 存在。**换目录执行直接抛错**。所有 `pnpm` 脚本假定 CWD = 仓库根。
+
+---
+
+## 📋 常用命令
 
 ```bash
 pnpm dev              # electron-vite dev（渲染端热更新）
 pnpm typecheck        # node + web 两套 tsc，无产物
-pnpm test             # 19 套自检按序跑（作用见下面「测试」）
-pnpm build            # typecheck + electron-vite build → out/
+pnpm test             # 19 套自检按序跑（见下「测试」）
+pnpm build            # typecheck + electron-vite build + icon → out/
 pnpm build:portable   # build + scripts/build-portable-folder.mjs → release/WhichVideo-portable/
-pnpm build:win        # build + electron-builder --win → NSIS 安装包 + release/win-unpacked/
+pnpm build:win        # build + electron-builder --win → NSIS 安装包 + win-unpacked/
 pnpm build:unpack     # build + electron-builder --win dir
-pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需要；缺失时应用仍能打开）
+pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需要；缺失可跑、不建索引）
 ```
 
-构建顺序固定：`typecheck` 通过后才会 `electron-vite build`；`build:portable`/`build:win` 已包含 `build`，不要再单独跑。提交前至少跑 `pnpm typecheck`。
+**构建顺序固定**：`typecheck` 通过 → `electron-vite build`；`build:portable`/`build:win` 已含 `build`，不要单独跑。提交前至少跑 `pnpm typecheck`。
 
-## 打包/启动类坑：查 docs/troubleshooting.md
+---
 
-双击 exe 没反应、打包 EPERM、环境类崩溃（`0x80000003`）、Electron 运行时反复下载、
-构建期报错 —— 这些排障步骤**唯一归属 [docs/troubleshooting.md](docs/troubleshooting.md)**，
-本文件不复制一份。要点索引（细节看那边）：
+## 🔧 关键约束（改动易踩）
 
-- 看 `<数据目录>\whichvideo.log` 定位启动失败在哪一步；连日志都没有 → 看退出码
-- 排查自检 `pnpm test:startup`（40 项）；环境判定 `node scripts/probe-electron-startup.mjs`
-- 占用点名 `node scripts/build-portable-folder.mjs --who-locks <目录>`
+| 约束 | 细节 | 验证 |
+|------|------|------|
+| **禁用 `__dirname` / `import.meta.dirname`** | electron-vite 按 `package.json#type` 决定 ESM/CJS，二者混用加载失败。`@shared` 需在 main/preload/renderer **各自**声明 alias；`@renderer` 只在 renderer 段。 | `pnpm test:config` |
+| **better-sqlite3 用 Node-API 预编译** | `electron-builder.yml: npmRebuild: false` 故意关闭 `@electron/rebuild`（沙箱易 `spawn EPERM`）。需重建跑 `pnpm rebuild:native`。 | — |
+| **主进程惰性 `require` 加载核心模块** | `loadCoreModules()` 捕获原生模块加载失败落日志。**别改顶层 ESM import**。配套两件事不可动：① `mainEntries()` 扫描 `src/main` 自动生成入口（曾手写漏文件），② `preserveModules: true`（多入口时 Rollup 复制共享模块会导致 `logger.ts` 模块级缓冲状态分裂、早期日志丢失）。 | `pnpm test:output` |
+| **`package.json` 禁 `"type": "module"`** | Electron 会把 CJS 主进程当 ESM 加载，首行抛错 → 无窗口无日志。 | `pnpm test:startup` 场景 0 |
+| **`.gitignore` Python 规则锚定根目录** | 必须以 `/` 开头（如 `/lib/`），否则误伤 `src/renderer/src/lib/`。 | — |
 
-## 打包与目录占用（EPERM）
+---
 
-现象、占用者点名（`--who-locks`）、脚本的「重试删除 → 改名挪开 → 换名继续打包」
-处理顺序，见 [docs/troubleshooting.md](docs/troubleshooting.md)。本节只留仓库侧的实现约束：
+## 📦 打包/启动类坑
 
-- `build:portable` 产出两份目录：`release\WhichVideo-portable\`（仓库内）与**仓库上一级目录**下的同名文件夹（`..\WhichVideo-portable\`，给用户直接双击运行的那份）。拷贝后核对文件数、总字节数与 `app.asar` 的 sha256；**仓库外那份失败不判死整次打包**，只报错并提示手动拷走。
-- 仓库外那份**保留已有的 `data\`**（`copyOutsideRepository` 先 `renameSync` 挪到 `<dest>.data-keep-<时间戳>`，替换产物后再挪回）——开发时反复打包，清掉索引库就得重跑一遍抽帧。拷贝校验的文件数与字节数因此都排除 `data\`（`countFiles(dir, excludeDirName)` / `directorySize(dir, excludeDirName)` 多一个参数）；挪不动时（跨卷、data 被占用）退回删除并如实输出，不静默丢索引库。落点可用 `WHICHVIDEO_OUTSIDE_DIR` 指定，`WHICHVIDEO_SKIP_OUTSIDE_COPY=1` 可跳过（`test:pack` 就是把它指向 `tmp\` 跑的，绝不能让它写真实的上一级目录）。
+**唯一归属 `docs/troubleshooting.md`**，本文件不复制。要点：
 
-**路径出现在哪里，按可见性分两种，别搞反：**
+- 双击 exe 无反应 → 看 `<数据目录>\whichvideo.log`；无日志 → 看退出码（`0x80000003` = 环境类崩溃）
+- `pnpm test:startup`（40 项）覆盖启动链路；环境判定跑 `node scripts/probe-electron-startup.mjs`
+- EPERM 占用排查：`node scripts/build-portable-folder.mjs --who-locks <目录>`
 
-| 去处 | 用什么路径 | 理由 |
-| --- | --- | --- |
-| 终端输出（`console.log` / `error`） | **绝对路径** | 开发者自己看，要知道自己机器上落在哪；贴 issue 时也需要 |
-| `便携版说明.txt`（跟着产品走） | **相对描述** | 终端用户看的，不该出现构建机目录结构 |
-| README / docs / 注释 | **相对路径** | 会公开流传，且换台机器就对不上 |
-| `WHICHVIDEO_TEST_REPORT` 的字段 | **绝对路径** | 自检靠它做 `startsWith` / `join` 判定 |
+---
 
-判断标准曾经搞反（终端输出做过相对化处理，导致开发者在自己机器上看不到绝对路径，
-而真正该干净的说明文件一直是好的）。`test:pack` 场景 5c 按这张表来查：断言说明文件
-与文档无泄漏，同时断言终端输出**保留**绝对路径。
+## 🏗️ 打包实现约束（仅仓库侧）
 
-`.vscode/settings.json` 是**故意入库**的，它把 `release`/`out*`/`tmp` 排除出文件监视，避免编辑器占用导致打包失败——不要删除或还原它。
+- `build:portable` 产出两份：仓库内 `release\WhichVideo-portable\` + **仓库上一级**同名文件夹（用户双击版）。外层失败不判死整体打包，仅报错提示手动拷走。
+- 外层**保留 `data\`**：`copyOutsideRepository` 先 `renameSync` 挪到 `.data-keep-<ts>`，替换后挪回。校验文件数/字节数用 `countFiles(dir, excludeDirName)` / `directorySize(...)` 排除 `data\`。挪不动退回删除并如实输出。环境变量 `WHICHVIDEO_OUTSIDE_DIR` 指定落点，`WHICHVIDEO_SKIP_OUTSIDE_COPY=1` 跳过（`test:pack` 用）。
 
-## 数据目录判定
+### 路径可见性表（别搞反）
 
-优先级（`src/main/datadir.ts`，有独立测试）：`WHICHVIDEO_DATA_DIR` → 便携启动器注入的 `PORTABLE_EXECUTABLE_DIR\data` → 打包后 exe 同级 `data\`（可写时）→ 默认 `userData`。索引库 `whichvideo.db`（SQLite WAL）、日志 `whichvideo.log`、Chromium 缓存 `session\` 都在数据目录内。放入 `Program Files` 等只读位置会回退到 `%APPDATA%\WhichVideo`。
+| 去处 | 路径 | 理由 |
+|------|------|------|
+| 终端输出 (`console.log/error`) | **绝对路径** | 开发者看、贴 issue |
+| `便携版说明.txt`（随产品） | **相对描述** | 用户看、不该泄构建机结构 |
+| README / docs / 注释 | **相对路径** | 公开流传、换机器对不上 |
+| `WHICHVIDEO_TEST_REPORT` 字段 | **绝对路径** | 自检靠 `startsWith`/`join` 判定 |
 
-## 关键约束（改动时容易忘）
+`test:pack` 场景 5c 断言：说明文件/文档无泄漏，终端输出**保留**绝对路径。
 
-- **`electron.vite.config.ts` 禁用 `__dirname` 与 `import.meta.dirname`**：electron-vite 按 `package.json` 的 `type` 字段决定用 ESM/CJS 解析配置，二者混用会加载失败。别名 `@shared` 要在 **main / preload / renderer 三段各自声明**，`@renderer` 只在 renderer 段。`pnpm test:config` 静态检查这些。
-- **better-sqlite3 用 Node-API 预编译二进制**，Node 与 Electron 通用。`electron-builder.yml` 里 `npmRebuild: false` 是刻意关闭 `@electron/rebuild`（它在某些沙箱会 `spawn EPERM` 导致打包中断）。确需重建用 `pnpm rebuild:native`。
-- **主进程用 `require` 惰性加载核心模块**（`loadCoreModules`），以便捕获原生模块加载失败并落日志，不要改成顶层 ESM import。配套两件事不能动：**`electron.vite.config.ts` 的 `mainEntries()` 扫描 `src/main` 自动生成入口**（曾手写 7 个入口，新增 `logger.ts`/`scan.ts` 后漏掉，运行时报 `Cannot find module`），以及 **`preserveModules: true`**（多入口时 Rollup 会把共享模块复制进每个入口，`logger.ts` 的模块级缓冲状态会分裂、早期日志丢失）。`pnpm test:output` 从编译产物里反查所有 `require('./x')` 是否都有对应文件。
-- **`package.json` 不能加 `"type": "module"`**：Electron 会据此把 CommonJS 主进程当 ESM 加载，首行即抛错、无窗口无日志。`pnpm test:startup` 场景 0 拦截。
-- `.gitignore` 里的 Python 目录规则**以 `/` 锚定到仓库根**，否则 `lib/` 会误伤 `src/renderer/src/lib/`。不要去掉前导斜杠。
+> `.vscode/settings.json` **故意入库**（排除 `release`/`out*`/`tmp` 文件监视），**不要删或还原**。
 
-## 选中提示：竖条 + 行底 + 文件名染强调色，按钮文字不参与
+---
 
-**选中时三样变化**：左侧 2px 亮蓝竖条 + 整行淡蓝底 `bg-row-selected` +
-**文件名染 `text-accent`**（与状态徽标同色；用户明确要求"单选多选都要有明显
-提示，文件名文字变强调色"）。操作按钮的文字不参与染色。
+## 📂 数据目录判定
 
-`VideoRow` 里只有 `selected` 一个判定，不存在 `selectedCount` / `singleSelected`
-这类按选中数量分档的中间变量 —— 文件名染色与行底共用同一个条件，单选多选天然
-一致。四个操作按钮各带 `${selected ? 'bg-surface-2 text-white' : ''}` ——
-`bg-surface-2` 是**不透明底**，用来挡住行底色透上来；`text-white` 让按钮文字
-在选中行上保持清晰。
+优先级（`src/main/datadir.ts`，有独立测试）：
 
-### 为什么按钮不染色、原生文本选中要拦
+`WHICHVIDEO_DATA_DIR` → 便携启动器注入 `PORTABLE_EXECUTABLE_DIR\data` → exe 同级 `data\`（可写时） → 默认 `userData`。索引库 `whichvideo.db`（SQLite WAL）、日志 `whichvideo.log`、Chromium 缓存 `session\` 均在数据目录。只读位置（如 `Program Files`）回退 `%APPDATA%\WhichVideo`。
 
-- **操作按钮**：`btn-bg`（`--color-btn-bg`）末两位带 alpha，是**半透明**的。
-  不覆盖的话淡蓝底会从底下透上来，把四个按钮连边框一起染蓝，看着像
-  "按钮被激活了" —— 实际它们只是可点。加 `bg-surface-2` 挡掉即可
-- **Shift 点击会拉起浏览器原生文本选中**（`::selection` 蓝底），那是 Chromium
-  的行为、与我们的选中样式是两码事，而且 Ctrl 点击复现不了，看着像"只有 Shift
-  有 bug"。用模块级 `blockModifierTextSelection` 只拦带修饰键的按下（并清残留
-  选区）—— 视频行、分组标题行、表头三处都接了。**不要用整行 `select-none`**：
-  它会把文件名的双击/拖选复制一起干掉（踩过一次，用户反馈"文件名的选中效果
-  没有了"）
+---
 
-### 「已选 N」计数要常驻占位，按钮区要独立分区
+## 🧪 测试（19 套，顺序固定）
 
-工具条原是单行 `flex-wrap` + `ml-auto`：选中一个视频，「已选 N」一出现就把右侧
-三个按钮（分组/平铺、重建全部索引、重新扫描目录）整体挤到第二行 —— 用户反馈
-「选中后按钮下移」。现在左侧筛选区 `flex-1 flex-wrap` 自己换行、按钮区独立
-`shrink-0`，计数在无选中时用 `invisible` 常驻占位（`tabular-nums` 数字等宽），
-选中前后工具条布局零变化。ui-smoke 有断言守着这三条。
-
-### 不要按选中数量分档
-
-历史上分过两档（多选只留竖条），又取消过。取消的理由是**分档的代价比它解决的
-问题大**：同一个交互在两种状态下长得不一样，用户每次看列表都得先判断
-"我现在是单选还是多选"才知道该期待什么。视觉上"更干净"换来的是交互模型不稳定。
-
-所以要治就治**行内的元素**（标题、按钮），而不是按选中数量分档。
-
-### 状态徽标那处蓝是正常的
-
-「待索引 / 索引中」用 `text-accent`，那**是状态色**，与选中无关。
-若列表里全是「索引中」，视觉上会显得"整片都蓝" —— 那是状态本来的样子，
-不要为了消除它去改状态色。
-
-### 测试
-
-ui-smoke 有断言守着「单选标题染色 1 处 / 多选 2 处 / 按钮 4 个不透明底 / 多选时
-各项与单选成比例」，test:range 同步。反向验证（把文件名改回恒定 `text-primary`、
-去掉按钮不透明底）会报错。
-
-顺带一条容易踩的：`test-theme` 会扫源码里的十六进制色值字面量，
-**注释里也别写具体色值**（如 `#16203380`）—— 会被当成"组件里硬编码颜色"而报错。
-改写成"见 index.css 的 --color-btn-bg"即可。
-
-## 列表行的底色必须是不透明实色
-
-视频库操作列是 `sticky right-0`（横向滚动时吸附右侧）。**sticky 格若用半透明底色
-（`bg-accent/12`、`bg-ink-800/70` 这类），左侧滚过来的文字会透上来叠在按钮上。**
-
-行底色统一用 `--color-row-*` 这几个**预先混好**的实色，不要写半透明叠色：
-
-| token | 由什么混成 | 用途 |
-| --- | --- | --- |
-| `--color-row-selected` | accent 12% + surface-1 | 选中行 |
-| `--color-row-focus` | surface-3 70% + surface-1 | 仅键盘光标 |
-| `--color-row-hover` | surface-3 40% + surface-1 | 悬停 |
-| `--color-row-group` | surface-3 50% + surface-1 | 分组标题行 |
-
-混色算法：`round(前景通道 × alpha + surface-1 通道 × (1 - alpha))`，深浅两套
-各自的 surface-1 不同，所以四个色值在 `[data-theme='light']` 里要重新算一遍。
-
-两个容易踩的点：
-
-- **只给 td，不给 tr。** tr 若也有背景，会与吸附格叠加，同一行出现两种色块
-- **分组标题行不能用一个 `colSpan={3}` 的 td**，那会盖住操作列、让左侧分隔线
-  断开；必须拆成 `colSpan={2}` + 一个空的吸附格
-
-试过的错路：给 td 铺不透明底色 + 内层 `absolute inset-0` 覆盖层渲染行色 ——
-`absolute` 在表格布局里定位不可靠（兄弟节点不是定位祖先时它会跑到别处），
-不如直接用实色 token。
-
-## 连选锚点必须用 ref，不能用 state
-
-`useLibrary` 的 Shift 连选锚点（`lastSelectedRef`）**必须是 ref**。改成 state 就会出
-一个 typecheck 通过、静态断言全绿、只有真去连选才暴露的 bug。
-
-**症状**：连按 Shift+↓ 选中不累积，每按一次都被清成 1 个（工具条显示「已选 1」）。
-
-**根因**（两层，都很隐蔽）：
-
-1. 连选逻辑写在 `setState` 的 updater 里，而 updater 是**同步执行**的 ——
-   此刻读 state 拿到的还是本轮 `setLast` **之前**的旧值。React 不会因为我们刚调过
-   `setLast` 就重跑一次 callback。
-2. 原来的依赖是 `[videos]`，而**选中并不改变 videos**（videos 只在扫描/导入时 set）。
-   所以依赖永远不变、callback 永不重建，闭包里那个 state 值永远是初始的 `null` ——
-   连选每次都走 `else` 分支退化成单选。
-
-**症状为什么"时好时坏"**：任何顺带 `setVideos` 的操作（重新扫描、导入）都会让
-callback 重建，此时闭包能拿到新锚点，于是连选又能用一会儿。
-这种间歇性表现让复现变得很困难，一度被误判成"用户跑的是旧构建"。
-
-**正确写法**：
-
-```ts
-const lastSelectedRef = useRef<number | null>(null)
-const toggleVideoSelection = useCallback((videoId, shiftKey, ctrlKey) => {
-  const anchor = lastSelectedRef.current   // 同步读到最新值
-  setSelectedVideoIds((prev) => { /* 用 anchor */ })
-  lastSelectedRef.current = videoId        // 同步更新
-}, [videos])
+```bash
+pnpm test
+# test:config → test:output → test:frames → test:hash → test:path → test:url
+# → test:icon → test:theme → test:network → test:cursor → test:range
+# → test:url（再次） → test:scale → test:startup → test:core → test:portable
+# → test:clipboard → test:pack → test:asar → test:ui
 ```
 
-`clearSelection` 里也要清 `lastSelectedRef.current = null`，
-否则取消选择后再按 Shift 会从上一次的位置开始扩展。
+| 套件 | 守护内容 | 改相关代码前必跑 |
+|------|----------|------------------|
+| `test:config` | vite 别名、入口扫描 | `electron.vite.config.ts` |
+| `test:output` | 编译产物 `require('./x')` 对应文件存在 | 新增 `src/main/*.ts` |
+| `test:hash` | 结构指纹等距抽样、覆盖 16 行 | `hash.ts` 网格/抽样 |
+| `test:path` | `shortDir` 不含文件名、根目录不截断 | `format.ts` 路径处理 |
+| `test:url` | 网页主图解析 + 协议校验 | `main/url-image.ts` |
+| `test:icon` | ICO 结构/7 尺寸、build/out 同步、favicon 同源、三处接线 | 图形/图标接线 |
+| `test:network` | 除 `url-image.ts` 外零联网、9 核心模块零联网、CSP 无 connect-src 放宽 | 引入联网能力前 |
+| `test:cursor` | 光标算法行为（28 项）：移动/单选跟随、Ctrl 只移光标、分组跳过标题、点击行后光标同步 | `LibraryView` 光标/选中 |
+| `test:range` | 连选行为（24 项）：Shift 累积、Ctrl 点选、clearSelection 清锚点、静态守卫锚点用 ref | 连选逻辑 |
+| `test:theme` | 组件无十六进制/内置色、语义 token 双侧齐全 | tsx 写固定色前 |
+| `test:scale` | 指纹尺度不变：帧 320 宽、查询图原分辨率、盒式重采样+均值归一化 | `toGray`/`EXTRACT_WIDTH` |
+| `test:startup` | 启动链路 40 项（入口/日志/便携目录/单实例锁/早期崩溃可见） | 启动相关 |
+| `test:pack` | 便携版打包 62 场景（EPERM/回退/校验/data 保留/路径可见性） | 打包脚本 |
+| `test:asar` | asar 解析逻辑（10 项） | asar 相关 |
 
-`test:range` 里有专门三条守着它（锚点用 ref、判断读 ref、clearSelection 清 ref），
-外加「连按 Shift+↓ 每次都累积」的行为验证。**改连选逻辑前先跑它。**
+### 测试要点
 
-顺带一个通用教训：**`useCallback` 的依赖数组是"何时重建闭包"的唯一依据，
-而"读一个 state"不构成依赖 —— 因为 state 变了但你若没把它列进去，闭包就永远读不到
-新值。** 凡是"上一次的位置/上一次的某状态"这类锚点，直接用 ref。
+- `test:startup`/`test:core`/`test:portable` 内部先跑 `node scripts/build-core.mjs` 编到 `out-e2e/`、`out-startup/`（非发布产物 `out/`，用 `tsconfig.e2e.json` / `tsconfig.startup.json`）。
+- **`test:ui` 与 `test:path` 不能并发**：同用 `tsc -p tsconfig.preview.json` 转译渲染端，并发会假失败。
+- 沙箱清空 `out-e2e` 被安全删除拦下时，手动逐个跑 `node scripts/test-xxx.mjs`。
+- 受限沙箱禁管道时 `test:core` 依赖 ffmpeg 的用例 SKIP，核心链路仍验证。
+- **新增 `src/main/*.ts` 后 `out/main/` 不自动更新**（`build-core.mjs` 只编 `out-e2e`/`out-startup`），正常跑 `pnpm build`；若 esbuild 报 `winapi error #5` 读 `package.json` 失败，用 tsc 单独补编译（**必须带 `--strict`**，否则判别式联合不窄化误报）。
+- 打包脚本测试钩子（仅自检用）：`WHICHVIDEO_SKIP_BUILD_CHECK`、`WHICHVIDEO_SKIP_ELECTRON_BUILDER`、`WHICHVIDEO_TEST_FORCE_LOCKED`、`WHICHVIDEO_RELEASE_DIR`、`WHICHVIDEO_TEST_REPORT`。
 
-## 光标与选中
+---
 
-**光标与选中必须是同一个东西。** 文件管理器式的列表里，光标在哪单选就在哪。
+## 🎨 主题与配色
 
-此前写成两个独立 state（`focusedIndex` 本地 + `selectedVideoIds` 在 hook 里），语法完全正确、
-静态检查也全绿，但用起来方向键只动灰竖条、蓝竖条留在原地——用户反馈"按方向键没反应"。
-这种错静态断言抓不到，只能靠 `test:cursor` 复刻算法跑行为验证。
+三层：**语义 token** (`primary`/`surface-*`/`line`/`accent`…) → **两套色值** (`@theme` 深色 / `[data-theme='light']` 浅色) → `<html data-theme>`。组件只写第一层。
 
-约定：
+- `useTheme()`：深/浅/跟随系统三档循环，存 `localStorage["wv-theme"]`
+- 跟随系统：`matchMedia("(prefers-color-scheme: dark)")` + 监听 `change`（非 CSS `prefers-color-scheme`，否则手动选浅色被系统覆盖）
+- 旧 `ink-*`/`muted` 通过 `var()` 映射语义层，仍可用
 
-- `videoRowIndexes` 只收视频行，↑↓ 在它上面移动，**跳过分组标题**（标题不是视频，无从"选中"）
-- 无修饰 → 单选跟随；`Shift` → 从上次选中处连选；`Ctrl` → 只移光标、选区不动
-- 光标可能落在标题上（`focusedRowPos === -1`），按 ↓ 从首行起步、按 ↑ **从末行**起步
-  （`from` 取 `-1` / `length`，不是 `0`——取 0 会被夹到首行，按↑没反应）
-- `Space` 不动光标也不清其他行，是真正的加选 / 取消；
-- `←→` 作用于**光标所在视频的分组**（`focusedFolderId`），不再等"光标在标题上"
+**新增组件只能用语义 token**。深色下 `text-slate-100` 浅色是白字白底，`#38bdf8` 白底对比度 2.1:1 —— 靠 `test:theme` 静态拦。
 
-**改光标的入口有两条，漏一条就会复现老 bug**：
+---
 
-| 入口 | 函数 | 修饰键 |
-| --- | --- | --- |
-| 方向键 / Home / End / 翻页 | `moveCursor` / `jumpCursor` | Shift 连选、Ctrl 只移光标 |
-| **鼠标点整行** | `handleRowClick` → `focusRow` / `selectRowRange` / `toggleRowSelection` | Shift 连选、Ctrl 点选 |
+## 🖼️ 图标
 
-历史上曾只打通了方向键那条，点击仍只改选中 —— 光标一直停在初始位置（第一个视频），
-于是「点第三个视频再按 ↑」会从第一个起算，直接跳回第一个。**两条入口都必须
-`setFocusedIndex`**。
-
-`handleRowClick` **按 video.id 反查行下标**（`navigableItems.findIndex`），
-不要靠 map 回调里的位置参数去算偏移：分组视图下每组前面都插了标题，偏移量容易
-算错，而算错的症状恰好是"跳到第一个"这种，从界面上极难看出是偏移错了。
-
-## 文档分工
-
-面向的读者不同，别都塞进 README：
-
-| 文件 | 读者 | 内容 |
-| --- | --- | --- |
-| `README.md` | 想用这个软件的人 | 快速开始、使用流程、配置项、用户级 FAQ |
-| `docs/how-search-works.md` | 想了解实现的人 | 检索原理、内存布局、实测距离量级、调参依据 |
-| `docs/troubleshooting.md` | 打包维护者 | 启动无反应、EPERM、环境类崩溃、Electron 下载、构建期报错 |
-| `AGENTS.md` | 参与开发的人 | 架构约束、踩坑记录、19 套自检的性质 |
-
-写 README 时先问：这条信息是「想用的人」关心的吗？ 不是就往 docs/ 放。
-同理，崩溃排查与数学推导不要写进 README —— 那两章曾占掉 58% 的篇幅。
-
-## 测试
-
-`pnpm test` 按序跑：`test:config → test:output → test:frames → test:hash → test:path → test:url → test:icon → test:theme → test:network → test:cursor → test:range → test:url（再次） → test:scale → test:startup → test:core → test:portable → test:clipboard → test:pack → test:asar → test:ui`（19 套脚本，`test:url` 在序列里出现两次，历史遗留，不因此删改）。
-
-- `test:startup` / `test:core` / `test:portable` 内部先跑 `node scripts/build-core.mjs`，把 `src/main` 编到 **`out-e2e/`、`out-startup/`**（与发布产物 `out/` 无关，用 `tsconfig.e2e.json` / `tsconfig.startup.json`）。
-- `test:hash` 从 `out-e2e/shared/hash.js` 导入 `computeStructHash`，守住「结构指纹必须等距抽样、覆盖全部 16 行」这条性质——`encodeChannel` 曾因顺序填 bit 而只覆盖上半张图。改 `hash.ts` 的网格或抽样逻辑后务必跑它。
-- `test:path` 转译渲染端后测 `format.ts` 的路径处理，守住「shortDir 不含文件名」与「文件在根目录时 lastIndexOf 返回 -1 不截断文件名」两条性质。改 `shortDir`/`shortPath` 前必须跑它。
-- `test:url` 测 `main/url-image.ts`：网页主图解析（og:image / twitter:image / link / 首个 img、相对地址转绝对、跳过占位图与 data:）与协议校验（拒绝 file:/data:/javascript: 等）。改该文件前必须跑它。
-- `test:icon` 校验图标：ICO 结构与 7 个尺寸、`build/` 与 `out/` 两份是否同步、favicon 是否与 ICO 同源、win.icon / favicon / BrowserWindow icon 是否都接上。改图形或图标接线后必须跑它。
-- `test:range` 验证连选算法的**行为**（24 项）：点一个→Shift 扩展→Ctrl 点选/取消、**连按 Shift+↓ 每次都累积**、clearSelection 清锚点、单选 size=1。三条静态守卫确保锚点用 ref 而非 state（改回去静态守卫直接失败）。改连选逻辑前必跑。
-- `test:cursor` 验证光标算法的**行为**（28 项）：↓ 逐行移动且单选跟随、Ctrl+↓ 只移光标不动选区、分组视图跳过分组标题、光标误落在标题上时按 ↑ 从末行起步、End/Home 夹紧、空列表不崩，以及**点击整行后光标是否同步移动**（点第 3 个再按 ↑ 必须落到第 2 个，平铺与分组视图各验一遍）。ui-smoke 只能静态检查"源码里有没有某个调用"，抓不到"方向键动了但选中没跟着动"这类逻辑错误——**改 LibraryView 的光标/选中逻辑前必须跑它**。
-- `test:network` 守住隐私边界：除 `main/url-image.ts`（链接取图）外源码不得有任何网络请求；9 个核心模块（导入/抽帧/指纹/检索/存储/监听/剪贴板/日志）零联网；链接取图必须用户主动触发、请求头不带本机标识；依赖里无遥测类库；产物里无更新源配置；渲染端 CSP 无 connect-src 放宽。**引入任何联网能力前先想清楚会不会把用户数据带出去**，改完必须跑它。
-- `test:theme` 守住配色纪律：组件里不许出现十六进制颜色或 Tailwind 内置固定色（slate-100 等），语义 token 必须在 `@theme` 与 `[data-theme=light]` 两侧都定义齐全。**在 tsx 里写固定色前先想清楚它是否该 token 化**；确有例外（如 Header 的「WV」压在 accent 渐变上）要登记到该脚本的 `HEX_EXCEPTIONS`，并写明理由。
-- `test:scale` 守住「指纹尺度不变」：视频帧抽到 320 宽、查询图保持原分辨率，两者靠 `toGray` 的盒式重采样 + 均值归一化对齐。改 `toGray` 的采样方式或 `EXTRACT_WIDTH` 时务必跑它。
-- 沙箱里 `build-core.mjs` 清空 `out-e2e` 可能被安全删除守卫拦下（文件数超阈值），此时手动逐个跑 `node scripts/test-xxx.mjs` 即可，不要当成测试失败。
-- **`test:ui` 与 `test:path` 不能并发跑**：两者都用 `tsc -p tsconfig.preview.json` 转译渲染端，并发执行会互相干扰导致假失败（输出为空 / 退出码 1）。批量验证时必须串行；单独复跑即可确认是否真失败。
-- 受限沙箱禁止子进程管道时，`test:core` 依赖真实 ffmpeg 管道的用例会 SKIP 并说明原因，核心链路仍验证。
-- **新增 `src/main/*.ts` 后 `out/main/` 不会自动更新**（`build-core.mjs` 只编 `out-e2e` 与 `out-startup`），`test:output` 会报「缺少 xxx.js」。正常情况跑 `pnpm build` 即可；**若 esbuild 报 `Cannot read file "package.json": winapi error #5`**（读 `electron.vite.config.ts` 时连带读 package.json 失败，本机沙箱内外都会发生），用 tsc 单独补编译：
-  `node node_modules/typescript/bin/tsc src/main/x.ts --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir <tmp>`，再把 `<tmp>/x.js` 拷进 `out/main/`。
-  **`--strict` 不能省**：少了它 `strictNullChecks` 关闭，判别式联合（`{ok:true}|{ok:false}`）不窄化，会报 `Property 'message' does not exist`——这是误报，项目配置里 strict 是开的。
-- `scripts/lib/electron-stub.mjs` 是测试用的 Electron 桩；主进程自检在纯 Node 下跑，无需安装 Electron 运行时。
-- 打包脚本的测试钩子（只给自检用，不要在日常构建里设置）：`WHICHVIDEO_SKIP_BUILD_CHECK`、`WHICHVIDEO_SKIP_ELECTRON_BUILDER`、`WHICHVIDEO_TEST_FORCE_LOCKED`、`WHICHVIDEO_RELEASE_DIR`、`WHICHVIDEO_TEST_REPORT`。
-
-## 主题与配色
-
-三层结构：语义 token（`primary` / `surface-*` / `line` / `accent`…）→ 两套色值（`@theme` 深色 / `[data-theme='light']` 浅色）→ `<html data-theme>`。组件只写第一层。
-
-- `useTheme()` 提供深色 / 浅色 / 跟随系统三档，循环切换，存在 `localStorage["wv-theme"]`
-- 「跟随系统」用 `matchMedia("(prefers-color-scheme: dark)")` 并**监听 change**，用户改 Windows 深浅色时能实时跟随
-- 没用 CSS 的 `prefers-color-scheme` 直接换色：那样手动选浅色就盖不住系统设置了
-- 旧的 `ink-950…ink-700` / `muted` 通过 `var()` 映射到语义层，仍可用，改主题会自动跟随
-
-**新增组件时只能用语义 token。** 深色下的 `text-slate-100` 在浅色主题里是白字白底，`#38bdf8` 在白底上对比度约 2.1:1——这类问题在深色下看不出，只能靠 `test:theme` 静态拦。
-
-## 图标
-
-图形是圆角方形 + 四个取景角 + 播放三角（"以图搜帧"），配色沿用 accent #38bdf8。
+图形：圆角方形 + 四取景角 + 播放三角（以图搜帧），配色 accent `#38bdf8`。
 
 `pnpm icon` → `scripts/generate-icon.mjs`（零依赖，纯 zlib 手写 PNG/ICO）产出三处：
 
-- `build/icon.ico`（16~256）—— electron-builder 读它做 exe 与快捷方式图标
-- `out/icon.ico` —— 同上，但**随包走**：`files` 只含 `out/**`，打包后 `build/` 在 asar 外不可达，绿色版（win-unpacked 直跑 exe）靠 `__dirname/../icon.ico` 拿图标，否则任务栏退回默认图标
+- `build/icon.ico` (16~256) —— electron-builder 读 exe/快捷方式图标
+- `out/icon.ico` —— **随包走**：`files` 只含 `out/**`，打包后 `build/` 在 asar 外不可达；绿色版靠 `__dirname/../icon.ico` 拿任务栏图标
 - `src/renderer/public/favicon-{16,32}.png` —— 随源码入库
 
-`pnpm build` 的**末尾**跑 `pnpm icon`：`electron-vite build` 会清空 `out/`，放在前面生成会被删掉。
-16×16 是纯像素光栅化（无抗锯齿）的辨识极限，32px 以上很干净——不要为了 16px 去加粗角臂，那会让四角连成方框。
+**`pnpm build` 末尾跑 `pnpm icon`**（`electron-vite build` 清空 `out/`，放前面会被删）。
 
-**「任务栏有图标但 exe 还是默认的」不是打包问题，是 Windows 图标缓存。** 两处图标是**互不相干的两条路径**：
+> **任务栏有图标但 exe 是默认的 = Windows 图标缓存**，非打包问题。两路径互不相干：
+> - 任务栏/窗口 = `BrowserWindow.icon` 运行期读 `out/icon.ico`
+> - exe/快捷方式 = electron-builder 打包时读 `win.icon` 烧进 PE 资源节
+>
+> 先跑 `pnpm test:icon` 验证 PE 资源节与 `build/icon.ico` 字节级一致 → 清缓存：
+> ```bash
+> taskkill /f /im explorer.exe && del /f /q "%localappdata%IconCache.db" && del /f /q "%localappdata%MicrosoftWindowsExplorericoncache_*.db"
+> start explorer.exe
+> ```
+> 再清任务栏固定项、桌面快捷方式。
 
-- 任务栏 / 窗口图标 = BrowserWindow 的 `icon`，运行期读 `out/icon.ico`（随包走）
-- exe 文件 / 快捷方式图标 = electron-builder 打包时读 `win.icon`，**烧进 exe 资源节**，与运行期无关
+---
 
-先跑 `pnpm test:icon`——它会直接解析 exe 的 PE 资源节，列出 RT_ICON 下每张图的字节数并与 `build/icon.ico` 逐一比对。若显示「7 张 PNG 图标 / 完全一致」，说明打包是好的，**不用重打包**，按下面清缓存即可：
+## 🗂️ 项目结构（主进程链路）
 
-```bash
-# 1) 清图标缓存（icache 是图标缓存服务，删掉后资源管理器会自动重建）
-taskkill /f /im explorer.exe && del /f /q "%localappdata%IconCache.db" && del /f /q "%localappdata%MicrosoftWindowsExplorericoncache_*.db"
-start explorer.exe
+```
+src/main/index.ts      # 启动引导/窗口/数据目录/生命周期
+src/main/ipc.ts        # 26 IPC 处理器；无模块级可变量，db/searchIndex/indexer/watcher/broadcast 经 IpcDeps 注入
+src/main/db.ts         # SQLite
+src/main/search.ts     # 常驻内存帧索引 + 打分
+src/main/indexer.ts    # 抽帧队列
+src/main/watcher.ts    # chokidar 监听
+src/main/media.ts      # ffmpeg/ffprobe 查找
+src/main/scan.ts       # 目录扫描
+src/main/datadir.ts    # 便携目录判定
+src/main/logger.ts     # 日志
+src/main/constants.ts  # 魔法数字集中
+src/main/interfaces.ts # 服务契约
+src/shared/            # 主/渲染共用：types.ts(含 IPC 频道)、hash.ts、framepack.ts
 ```
 
-还有两处缓存会骗人：**任务栏固定项**（取消固定 → 重新固定）与**桌面快捷方式**（删掉旧的 `.lnk` 再重新创建，`.lnk` 自身也缓存图标）。改了 exe 后若仍是旧图标，先清缓存再怀疑打包。
+渲染端列表：`LibraryView.tsx`（工具条/表格/分组标题/快捷键）、`VideoRow.tsx`（竖条+行底+文件名染色+4操作按钮）、`useVideoCursor.ts`（光标/导航/PAGE_JUMP）、`lib/selection.ts`（`blockModifierTextSelection` 视频行/分组标题/表头共用）。
 
-## 项目结构（主进程链路）
+---
 
-`src/main/index.ts`（启动引导/窗口/数据目录/生命周期）与 `src/main/ipc.ts`（26 个 IPC 处理器；不持有模块级可变量，`db/searchIndex/indexer/watcher/broadcast` 等全部经 `IpcDeps` 在 `registerIpc()` 调用点注入，私有辅助 performSearch/剪贴板/对话框也闭包在内）→ `db.ts`（SQLite）· `search.ts`（常驻内存帧索引+打分）· `indexer.ts`（抽帧队列）· `watcher.ts`（chokidar）· `media.ts`（ffmpeg/ffprobe 查找）· `scan.ts`（目录扫描）· `datadir.ts`（便携目录判定）· `logger.ts`（日志）。
-`ipc.ts` 拆出后 `test:startup` 的 electron 桩重写改成了**目录级**：`startup-smoke.mjs` 曾只重写 `out-startup/main/index.js` 里的 `require('electron')`，新模块 `ipc.js` 漏在外面，Node 里 `require('electron')` 拿到的是二进制路径字符串 → `ipcMain` 为 undefined → 启动报 "Cannot read properties of undefined (reading 'handle')"。再往 `src/main/` 加会 import electron 的文件时不用管这条——脚本已按目录扫。
-渲染端列表：`components/LibraryView.tsx`（工具条/表格骨架/分组标题/键盘快捷键层）· `components/VideoRow.tsx`（视频行：竖条+行底色+文件名染色+四个操作按钮）· `hooks/useVideoCursor.ts`（光标状态与导航原语，`PAGE_JUMP` 也在这里）· `lib/selection.ts`（`blockModifierTextSelection`，视频行/分组标题/表头三处共用）。
-`ui-smoke.mjs` / `test-range-select.mjs` 的源码断言按**合并读取**（LibraryView + VideoRow + useVideoCursor + selection）查——拆分后检查范围与单文件时代完全一致，断言本身不用改；往列表加新文件时记得把读取列表补上。
-`src/shared/` 为主/渲染共用（`types.ts` 含 IPC 频道名，`hash.ts` 指纹，`framepack.ts` 144B/帧内存布局）。
+## 📖 文档分工
 
-更多面向用户的细节（检索原理、参数、常见问题）见 `README.md`。
+| 文件 | 读者 | 内容 |
+|------|------|------|
+| `README.md` | 用户 | 快速开始、使用流程、配置项、用户级 FAQ |
+| `docs/how-search-works.md` | 实现者 | 检索原理、内存布局、实测距离量级、调参依据 |
+| `docs/troubleshooting.md` | 打包维护者 | 启动无反应、EPERM、环境崩溃、Electron 下载、构建期报错 |
+| `AGENTS.md` | 开发者 | 架构约束、踩坑记录、19 套自检性质 |
+
+> 写 README 先问：这条信息「用户」关心吗？不是 → `docs/`。崩溃排查与数学推导别进 README。
+
+---
+
+## ⚠️ 易踩 UI 约束（来自 ui-smoke/test:range/test:cursor）
+
+### 选中样式
+- 选中 = 左侧 2px 蓝竖条 + 整行 `bg-row-selected` + **文件名 `text-accent`**（单选多选同一条件）
+- 4 操作按钮：`${selected ? 'bg-surface-2 text-white' : ''}`（**不透明底挡住行底透色**，文字保白）
+- Shift 点击会触发浏览器原生 `::selection`，用 `blockModifierTextSelection` 仅拦带修饰键按下（视频行/分组标题/表头三处），**别用整行 `select-none`**（会干掉文件名双击复制）
+
+### 工具条布局
+- 「已选 N」常驻占位（`invisible` + `tabular-nums`），选中前后布局零变化
+- **不按选中数量分档**（历史分两档又取消：交互两种状态长得不一样，用户每次得先判断单/多选）
+
+### 列表行底色（sticky right-0 吸附列）
+- **必须不透明实色 token**（`--color-row-*`），半透明会透出左侧滚动文字
+- 只给 `td` 不给 `tr`（tr 有背景会与吸附格叠加）
+- 分组标题行：**拆成 `colSpan={2}` + 空吸附格**，别用单 `colSpan={3}`（会盖住操作列、断开分隔线）
+
+### 连选锚点
+- **必须用 `useRef`**，不能用 state（updater 同步执行读旧值、依赖 `[videos]` 永不重建 → 退化单选）
+- `clearSelection` 须清 `lastSelectedRef.current = null`
+- `test:range` 三条静态守卫 + 行为验证（连按 Shift+↓ 每次累积）
+
+### 光标与选中 = 同一东西
+- `videoRowIndexes` 只收视频行，↑↓ 跳过分组标题
+- 两条入口**都必须 `setFocusedIndex`**：
+  1. 方向键/Home/End/翻页 → `moveCursor`/`jumpCursor`
+  2. 鼠标点整行 → `handleRowClick` → `focusRow`/`selectRowRange`/`toggleRowSelection`
+- `handleRowClick` **按 `video.id` 反查 `navigableItems.findIndex`**，别靠 map 回调位置参数（分组视图偏移易算错 → 症状：跳回首行）
+
+---
+
+## 📌 补充：新增 `src/main/*.ts` 后的编译
+
+`test:output` 会报「缺少 xxx.js」。正常跑 `pnpm build` 即可。若 esbuild 报 `winapi error #5` 读 `package.json` 失败，用 tsc 单独补编译（**必须带 `--strict`**）：
+
+```bash
+node node_modules/typescript/bin/tsc src/main/x.ts \
+  --module commonjs --target ES2022 --moduleResolution node \
+  --esModuleInterop --skipLibCheck --strict --outDir <tmp>
+# 再拷 <tmp>/x.js → out/main/
+```
