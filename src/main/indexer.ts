@@ -14,7 +14,7 @@ import {
   type FrameProgress
 } from '@shared/types'
 import { normalizePath } from '@shared/types'
-import { makeThumbnail, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
+import { detectScenes, makeThumbnail, planSceneTimestamps, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
 import { extractAndHash, scanVideoFiles, statFile } from './scan'
 import type { EmitLibraryEvent, LibraryFileEvent } from './interfaces'
 import { log, logError } from './logger'
@@ -460,7 +460,23 @@ export class Indexer {
       if (probed.video) this.emit({ type: 'video-updated', video: probed.video })
     }
 
-    const timestamps = planTimestamps(duration, settings.framesPerVideo)
+    // 采样计划：均匀（现状）或场景检测（settings.samplingMode）。
+    // 场景模式 = 场景检测 pass（低分辨率快速解码）+ 场景点/长镜头补充的
+    // 非均匀时间点 + 强制逐点 seek（fps 滤镜无法对齐非均匀点）。
+    // 检测失败（ffmpeg 异常等）退回均匀计划，不阻断索引。
+    const forceSeek = settings.samplingMode === 'scene'
+    let timestamps: number[]
+    if (forceSeek) {
+      try {
+        const scenes = await detectScenes(video.path, 0.3, t)
+        timestamps = planSceneTimestamps(scenes, duration, settings.framesPerVideo)
+      } catch (err) {
+        logError(`场景检测失败，退回均匀采样：${video.path}`, err)
+        timestamps = planTimestamps(duration, settings.framesPerVideo)
+      }
+    } else {
+      timestamps = planTimestamps(duration, settings.framesPerVideo)
+    }
     // 断点续传：只处理未完成的时间点
     const processed = video.processedTimestamps ?? []
     const startIndex = processed.length
@@ -490,6 +506,7 @@ export class Indexer {
       const batchStartTime = Date.now()
       const batchFrames = await extractAndHash(video.path, timestamps, settings, duration, {
         startIndex: batchStart,
+        forceSeek,
         onFrame: (done, total) => {
           this.frameProgress.set(videoId, { done, total })
         },

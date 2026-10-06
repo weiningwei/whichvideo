@@ -76,6 +76,23 @@ export function SettingsPanel({
         文件被删除时自动从库中移除
       </label>
 
+      <label className="flex flex-col gap-1 text-secondary">
+        <span className="text-[11.5px]">抽帧采样模式</span>
+        <select
+          className="rounded-lg border border-line bg-ink-900/60 px-2 py-1.5 text-[12px] text-primary"
+          value={value.samplingMode}
+          onChange={(e) => onChange({ samplingMode: e.target.value as 'uniform' | 'scene' })}
+        >
+          <option value="uniform">均匀采样（索引快，短镜头可能漏采）</option>
+          <option value="scene">场景检测（召回高，索引更慢）</option>
+        </select>
+        <span className="text-[10.5px] text-muted">
+          均匀：按固定间隔取帧，长视频走单次全片解码，速度快。
+          场景：先检测镜头切换点、每个镜头至少一帧，长镜头内部再补充 —— 
+          适合镜头切换密集的内容。更改后需「重建全部索引」才对已索引视频生效。
+        </span>
+      </label>
+
       <label className="flex items-center gap-2 text-secondary">
         <input
           type="checkbox"

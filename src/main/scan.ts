@@ -55,6 +55,8 @@ export interface ExtractOptions {
   width?: number | null
   /** 视频高度（用于 4K 判断） */
   height?: number | null
+  /** 强制逐点 seek：场景检测采样的时间点是非均匀的，fps 滤镜无法对齐 */
+  forceSeek?: boolean
 }
 
 export async function extractAndHash(
@@ -64,6 +66,9 @@ export async function extractAndHash(
   durationSeconds?: number | null,
   options?: ExtractOptions
 ): Promise<NewFrame[]> {
+  // settings 参数保留：抽帧模式等设置演进时不必改所有调用点（场景模式的
+  // 采样计划在 indexer 里按 settings.samplingMode 生成，forceSeek 随 options 传入）
+  void settings
   if (timestamps.length === 0) return []
 
   // 帧数越过成本交叉点后，改用"单次全片解码 + fps 采样"：
@@ -72,8 +77,9 @@ export async function extractAndHash(
   //
   // 注：当前两条路径都固定用 EXTRACT_WIDTH 缩放，settings 暂未参与抽帧决策；
   // 参数保留以便后续设置（如缩放宽度、抽帧模式）演进时不必改所有调用点。
-  void settings
-  if (shouldUseFullScan(timestamps.length, options?.width, options?.height)) {
+  // forceSeek：场景检测采样给的是**非均匀**时间点，fps 滤镜的均匀采样
+  // 无法对齐 —— 必须逐点 seek 精确命中场景帧。
+  if (!options?.forceSeek && shouldUseFullScan(timestamps.length, options?.width, options?.height)) {
     return extractAndHashByFullScan(filePath, timestamps, durationSeconds ?? null, options)
   }
   return extractAndHashBySeek(filePath, timestamps, options)

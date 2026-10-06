@@ -153,8 +153,20 @@ export function useLibrary() {
         await window.whichvideo.videos.revealFile(videoId)
       },
       async updateSettings(patch: Partial<AppSettings>): Promise<void> {
+        const prev = core.settings
         const next = await window.whichvideo.library.updateSettings(patch)
         core.setSettings(next)
+        // 采样模式改变只影响"之后抽的帧"—— 已索引视频的时间戳还是旧采样
+        // 的产物，不重建就与新模式混存。切换后立即提示，避免用户误以为
+        // 已自动生效。
+        if (prev && next && prev.samplingMode !== next.samplingMode) {
+          notices.pushNotice(
+            'info',
+            next.samplingMode === 'scene'
+              ? '已切换到场景检测采样：建议「重建全部索引」让已索引视频应用新采样'
+              : '已切换到均匀采样：建议「重建全部索引」让已索引视频应用新采样'
+          )
+        }
       },
       async resetLibrary(): Promise<void> {
         await withBusy('正在清空索引库…', async () => {

@@ -248,6 +248,16 @@ export interface AppSettings {
   awaitWriteMs: number
   /** 文件被删除后是否从库中清除 */
   pruneOnDelete: boolean
+  /**
+   * 抽帧采样模式：
+   * - 'uniform'：均匀采样（默认）—— 每 gap=时长/帧数 拍一张，抽帧快
+   *   （长视频走单次全片解码），但镜头时长不均匀时短镜头可能整段漏采
+   *   （1 小时 240 帧的单镜头命中率约 33%）。
+   * - 'scene'：场景检测采样 —— ffmpeg 场景切换点 + 长镜头内部补充，
+   *   每个镜头至少一帧，召回显著更高；代价是额外一次场景检测解码 +
+   *   逐点 seek 抽帧，索引更慢。更改后需重建索引才对已索引视频生效。
+   */
+  samplingMode: 'uniform' | 'scene'
   /** 启动时检查新版本（查 GitHub Releases，仅一次、失败静默） */
   updateCheck: boolean
 }
@@ -264,6 +274,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxResults: 40,
   awaitWriteMs: 1500,
   pruneOnDelete: true,
+  samplingMode: 'uniform',
   updateCheck: true
 }
 

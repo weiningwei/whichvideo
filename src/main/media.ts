@@ -645,3 +645,105 @@ export async function sha256OfFile(filePath: string): Promise<string> {
     stream.on('error', reject)
   })
 }
+
+/* ------------------------------------------------------------------ *
+ * 场景检测采样（samplingMode='scene'）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 检测场景切换时间点（秒，升序）。
+ *
+ * ffmpeg `select=gt(scene,T)` 滤镜逐帧计算相邻帧差异分数（0~1），超过
+ * 阈值 T 的帧被选为"镜头切换"。showinfo 打印每个输出帧的 pts_time。
+ * 先缩到 160 宽做检测 —— 场景分数是粗粒度信号，低分辨率足够且快。
+ *
+ * 阈值 0.3 是召回/误检折中：过高漏切（快速闪切镜头）、过低把镜头内
+ * 运动/闪光误判为切换（产生的重复帧会被预算裁剪吸收，无害）。
+ */
+export async function detectScenes(
+  filePath: string,
+  threshold: number,
+  tools?: ToolPaths,
+  timeoutMs = 10 * 60_000
+): Promise<number[]> {
+  const t = tools ?? requireTools()
+  const args = [
+    '-hide_banner',
+    '-v',
+    'info',
+    '-nostdin',
+    '-hwaccel',
+    'auto',
+    '-i',
+    filePath,
+    '-vf',
+    `scale=w=160:h=-2,select='gt(scene\\,${threshold})',showinfo`,
+    '-an',
+    '-sn',
+    '-dn',
+    '-f',
+    'null',
+    '-'
+  ]
+  const { stderr } = await run(t.ffmpeg, args, { timeoutMs })
+  const times: number[] = []
+  for (const m of stderr.matchAll(/pts_time:(\d+(?:\.\d+)?)/g)) {
+    const v = Number.parseFloat(m[1])
+    if (Number.isFinite(v)) times.push(v)
+  }
+  return times.sort((a, b) => a - b)
+}
+
+/**
+ * 场景采样计划：场景切换点优先 + 长镜头内部均匀补充，总数不超过 frameBudget。
+ *
+ * - 场景点 = 每个镜头的代表帧来源，**全部保留**（它们是"每个镜头至少一帧"
+ *   的保证，也是本模式存在的意义）
+ * - 相邻间隔超过 max(2×理想间隔, 8s) 的段视为长镜头，段内均匀补帧
+ *   （idealGap = 时长/预算；8s 下限避免超长预算时无意义密采）
+ * - 补充点总数超预算时均匀丢弃补充点（不动场景点）；预算有富余则不再增补
+ * - 无场景切换（纯色/渐变视频）时退回均匀计划
+ */
+export function planSceneTimestamps(
+  sceneTimes: number[],
+  duration: number | null,
+  frameBudget: number
+): number[] {
+  if (sceneTimes.length === 0) return planTimestamps(duration, frameBudget)
+  const D = duration && Number.isFinite(duration) && duration > 0.5 ? duration : sceneTimes[sceneTimes.length - 1] + 5
+
+  // 场景点：排序 + 去重（0.5s 内的密集切换视为同一处）
+  const scenes: number[] = []
+  for (const raw of sceneTimes) {
+    const t = Math.min(Math.max(raw, 0.05), Math.max(D - 0.05, 0.05))
+    if (scenes.length === 0 || t - scenes[scenes.length - 1] > 0.5) scenes.push(t)
+  }
+
+  const idealGap = D / Math.max(1, frameBudget)
+  const minGap = Math.max(2 * idealGap, 8)
+
+  // 长镜头内部补充点
+  const fills: number[] = []
+  for (let i = 0; i < scenes.length; i++) {
+    const cur = scenes[i]
+    const next = i + 1 < scenes.length ? scenes[i + 1] : Math.max(D, cur + 1)
+    const gap = next - cur
+    const extra = Math.floor(gap / minGap) - 1
+    for (let k = 1; k <= extra; k++) fills.push(cur + (gap * k) / (extra + 1))
+  }
+
+  // 预算裁剪：只裁补充点（场景点全保留），均匀丢弃保持覆盖均匀
+  const over = scenes.length + fills.length - frameBudget
+  if (over > 0 && fills.length > 0) {
+    const keepCount = Math.max(0, fills.length - over)
+    const kept: number[] = []
+    for (let k = 0; k < keepCount; k++) {
+      // 等距保留补充点
+      kept.push(fills[Math.round((k * fills.length) / keepCount)])
+    }
+    fills.length = 0
+    fills.push(...kept)
+  }
+
+  return [...scenes, ...fills].sort((a, b) => a - b)
+}
