@@ -485,7 +485,11 @@ function regQueryString(key: string, valueName: string | null): string | null {
  * 否则取首个空白分隔 token。含未展开环境变量的模板（UWP 关联常见）放弃。
  */
 function exeFromCommandTemplate(cmd: string): string | null {
-  if (cmd.includes('%')) return null
+  // 只拒绝"未展开的环境变量"（%SystemRoot% 这类）；%1~%9 是正常的文件占位符，
+  // 正常播放器关联的模板一定带 "%1" —— 连它一起拒掉的话关联探测永远落空
+  // （自伤 bug：曾用 cmd.includes('%') 一刀切，导致该分支形同虚设）。
+  const withoutPlaceholders = cmd.replace(/%\d/g, '').replace(/%\*/g, '')
+  if (/%[^%]*%/.test(withoutPlaceholders)) return null
   const quoted = cmd.match(/^\s*"([^"]+)"/)
   const exe = quoted ? quoted[1] : cmd.trim().split(/\s+/)[0]
   return exe && /\.exe$/i.test(exe) ? exe : null

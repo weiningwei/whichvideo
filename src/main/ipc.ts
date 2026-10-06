@@ -387,7 +387,10 @@ export function registerIpc(deps: IpcDeps): void {
     if (atSeconds != null && atSeconds > 0) {
       const player = findSeekablePlayer(video.path)
       if (player) {
-        const child = spawn(player.exe, player.args(video.path, atSeconds), {
+        const args = player.args(video.path, atSeconds)
+        // 实际命令行落日志：定位播放类问题（/seek 不生效等）先看这里拼了什么
+        log(`定位播放 [${player.name}]：${player.exe} ${args.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}`)
+        const child = spawn(player.exe, args, {
           detached: true,
           stdio: 'ignore'
         })
