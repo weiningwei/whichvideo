@@ -327,6 +327,29 @@ export function LibraryView(props: Props) {
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {selectedVideoIds.size > 0 && (
+              <>
+                <button
+                  className="btn text-[12px] hover:bg-ink-700/70"
+                  onClick={() => props.onReindex([...selectedVideoIds])}
+                  title="把选中的视频重新排入索引队列"
+                >
+                  重建索引（{selectedVideoIds.size}）
+                </button>
+                <button
+                  className="btn btn-danger text-[12px] hover:bg-bad/10"
+                  onClick={() => {
+                    const ids = [...selectedVideoIds]
+                    if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件，可随时重新导入）`)) return
+                    props.onRemoveVideos(ids)
+                    clearSelection()
+                  }}
+                  title="从索引库移除选中的视频（不删磁盘文件）"
+                >
+                  移除（{selectedVideoIds.size}）
+                </button>
+              </>
+            )}
             <button
               className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
               onClick={onToggleGroupByFolder}
