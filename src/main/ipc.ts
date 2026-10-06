@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { findSeekablePlayer, sha256OfFile } from './media'
+import { EXTRACT_WIDTH } from './constants'
 import {
   IPC,
   normalizePath,
@@ -56,10 +57,21 @@ export interface IpcDeps {
 function nativeImageToImageData(image: Electron.NativeImage): ImageDataLike | null {
   const size = image.getSize()
   if (!size.width || !size.height) return null
-  const bitmap = image.toBitmap() // BGRA
+  // 宽于抽帧宽度时先缩到 EXTRACT_WIDTH 再取位图：toGray 的 JS 循环像素数
+  // 从 ~200 万（1920 宽截图）降到 ~5.7 万，查询延迟约降一个量级。
+  // 指纹的尺度不变性（test:hash-scale 实测 160~2560 宽距离恒 0）保证结果
+  // 与原分辨率完全一致 —— 缩放只影响耗时，不影响匹配。小图不放大：
+  // 放大插值不增加信息，反而引入与"原尺寸直接计算"的细微差。
+  let effective = image
+  if (size.width > EXTRACT_WIDTH) {
+    effective = image.resize({ width: EXTRACT_WIDTH })
+  }
+  const outSize = effective.getSize()
+  if (!outSize.width || !outSize.height) return null
+  const bitmap = effective.toBitmap() // BGRA
   return {
-    width: size.width,
-    height: size.height,
+    width: outSize.width,
+    height: outSize.height,
     channels: 4,
     order: 'bgr',
     data: bitmap
