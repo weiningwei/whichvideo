@@ -298,10 +298,14 @@ export async function extractFrames(
   const duration = options.durationSeconds ?? (timestamps[timestamps.length - 1] * 2 || 1)
   const rate = timestamps.length / Math.max(duration, 0.001)
 
-  const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin', '-hwaccel', 'auto', '-i', filePath]
+  // showinfo 打印每个输出帧的真实 pts_time/w/h —— 全片解码的帧时间轴与
+  // 计划时间点并不逐一对齐（ffprobe 时长有偏差、流 start_time 可非零），
+  // 把计划时间点硬贴上去会让"命中位置显示 3:50、实际播放在 4:37"。
+  // showinfo 需要 info 级别日志，所以这里不是 -v error。
+  const args: string[] = ['-hide_banner', '-v', 'info', '-nostdin', '-hwaccel', 'auto', '-i', filePath]
   // 启用进度输出到 stderr，供 onProgress 解析
   if (options.onFrame) args.push('-progress', 'pipe:2')
-  const filter = `fps=${rate.toFixed(8)},scale=w='min(${maxWidth},iw)':h=-2`
+  const filter = `fps=${rate.toFixed(8)},scale=w='min(${maxWidth},iw)':h=-2,showinfo`
   args.push(
     '-vf',
     filter,
@@ -332,12 +336,37 @@ export async function extractFrames(
     throw new Error(`ffmpeg 抽帧失败：${stderr.trim() || `退出码 ${code}`}`)
   }
 
-  // ffmpeg 会为每个输入打印一次 scale 的尺寸信息；用最后一条输出尺寸做校验
-  const dims = [...stderr.matchAll(/(\d{2,5})x(\d{2,5})/g)].map((m) => ({
+  // showinfo 行形如：n: 12 pts: 277000 pts_time:277 ... fmt:rgb24 ... w:320 h:180 ...
+  // 按出现顺序就是输出帧顺序，pts_time 是**真实源时间轴**位置（秒）。
+  const showinfoLines = stderr.split('\n').filter((l) => l.includes('pts_time:'))
+  const realTimes = showinfoLines
+    .map((l) => {
+      const m = l.match(/pts_time:(\d+(?:\.\d+)?)/)
+      return m ? Number.parseFloat(m[1]) : null
+    })
+    .filter((t): t is number => t !== null)
+  const showinfoDims = showinfoLines
+    .map((l) => {
+      const m = l.match(/ w:(\d+) h:(\d+)/)
+      return m ? { w: Number.parseInt(m[1], 10), h: Number.parseInt(m[2], 10) } : null
+    })
+    .filter((d): d is { w: number; h: number } => d !== null)
+
+  // 尺寸：优先 showinfo（真实输出帧），退回旧行为 —— -v info 下 stderr 混有
+  // 输入流信息，旧 matchAll 会匹配到源分辨率，所以先剔除 showinfo 行再扫
+  const dims = [...stderr
+    .split('\n')
+    .filter((l) => !l.includes('pts_time:'))
+    .join('\n')
+    .matchAll(/(\d{2,5})x(\d{2,5})/g)].map((m) => ({
     w: Number.parseInt(m[1], 10),
     h: Number.parseInt(m[2], 10)
   }))
-  const lastDim = dims.length ? dims[dims.length - 1] : null
+  const lastDim = showinfoDims.length
+    ? showinfoDims[showinfoDims.length - 1]
+    : dims.length
+      ? dims[dims.length - 1]
+      : null
 
   const frames: ExtractedFrame[] = []
   let width = lastDim ? even(lastDim.w) : 0
@@ -366,7 +395,8 @@ export async function extractFrames(
     const available = Math.floor(stdout.length / frameSize)
     for (let i = 0; i < Math.min(available, timestamps.length); i++) {
       frames.push({
-        time: timestamps[i],
+        // 真实时间戳优先；showinfo 缺行时才退回计划时间点（旧行为，可能有偏差）
+        time: realTimes[i] ?? timestamps[i],
         width,
         height,
         rgb: stdout.subarray(i * frameSize, (i + 1) * frameSize)
