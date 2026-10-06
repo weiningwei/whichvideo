@@ -21,7 +21,8 @@ import {
   type SearchResponse,
   type VideoQuery,
   type WatchedFolder,
-  type FrameProgress
+  type FrameProgress,
+  type DuplicatePair
 } from '@shared/types'
 import type { ImageDataLike } from '@shared/hash'
 import type { ErrorCode } from '@shared/result'
@@ -403,8 +404,57 @@ export function registerIpc(deps: IpcDeps): void {
     if (err) broadcast({ type: 'notice', level: 'error', message: `打开失败：${err}` })
   })
 
-  ipcMain.handle(IPC.videosReveal, (_e, videoId: number) => {
-    const video = db.getVideo(videoId)
+  /**
+   * 库内查重：每视频取代表帧跨视频互搜，返回相似对。
+   *
+   * 逐视频循环 + 每 16 个让出一次事件循环（setImmediate）—— 单次 search 是
+   * 毫秒级内存扫描，但 V 个视频连续跑会卡住主进程；让出后 IPC/渲染端照常响应。
+   * 进度经 duplicate-scan-progress 事件广播（UI 暂未消费，留给将来接进度条）。
+   * 误报说明：单帧判据会把同剧不同集的相同场景报为"疑似重复"，
+   * 结果里附得分与命中位置，由用户自行判断，不自动删。
+   */
+  ipcMain.handle(IPC.videosFindDuplicates, async (_e, minScore?: number) => {
+    const threshold = typeof minScore === 'number' && minScore > 0 ? minScore : 0.88
+    const ids = searchIndex.listVideoIds()
+    const pairs: DuplicatePair[] = []
+    const seenPair = new Set<string>()
+    let done = 0
+    for (const id of ids) {
+      const vec = searchIndex.videoQueryVector(id)
+      if (vec) {
+        const { results } = searchIndex.search(vec, { minHashScore: threshold, maxResults: 8 })
+        const cross = results.find((r) => r.videoId !== id)
+        if (cross) {
+          const key = cross.videoId < id ? `${cross.videoId}-${id}` : `${id}-${cross.videoId}`
+          if (!seenPair.has(key)) {
+            seenPair.add(key)
+            const a = db.getVideo(id)
+            const b = db.getVideo(cross.videoId)
+            if (a && b) {
+              pairs.push({
+                videoA: a,
+                videoB: b,
+                score: cross.score,
+                hashScore: cross.hashScore,
+                colorScore: cross.colorScore,
+                timeSeconds: cross.timeSeconds
+              })
+            }
+          }
+        }
+      }
+      done++
+      if (done % 16 === 0) {
+        broadcast({ type: 'duplicate-scan-progress', done, total: ids.length })
+        await new Promise((r) => setImmediate(r))
+      }
+    }
+    broadcast({ type: 'duplicate-scan-progress', done, total: ids.length })
+    pairs.sort((x, y) => y.score - x.score)
+    return pairs
+  })
+
+  ipcMain.handle(IPC.videosReveal, (_e, videoId: number) => {    const video = db.getVideo(videoId)
     if (!video) return
     shell.showItemInFolder(video.path)
   })

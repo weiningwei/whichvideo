@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import type { DuplicatePair, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import { formatBytes, formatDuration, formatPercent, scoreLabel } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor, PAGE_JUMP } from '../hooks/useVideoCursor'
 import { SidePanel } from './SidePanel'
@@ -23,6 +24,8 @@ interface Props {
   onRemoveVideo: (videoId: number) => void
   onRemoveVideos: (videoIds: number[]) => void
   onReindex: (videoIds?: number[]) => void
+  /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
+  onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
   groupByFolder: boolean
   onToggleGroupByFolder: () => void
   selectedVideoIds: Set<number>
@@ -54,6 +57,10 @@ export function LibraryView(props: Props) {
   } = props
 
   const [folderDrop, setFolderDrop] = useState(false)
+  // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
+  // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
+  const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
+  const [scanningDuplicates, setScanningDuplicates] = useState(false)
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
   /** 快捷键 / 会聚焦到这里 */
   const filterInputRef = useRef<HTMLInputElement>(null)
@@ -327,6 +334,21 @@ export function LibraryView(props: Props) {
             >
               {groupByFolder ? '📁 分组' : '📋 平铺'}
             </button>
+            <button
+              className="btn text-[12px] hover:bg-ink-700/70"
+              onClick={() => {
+                if (scanningDuplicates) return
+                setScanningDuplicates(true)
+                void props
+                  .onFindDuplicates()
+                  .then((pairs) => setDuplicates(pairs))
+                  .finally(() => setScanningDuplicates(false))
+              }}
+              disabled={scanningDuplicates}
+              title="找出库内画面高度相似的视频对（代表帧互搜，库越大越慢）"
+            >
+              {scanningDuplicates ? '查重中…' : '查重'}
+            </button>
             <button className="btn text-[12px] hover:bg-ink-700/70" onClick={() => props.onReindex()}>
               重建全部索引
             </button>
@@ -507,6 +529,84 @@ export function LibraryView(props: Props) {
         }
         settings={props.sideSettings}
       />
+
+      {duplicates !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-ink-950/70 p-6 pt-[8vh] backdrop-blur-sm"
+          onClick={() => setDuplicates(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-surface-1 p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-[14px] font-medium text-primary">库内查重结果</div>
+                <div className="text-[11px] text-muted">
+                  {duplicates.length === 0
+                    ? '没有发现画面高度相似的视频对'
+                    : `发现 ${duplicates.length} 对画面高度相似的视频（按相似度排序）`}
+                  {' · '}单帧判据：同剧不同集的相同场景可能误报，请自行核对
+                </div>
+              </div>
+              <button className="btn px-2 py-1 text-[11px]" onClick={() => setDuplicates(null)}>
+                关闭
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {duplicates.map((pair) => {
+                const smaller = pair.videoA.size <= pair.videoB.size ? pair.videoA : pair.videoB
+                return (
+                  <div key={`${pair.videoA.id}-${pair.videoB.id}`} className="rounded-xl border border-line p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[12px] text-primary">
+                        {pair.videoA.name}
+                        <span className="mx-1.5 text-tertiary">↔</span>
+                        {pair.videoB.name}
+                      </div>
+                      <div className={`shrink-0 text-[13px] font-semibold ${scoreLabel(pair.score).includes('重复') || pair.score >= 0.95 ? 'text-bad' : 'text-warn'}`}>
+                        {formatPercent(pair.score)}
+                      </div>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+                      <span>结构 {(pair.hashScore * 100).toFixed(0)}% · 颜色 {(pair.colorScore * 100).toFixed(0)}%</span>
+                      <span>命中于 {formatDuration(pair.timeSeconds)}</span>
+                      <span>
+                        {pair.videoA.name} {formatBytes(pair.videoA.size)} / {pair.videoB.name} {formatBytes(pair.videoB.size)}
+                      </span>
+                      <button
+                        className="btn px-1.5 py-0.5 text-[10.5px] hover:bg-ink-700/70"
+                        onClick={() => {
+                          props.onOpen(pair.videoA.id, pair.timeSeconds)
+                        }}
+                        title="从命中位置播放 B（mpv/VLC）"
+                      >
+                        从 {formatDuration(pair.timeSeconds)} 播放 B
+                      </button>
+                      <button
+                        className="btn btn-danger px-1.5 py-0.5 text-[10.5px] hover:bg-bad/10"
+                        onClick={() => {
+                          props.onRemoveVideo(smaller.id)
+                          setDuplicates((prev) =>
+                            prev
+                              ? prev.filter(
+                                  (x) => x.videoA.id !== smaller.id && x.videoB.id !== smaller.id
+                                )
+                              : prev
+                          )
+                        }}
+                        title={`移除体积较小的（${formatBytes(smaller.size)}），不删磁盘文件`}
+                      >
+                        移除较小的（{formatBytes(smaller.size)}）
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

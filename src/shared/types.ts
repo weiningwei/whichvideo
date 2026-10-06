@@ -195,6 +195,19 @@ export type LibraryEvent =
   | { type: 'stats'; stats: LibraryStats }
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'settings-updated'; settings: AppSettings }
+  | { type: 'duplicate-scan-progress'; done: number; total: number }
+
+/** 库内查重的一个相似对（代表帧跨视频互搜的命中） */
+export interface DuplicatePair {
+  videoA: VideoRecord
+  videoB: VideoRecord
+  /** 代表帧跨视频相似度 0~1 */
+  score: number
+  hashScore: number
+  colorScore: number
+  /** A 的代表帧命中在 B 中的位置（秒） */
+  timeSeconds: number
+}
 
 export interface ImportResult {
   added: number
@@ -316,6 +329,7 @@ export interface WhichVideoApi {
     get(videoId: number): Promise<VideoRecord | null>
     remove(videoId: number): Promise<void>
     reindex(videoIds?: number[]): Promise<number>
+    findDuplicates(minScore?: number): Promise<DuplicatePair[]>
     importFiles(): Promise<ImportResult>
     importImages(): Promise<string[]>
     openFile(videoId: number, atSeconds?: number): Promise<void>
@@ -359,6 +373,7 @@ export const IPC = {
   videosGet: 'videos:get',
   videosRemove: 'videos:remove',
   videosReindex: 'videos:reindex',
+  videosFindDuplicates: 'videos:find-duplicates',
   videosImport: 'videos:import',
   videosImportImages: 'videos:import-images',
   videosOpen: 'videos:open',

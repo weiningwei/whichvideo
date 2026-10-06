@@ -9,6 +9,7 @@ import {
   type AppSettings,
   type DataDirInfo,
   type ImportResult,
+  type DuplicatePair,
   type IndexerStatus,
   type LibraryStats,
   type SearchResponse,
@@ -140,6 +141,10 @@ export function useLibrary() {
           const count = await window.whichvideo.videos.reindex(videoIds)
           notices.pushNotice('info', `已重新排入索引队列：${count} 个视频`)
         })
+      },
+      /** 库内查重：代表帧跨视频互搜。耗时随库增大（每视频一次内存扫描）。 */
+      async findDuplicates(minScore?: number): Promise<DuplicatePair[]> {
+        return window.whichvideo.videos.findDuplicates(minScore)
       },
       async openVideo(videoId: number, atSeconds?: number): Promise<void> {
         await window.whichvideo.videos.openFile(videoId, atSeconds)

@@ -111,6 +111,55 @@ export class FrameSearchIndex {
     return this.info
   }
 
+  /** 索引中的所有视频 id（按帧首次出现顺序去重） */
+  listVideoIds(): number[] {
+    const seen: number[] = []
+    const set = new Set<number>()
+    for (let i = 0; i < this.videoIds.length; i++) {
+      const id = this.videoIds[i]
+      if (!set.has(id)) {
+        set.add(id)
+        seen.push(id)
+      }
+    }
+    return seen
+  }
+
+  /**
+   * 某视频的"代表帧"查询向量：取该视频在索引中**时间居中**的那一帧。
+   *
+   * 查重场景下没有外部查询图，只能拿库内自己的帧当查询 —— 中点帧是最具
+   * 代表性的单帧选择（片头/片尾黑屏、水印帧都避开了一半以上）。
+   * 该视频没有任何帧时返回 null。
+   */
+  videoQueryVector(videoId: number): QueryVector | null {
+    const view = this.view
+    const count = this.videoIds.length
+    if (!view || count === 0) return null
+    let first = -1
+    let last = -1
+    for (let i = 0; i < count; i++) {
+      if (this.videoIds[i] === videoId) {
+        if (first < 0) first = i
+        last = i
+      }
+    }
+    if (first < 0) return null
+    const mid = (first + last) >> 1
+    const off = mid * FRAME_STRIDE
+    const color = this.buffer.subarray(off + COLOR_OFFSET, off + COLOR_OFFSET + 64)
+    // dhash 用与 computeDHash 相同的方式拼回 number（lo 低地址、hi 高地址），
+    // 不直接 getBigUint64 —— QueryVector.dhash 是 number，类型与数值语义都要一致
+    const dLo = view.getUint32(off + DHASH_OFFSET, true)
+    const dHi = view.getUint32(off + DHASH_OFFSET + 4, true)
+    return {
+      dhash: dHi * 0x100000000 + dLo,
+      struct: this.buffer.subarray(off + STRUCT_OFFSET, off + STRUCT_OFFSET + STRUCT_BYTES),
+      color: color,
+      colorfulness: quantizedColorfulness(color)
+    }
+  }
+
   /**
    * 视频级结果：
    * score = 最佳帧(0.75) + 次佳帧(0.25)，避免单帧偶然命中把无关视频排到前面。
