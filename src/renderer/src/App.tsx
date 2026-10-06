@@ -126,6 +126,7 @@ export default function App() {
               onRemoveVideo={(id) => void actions.removeVideo(id)}
               onRemoveVideos={(ids) => void actions.removeVideos(ids)}
               onReindex={(ids, mode) => void actions.reindex(ids, mode)}
+              globalSampling={state.settings?.samplingMode ?? 'uniform'}
               onFindDuplicates={(minScore) => actions.findDuplicates(minScore)}
               groupByFolder={groupByFolder}
               onToggleGroupByFolder={toggleGroupByFolder}

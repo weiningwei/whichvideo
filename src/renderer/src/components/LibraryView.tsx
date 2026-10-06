@@ -25,6 +25,8 @@ interface Props {
   onRemoveVideo: (videoId: number) => void
   onRemoveVideos: (videoIds: number[]) => void
   onReindex: (videoIds?: number[], mode?: 'global' | 'scene' | 'uniform') => void
+  /** 全局采样模式（视频行未设覆盖时的生效值） */
+  globalSampling: 'uniform' | 'scene'
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
   onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
   groupByFolder: boolean
@@ -347,13 +349,6 @@ export function LibraryView(props: Props) {
                   重建索引（{selectedVideoIds.size}）
                 </button>
                 <button
-                  className="btn text-[12px] hover:bg-ink-700/70"
-                  onClick={() => props.onReindex([...selectedVideoIds], 'scene')}
-                  title="用场景检测采样重建选中的视频（每个镜头至少一帧，召回更高、索引更慢；覆盖全局设置，仅对这些视频生效）"
-                >
-                  场景重建（{selectedVideoIds.size}）
-                </button>
-                <button
                   className="btn btn-danger text-[12px] hover:bg-bad/10"
                   onClick={() => {
                     const ids = [...selectedVideoIds]
@@ -407,7 +402,8 @@ export function LibraryView(props: Props) {
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
                 <th className="px-3 py-2 font-medium">视频</th>
-                <th className="w-24 whitespace-nowrap px-2 py-2 font-medium">状态</th>
+                <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">状态</th>
+                <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">采样</th>
                 {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
                     左侧那条线标示"这里是浮在内容之上的固定区"。 */}
                 <th className="sticky right-0 w-[180px] border-l border-line/70 bg-ink-900 px-3 py-2 text-right font-medium">
@@ -496,7 +492,8 @@ export function LibraryView(props: Props) {
                       onOpen={props.onOpen}
                       onReveal={props.onReveal}
                       onRemove={props.onRemoveVideo}
-                      onReindex={(id) => props.onReindex([id])}
+                      globalSampling={props.globalSampling}
+                      onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                       isVideoSelected={isVideoSelected}
                       onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
                     />
@@ -514,7 +511,8 @@ export function LibraryView(props: Props) {
                     onOpen={props.onOpen}
                     onReveal={props.onReveal}
                     onRemove={props.onRemoveVideo}
-                    onReindex={(id) => props.onReindex([id])}
+                    globalSampling={props.globalSampling}
+                    onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                     isVideoSelected={isVideoSelected}
                     onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
                   />

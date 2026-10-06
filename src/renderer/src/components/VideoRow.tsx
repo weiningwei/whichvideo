@@ -10,7 +10,8 @@ export function VideoRow({
   onOpen,
   onReveal,
   onRemove,
-  onReindex,
+  globalSampling,
+  onSamplingChange,
   isVideoSelected,
   onRowClick
 }: {
@@ -21,7 +22,10 @@ export function VideoRow({
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
-  onReindex: (id: number) => void
+  /** 全局采样模式（该视频无覆盖时的生效值，用于列显示） */
+  globalSampling: 'uniform' | 'scene'
+  /** 行内切换采样模式：选择后立即以新模式重建该视频 */
+  onSamplingChange: (id: number, mode: 'uniform' | 'scene') => void
   isVideoSelected: (videoId: number) => boolean
   /**
    * 点击整行。**必须同时移动光标**——光标与选中是同一个东西，只改选中会让
@@ -236,8 +240,8 @@ export function VideoRow({
           </button>
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onReindex(video.id)}
-            title="重新抽帧并重建指纹"
+            onClick={() => onSamplingChange(video.id, video.samplingOverride ?? globalSampling)}
+            title="按该视频当前采样方式重新抽帧并重建指纹"
           >
             索引
           </button>
