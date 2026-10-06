@@ -565,7 +565,7 @@ export default mod
     check(
       '多选时同样铺整行淡蓝底（与单选一致）',
       (multiHtml.match(/bg-row-selected/g) ?? []).length >= 4,
-      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 3 个）`
+      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 4 个，对应 4 列）`
     )
     // 核心断言：把单选与多选的渲染结果按"选中提示"维度逐项比对。
     // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、
@@ -592,8 +592,8 @@ export default mod
       countOf(both, BTN_OPAQUE)
     ]
     check(
-      '单选 1 行 → 竖条 1、淡蓝底 3、标题染色 1、按钮不透明底 4',
-      single[0] === 1 && single[1] === 3 && single[2] === 1 && single[3] === 4,
+      '单选 1 行 → 竖条 1、淡蓝底 4（4 列各一）、标题染色 1、按钮不透明底 4',
+      single[0] === 1 && single[1] === 4 && single[2] === 1 && single[3] === 4,
       `实际 ${single.join('/')}`
     )
     check(

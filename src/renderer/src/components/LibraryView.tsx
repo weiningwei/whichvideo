@@ -479,6 +479,8 @@ export function LibraryView(props: Props) {
                           </span>
                         </div>
                       </td>
+                      {/* 空的采样格：与数据行的采样列对齐 */}
+                      <td className="bg-row-group" />
                       {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
                       <td className="sticky right-0 w-[180px] border-l border-line/70 bg-row-group" />
                     </tr>

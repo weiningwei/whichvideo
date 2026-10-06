@@ -24,7 +24,11 @@ export function VideoRow({
   onRemove: (id: number) => void
   /** 全局采样模式（该视频无覆盖时的生效值，用于列显示） */
   globalSampling: 'uniform' | 'scene'
-  /** 行内切换采样模式：选择后立即以新模式重建该视频 */
+  /**
+   * 请求按指定采样模式重建该视频。**由「索引」按钮触发** —— 下拉切换只
+   * 记录选择（pending），不重建。useLibrary.reindex 里判定模式是否变化：
+   * 没变会提示"无需重建"而不是重复重建。
+   */
   onSamplingChange: (id: number, mode: 'uniform' | 'scene') => void
   isVideoSelected: (videoId: number) => boolean
   /**
@@ -35,6 +39,10 @@ export function VideoRow({
   onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
+  // 用户在下拉里改选但尚未点「索引」的采样模式。null = 未改动（显示已固化值）。
+  // 刻意放行级本地 state：跨筛选/翻页丢失"未应用的选择"是可接受的 —— 那本来
+  // 就还没生效。点「索引」时才把它交给 onSamplingChange 真正应用。
+  const [pendingSampling, setPendingSampling] = useState<'uniform' | 'scene' | null>(null)
   useEffect(() => {
     let alive = true
     void window.whichvideo.videos.thumbnail(video.id).then((d) => {
@@ -211,6 +219,18 @@ export function VideoRow({
         </span>
         {frameProgressBar}
       </td>
+      <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
+        <select
+          className="w-[64px] rounded border border-line bg-surface-1 px-1 py-0.5 text-[11px] text-primary"
+          value={pendingSampling ?? (video.samplingOverride ?? globalSampling)}
+          title="该视频的抽帧采样方式；更改后点「索引」按新方式重建此视频"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setPendingSampling(e.target.value as 'uniform' | 'scene')}
+        >
+          <option value="uniform">均匀</option>
+          <option value="scene">场景</option>
+        </select>
+      </td>
       {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
 
           底色要**不透明**，否则左侧滚过来的文字会透上来叠在按钮上。行状态色
@@ -240,8 +260,8 @@ export function VideoRow({
           </button>
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
-            onClick={() => onSamplingChange(video.id, video.samplingOverride ?? globalSampling)}
-            title="按该视频当前采样方式重新抽帧并重建指纹"
+            onClick={() => onSamplingChange(video.id, pendingSampling ?? (video.samplingOverride ?? globalSampling))}
+            title="重新抽帧并重建指纹（采样方式与上次一致时会提示无需重建）"
           >
             索引
           </button>

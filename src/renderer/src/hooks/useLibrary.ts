@@ -138,6 +138,19 @@ export function useLibrary() {
         })
       },
       async reindex(videoIds?: number[], mode?: 'global' | SamplingMode): Promise<void> {
+        const resolvedMode = mode ?? 'global'
+        // 行内单视频路径：请求的采样模式与该视频已固化的一致 → 重建没有意义，
+        // 提示而不是重复重建（视频行点「索引」但下拉没改时的高频场景）。
+        if (videoIds?.length === 1 && resolvedMode !== 'global') {
+          const v = videoList.videos.find((x) => x.id === videoIds[0])
+          if (v && v.samplingOverride === resolvedMode) {
+            notices.pushNotice(
+              'warn',
+              `「${v.name}」的采样方式已经是${resolvedMode === 'scene' ? '场景检测' : '均匀采样'}，无需重建`
+            )
+            return
+          }
+        }
         await withBusy('正在重建索引…', async () => {
           const count = await window.whichvideo.videos.reindex(videoIds, mode)
           notices.pushNotice(
