@@ -244,7 +244,14 @@ export function registerIpc(deps: IpcDeps): void {
     toolsReady
   }))
   ipcMain.handle(IPC.libraryUpdateSettings, (_e, patch: Partial<AppSettings>) => {
+    const prev = db.getSettings()
     const updated = db.updateSettings(patch)
+    // 全局采样模式变化：把"跟随全局"的视频（override = 旧全局值）一起迁移到
+    // 新值 —— 否则用户在设置里切了模式，行内下拉仍显示旧值，点「索引」的
+    // 行为与直觉相悖。
+    if (patch.samplingMode && patch.samplingMode !== prev.samplingMode) {
+      db.migrateSamplingOnGlobalChange(prev.samplingMode, patch.samplingMode)
+    }
     void watcher.syncAll()
     broadcast({ type: 'settings-updated', settings: updated })
     return updated

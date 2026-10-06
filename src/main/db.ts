@@ -425,6 +425,24 @@ export class LibraryDatabase {
     runAll(ids)
   }
 
+  /**
+   * 全局采样模式变化时迁移"跟随全局"的视频。
+   *
+   * sampling_override 同时承担两个语义：用户显式设置的覆盖 + 抽帧时固化的
+   * "实际采样方式"。前者应随全局切换而变，后者是历史事实不应变 —— 单字段
+   * 无法完美区分，这里取近似：**值等于旧全局的视频视为"跟随全局"**，迁移到
+   * 新全局；显式覆盖过其它值的视频（值 ≠ 旧全局）不受影响。
+   *
+   * 边缘：显式覆盖值恰好等于旧全局的视频会被连带迁移 —— 行为上等价于
+   * "覆盖=旧全局的视频在新全局下大概率也想要新全局"，可接受的近似。
+   */
+  migrateSamplingOnGlobalChange(oldMode: SamplingMode, newMode: SamplingMode): void {
+    if (oldMode === newMode) return
+    this.db
+      .prepare('UPDATE videos SET sampling_override = ? WHERE sampling_override = ?')
+      .run(newMode, oldMode)
+  }
+
   /** 返回 null 表示已存在且无需重建（size/mtime 未变） */
   upsertVideo(input: NewVideo): { video: VideoRecord; changed: boolean; created: boolean } {
     const normalized = normalizePath(input.path)
