@@ -385,7 +385,7 @@ export function registerIpc(deps: IpcDeps): void {
     // 带时间戳：探测 mpv/VLC 直接从命中位置起播；都没有则退化到系统默认
     // 播放器（openPath 无法传时间戳，只能打开整个视频），并如实告知用户。
     if (atSeconds != null && atSeconds > 0) {
-      const player = findSeekablePlayer()
+      const player = findSeekablePlayer(video.path)
       if (player) {
         const child = spawn(player.exe, player.args(video.path, atSeconds), {
           detached: true,

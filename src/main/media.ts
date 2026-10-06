@@ -440,6 +440,67 @@ export interface SeekablePlayer {
  * 但安装器一定会写 Uninstall 键（DisplayIcon 直接指向 exe）。
  * spawnSync `reg query` 逐键尝试，只在文件探测失败时被调用，无性能顾虑。
  */
+/** 读一个注册表值（REG_SZ），键不存在或类型不符返回 null */
+function regQueryString(key: string, valueName: string | null): string | null {
+  const args = valueName === null ? ['query', key, '/ve'] : ['query', key, '/v', valueName]
+  const r = spawnSync('reg', args, { encoding: 'utf8', timeout: 2000 })
+  if (r.status !== 0 || !r.stdout) return null
+  const m = r.stdout.match(/REG_SZ\s+(.+)/)
+  return m ? m[1].trim() : null
+}
+
+/**
+ * 从文件关联的命令模板里解析出 exe 路径。
+ * 模板形如 `"C:\...\player.exe" /args "%1"`：优先取第一个带引号的段，
+ * 否则取首个空白分隔 token。含未展开环境变量的模板（UWP 关联常见）放弃。
+ */
+function exeFromCommandTemplate(cmd: string): string | null {
+  if (cmd.includes('%')) return null
+  const quoted = cmd.match(/^\s*"([^"]+)"/)
+  const exe = quoted ? quoted[1] : cmd.trim().split(/\s+/)[0]
+  return exe && /\.exe$/i.test(exe) ? exe : null
+}
+
+/** 受支持播放器：exe 文件名（小写）→ 起播参数构造。关联探测与盲扫共用。 */
+const KNOWN_SEEKABLE: Record<string, Pick<SeekablePlayer, 'name' | 'args'>> = {
+  'mpv.exe': { name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] },
+  'potplayermini64.exe': { name: 'PotPlayer', args: (p, s) => ['/seek=' + seekClock(s), p] },
+  'potplayermini.exe': { name: 'PotPlayer', args: (p, s) => ['/seek=' + seekClock(s), p] },
+  'vlc.exe': { name: 'VLC', args: (p, s) => ['--start-time=' + Math.floor(s), p] }
+}
+
+/**
+ * 读系统对某视频扩展名的默认打开方式，若指向受支持的播放器就直接复用。
+ *
+ * 查询链（Windows 文件关联的正式结构）：
+ *   HKCU\...\FileExts\.<ext>\UserChoice → ProgId（用户实际选择，Win8+ 存在）
+ *   → HKCR\<ProgId>\shell\open\command 默认值 → 命令模板 → exe
+ * UserChoice 没有时退回 HKCR\.<ext> 的老式关联。
+ *
+ * 优先级最高：它同时满足"用户预期"（点开就是这个播放器）与"自定义安装
+ * 自动覆盖"（exe 路径来自关联，不用扫任何固定位置）。UWP 关联（电影和电视）
+ * 的 ProgId 查不到 shell command，自然落空。
+ */
+function playerFromDefaultAssociation(videoExt: string): SeekablePlayer | null {
+  const ext = videoExt.replace(/^\./, '').toLowerCase()
+  if (!ext) return null
+  const progId =
+    regQueryString(
+      'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.' +
+        ext +
+        '\\UserChoice',
+      'ProgId'
+    ) ?? regQueryString('HKCR\\.' + ext, null)
+  if (!progId) return null
+  const cmd = regQueryString('HKCR\\' + progId + '\\shell\\open\\command', null)
+  if (!cmd) return null
+  const exe = exeFromCommandTemplate(cmd)
+  if (!exe) return null
+  const known = KNOWN_SEEKABLE[exe.split('\\').pop()?.toLowerCase() ?? '']
+  if (!known) return null
+  return { exe, name: known.name, args: known.args }
+}
+
 function findPotPlayerFromRegistry(): string | null {
   const uninstallKeys = [
     'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer64bit',
@@ -492,7 +553,12 @@ function pickExisting(candidates: string[]): string | null {
  *
  * 探测顺序：PATH（覆盖 scoop/winget/choco 等包管理器安装）→ 常见安装位置。
  */
-export function findSeekablePlayer(): SeekablePlayer | null {
+export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
+  // 第一优先级：系统默认关联。用户把 PotPlayer/mpv/VLC 设为默认播放器时
+  // 直接命中（含自定义安装路径），后面的盲扫全部跳过。
+  const assoc = playerFromDefaultAssociation(videoPath.slice(videoPath.lastIndexOf('.')))
+  if (assoc) return assoc
+
   const mpv =
     whichSync('mpv') ??
     pickExisting([
@@ -502,7 +568,7 @@ export function findSeekablePlayer(): SeekablePlayer | null {
       join(process.env.LOCALAPPDATA ?? '', 'Programs\\mpv', 'mpv.exe')
     ])
   if (mpv) {
-    return { exe: mpv, name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] }
+    return { exe: mpv, ...KNOWN_SEEKABLE['mpv.exe'] }
   }
 
   // PotPlayer：国内 Windows 用户最常见，/seek= 要求 hh:mm:ss 格式
@@ -531,7 +597,7 @@ export function findSeekablePlayer(): SeekablePlayer | null {
       '/snap/bin/vlc'
     ])
   if (vlc) {
-    return { exe: vlc, name: 'VLC', args: (p, s) => ['--start-time=' + Math.floor(s), p] }
+    return { exe: vlc, ...KNOWN_SEEKABLE['vlc.exe'] }
   }
 
   return null
