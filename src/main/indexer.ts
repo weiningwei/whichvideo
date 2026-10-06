@@ -126,6 +126,10 @@ export class Indexer {
     if (!this.startedAt) this.startedAt = Date.now()
     this.finishedAt = null
     this.db.setVideoStatus(taskId, 'pending')
+    // 入队即广播：所有入队路径（导入/watcher 重入队/reindex）统一在此发
+    // video-updated —— 改库不配套 emit 是"UI 停留旧状态"系列 bug 的根源。
+    const queued = this.db.getVideo(taskId)
+    if (queued) this.emit({ type: 'video-updated', video: queued })
     this.broadcastStatus()
     void this.pump()
   }
@@ -334,6 +338,8 @@ export class Indexer {
         // 上次进程没走完（崩溃/断电/强杀）留下的假"索引中"，改回 pending 重新排队
         stale++
         this.db.setVideoStatus(video.id, 'pending')
+        // 不 emit video-updated：此处是启动早期，渲染端尚未订阅事件；
+        // 挂载后的 refreshAll 全量拉取天然兜底
       }
       this.queued.add(video.id)
       this.queue.push(video.id)
@@ -356,11 +362,7 @@ export class Indexer {
       // 强制重建索引时清空已处理进度
       this.db.updateProcessedTimestamps(video.id, [])
       this.db.setVideoStatus(video.id, 'pending')
-      // 广播新状态：排队期间应显示「待索引」。此前漏发 video-updated，
-      // UI 靠事件就地刷新行 —— 收不到就一直显示旧的「已索引」，
-      // 直到开始抽帧（那一刻另发 indexing）才纠正。
-      const refreshed = this.db.getVideo(video.id)
-      if (refreshed) this.emit({ type: 'video-updated', video: refreshed })
+      // 广播由 enqueue 统一负责（入队即发 video-updated，含 pending 状态）
       this.enqueue(video.id, video.path, true)
       count++
     }
@@ -444,7 +446,7 @@ export class Indexer {
       height = probe.height
       codec = probe.videoCodec
       const st = statSync(video.path)
-      this.db.upsertVideo({
+      const probed = this.db.upsertVideo({
         path: video.path,
         size: st.size,
         mtimeMs: st.mtimeMs,
@@ -454,6 +456,8 @@ export class Indexer {
         videoCodec: codec,
         folderId: video.folderId
       })
+      // 补探测到的元数据（时长/分辨率/编码）立即广播，抽帧期间行上信息保持新鲜
+      if (probed.video) this.emit({ type: 'video-updated', video: probed.video })
     }
 
     const timestamps = planTimestamps(duration, settings.framesPerVideo)
