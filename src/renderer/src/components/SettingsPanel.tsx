@@ -76,6 +76,15 @@ export function SettingsPanel({
         文件被删除时自动从库中移除
       </label>
 
+      <label className="flex items-center gap-2 text-secondary">
+        <input
+          type="checkbox"
+          checked={value.updateCheck}
+          onChange={(e) => onChange({ updateCheck: e.target.checked })}
+        />
+        启动时检查新版本（仅查询 GitHub Releases，不上传任何数据）
+      </label>
+
       <div className="rounded-lg border border-line/70 bg-ink-900/60 px-2.5 py-2 text-[10.5px] leading-relaxed">
         <div className="flex items-center gap-1.5">
           <span className="text-secondary">数据目录</span>

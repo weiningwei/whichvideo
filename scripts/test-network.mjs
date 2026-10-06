@@ -44,7 +44,7 @@ const files = listSources(srcDir)
 /** 相对路径，便于报告 */
 const rel = (p) => p.slice(root.length + 1).replace(/\\/g, '/')
 
-console.log('=== 1. 网络请求点：只允许链接取图 ===')
+console.log('=== 1. 网络请求点：只允许链接取图与版本检查 ===')
 {
   // 任何联网 API 都算出口。逐个文件扫，不靠"我记得没有"。
   const patterns = [
@@ -62,17 +62,33 @@ console.log('=== 1. 网络请求点：只允许链接取图 ===')
       if (n) hits.push({ file: rel(f), name, n })
     }
   }
-  // 唯一允许的是 src/main/url-image.ts —— 用户贴链接时取图
-  const unexpected = hits.filter((h) => h.file !== 'src/main/url-image.ts')
+  // 允许的出口（各文件职责见各自注释）：
+  //   url-image.ts —— 用户贴链接时取图
+  //   updater.ts   —— 启动后查一次 GitHub Releases（settings.updateCheck 守卫）
+  const allowed = new Set(['src/main/url-image.ts', 'src/main/updater.ts'])
+  const unexpected = hits.filter((h) => !allowed.has(h.file))
   check(
-    '除链接取图外，源码里没有任何网络请求',
+    '除链接取图与版本检查外，源码里没有任何网络请求',
     unexpected.length === 0,
     unexpected.length ? unexpected.map((h) => `${h.file} 用 ${h.name}×${h.n}`).join(' | ') : `扫描 ${files.length} 个源文件`
   )
   check(
-    '唯一的出口是链接取图模块',
-    hits.length > 0 && hits.every((h) => h.file === 'src/main/url-image.ts'),
-    hits.map((h) => `${h.name}×${h.n}`).join(', ') || '未找到'
+    '网络出口只有这两个模块',
+    hits.length > 0 && hits.every((h) => allowed.has(h.file)),
+    hits.map((h) => `${h.file}:${h.name}×${h.n}`).join(', ') || '未找到'
+  )
+  // updater 的出口必须由设置开关守卫（否则"零联网"承诺对用户不成立）
+  const updaterSrc = readFileSync(join(srcDir, 'main', 'updater.ts'), 'utf8')
+  check(
+    '版本检查引用 UPDATE_CHECK_URL 常量（不散落字面量）',
+    updaterSrc.includes('UPDATE_CHECK_URL'),
+    ''
+  )
+  const indexSrc = readFileSync(join(srcDir, 'main', 'index.ts'), 'utf8')
+  check(
+    '版本检查被 settings.updateCheck 守卫（用户可关）',
+    /updateCheck[^]*?checkAndNotifyUpdate/.test(indexSrc),
+    '调用点前必须有开关判断'
   )
 }
 
@@ -161,20 +177,22 @@ console.log('=== 4. 无遥测 / 上报类依赖 ===')
 }
 
 console.log('')
-console.log('=== 5. 自动更新不会联网 ===')
+console.log('=== 5. 版本检查是轻量实现（无 electron-updater）===')
 {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   const yml = readFileSync(join(root, 'electron-builder.yml'), 'utf8')
+  const indexSrc = readFileSync(join(srcDir, 'main', 'index.ts'), 'utf8')
 
-  // electron-updater 依赖 app-update.yml（打包时由 publish 配置生成）。
-  // 没有 publish 配置 → 运行时找不到更新源 → checkForUpdatesAndNotify 立即失败并被 catch 吞掉。
+  // electron-updater 依赖 publish 配置与代码签名，从未真正启用过。
+  // 现行方案是 updater.ts 的轻量检查（查 GitHub Releases + 弹窗给下载入口）。
   check('electron-builder.yml 里没有 publish 配置', !/^publish:/m.test(yml), '所以不会生成 app-update.yml')
   const updaterConfigs = ['out/app-update.yml', 'out/dev-app-update.yml',
     'release/win-unpacked/resources/app-update.yml', 'release/WhichVideo-portable/resources/app-update.yml']
   const present = updaterConfigs.filter((p) => existsSync(join(root, p)))
   check('产物里没有更新源配置文件', present.length === 0, present.join(', ') || '4 个位置都没有')
-  check('自动更新失败被静默忽略（不会弹窗骚扰）', /\.catch\(\(\) => undefined\)/.test(readFileSync(join(srcDir, 'main', 'index.ts'), 'utf8')))
-  check('electron-updater 只是可选依赖（动态 import）', /import\('electron-updater'\)/.test(readFileSync(join(srcDir, 'main', 'index.ts'), 'utf8')), pkg.dependencies?.['electron-updater'] ? '已列为依赖' : '')
+  check('没有 electron-updater 依赖（含可选依赖）', !pkg.dependencies?.['electron-updater'] && !pkg.optionalDependencies?.['electron-updater'], '')
+  check('index.ts 不再残留 electron-updater 动态导入', !indexSrc.includes("import('electron-updater')"), '已由 updater.ts 取代')
+  check('轻量版本检查已接入（checkAndNotifyUpdate）', indexSrc.includes('checkAndNotifyUpdate'), '')
 }
 
 console.log('')

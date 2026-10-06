@@ -85,3 +85,9 @@ export const DEFAULT_SKIP_DIRS = new Set([
 // ===== 日志 =====
 /** 日志文件最大字节，超过则轮转截断 */
 export const MAX_LOG_BYTES = 512 * 1024
+
+// ===== 版本检查 =====
+/** GitHub Releases 最新版查询地址（updateCheck 开启时启动后检查一次） */
+export const UPDATE_CHECK_URL = 'https://api.github.com/repos/weiningwei/whichvideo/releases/latest'
+/** 版本检查超时（ms）：后台静默检查，绝不拖慢启动 */
+export const UPDATE_CHECK_TIMEOUT_MS = 5000

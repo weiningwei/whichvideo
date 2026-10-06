@@ -233,6 +233,8 @@ export interface AppSettings {
   awaitWriteMs: number
   /** 文件被删除后是否从库中清除 */
   pruneOnDelete: boolean
+  /** 启动时检查新版本（查 GitHub Releases，仅一次、失败静默） */
+  updateCheck: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -246,7 +248,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minHashScore: 0.6,
   maxResults: 40,
   awaitWriteMs: 1500,
-  pruneOnDelete: true
+  pruneOnDelete: true,
+  updateCheck: true
 }
 
 export const VIDEO_EXTENSIONS = [

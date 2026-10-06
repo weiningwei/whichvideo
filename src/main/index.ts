@@ -10,6 +10,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { IPC, type LibraryEvent } from '@shared/types'
 import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
 import { registerIpc } from './ipc'
+import { checkAndNotifyUpdate } from './updater'
 import { createEventBus } from './interfaces'
 
 installCrashHandlers()
@@ -468,13 +469,8 @@ async function bootstrap(): Promise<void> {
   log('文件夹监听已同步')
   indexer.resumePending()
   log('初始化完成')
-
-  if (app.isPackaged) {
-    // 自动更新是可选能力：未安装 electron-updater 时静默跳过
-    void import('electron-updater')
-      .then((mod) => mod.autoUpdater.checkForUpdatesAndNotify())
-      .catch(() => undefined)
-  }
+  // 版本检查已迁移到轻量实现 checkAndNotifyUpdate（updater.ts），
+  // 在 whenReady 里延迟触发 —— electron-updater 因需要 publish 配置从未启用过，已移除。
 }
 
 app.whenReady().then(async () => {
@@ -509,6 +505,13 @@ app.whenReady().then(async () => {
       level: 'info',
       message: `便携模式：索引库与缓存都写在 ${dataDir.dir}，拷贝整个文件夹即可迁移`
     })
+  }
+
+  // 版本检查：延迟数秒避开启动窗口，设置开关守卫（默认开）。失败静默。
+  if (db.getSettings().updateCheck) {
+    setTimeout(() => {
+      void checkAndNotifyUpdate(app.getVersion())
+    }, 5000)
   }
 
   app.on('activate', () => {
