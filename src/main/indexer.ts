@@ -497,6 +497,7 @@ export class Indexer {
       try {
         const scenes = await detectScenes(video.path, 0.3, t)
         timestamps = planSceneTimestamps(scenes, duration, settings.framesPerVideo)
+        log(`场景检测：${video.path} 检出 ${scenes.length} 个切换点，采样 ${timestamps.length} 帧`)
       } catch (err) {
         logError(`场景检测失败，退回均匀采样：${video.path}`, err)
         timestamps = planTimestamps(duration, settings.framesPerVideo)

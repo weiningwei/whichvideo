@@ -677,7 +677,7 @@ export async function detectScenes(
     '-i',
     filePath,
     '-vf',
-    `scale=w=160:h=-2,select='gt(scene\\,${threshold})',showinfo`,
+    `scale=w=160:h=-2,select='gt(scene,${threshold})',showinfo`,
     '-an',
     '-sn',
     '-dn',
@@ -685,7 +685,13 @@ export async function detectScenes(
     'null',
     '-'
   ]
-  const { stderr } = await run(t.ffmpeg, args, { timeoutMs })
+  const { code, stderr } = await run(t.ffmpeg, args, { timeoutMs })
+  // 退出码非 0（滤镜串错误、文件损坏等）必须抛出 —— 静默返回空数组会让
+  // 场景采样**悄悄退化成均匀采样**，用户毫无感知（历史上真发生过）。
+  // indexer 的 catch 会 logError 并退回均匀计划，行为与失败语义一致。
+  if (code !== 0) {
+    throw new Error(`场景检测失败（退出码 ${code}）：${stderr.trim().slice(0, 200)}`)
+  }
   const times: number[] = []
   for (const m of stderr.matchAll(/pts_time:(\d+(?:\.\d+)?)/g)) {
     const v = Number.parseFloat(m[1])
