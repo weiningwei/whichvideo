@@ -358,22 +358,21 @@ export class Indexer {
   }
 
   /**
-   * 重建索引。
-   * mode='global'（默认）：把视频的采样模式**固化为当前全局设置**并重建；
-   * mode='scene'/'uniform'：为这些视频固化指定采样模式后重建（视频级覆盖，
-   * 不影响其它视频）。固化的值是"这批帧实际用什么采样抽的"。
+   * 重建索引：按各视频**当前记录的采样方式**重抽（override ?? 全局）。
+   *
+   * mode（'scene'/'uniform'）仅在需要**同时更改**采样方式时传入
+   * （行内下拉切换 → 点「索引」）：设置覆盖并重建。
+   * 工具条的重建按钮不传 mode —— 只重建、不动覆盖。此前 mode='global'
+   * 会清除覆盖，用户行内设置的场景采样被工具条按钮悄悄抹掉，
+   * 表现为"场景采样不生效、重复索引"。
    */
-  async reindex(
-    videoIds?: number[],
-    mode: 'global' | SamplingMode = 'global'
-  ): Promise<number> {
+  async reindex(videoIds?: number[], mode?: SamplingMode): Promise<number> {
     const targets = videoIds?.length
       ? videoIds.map((id) => this.db.getVideo(id)).filter((v): v is VideoRecord => !!v)
       : this.db.listVideos({ limit: 2000 }).items
     const targetIds = targets.map((v) => v.id)
-    if (targetIds.length > 0) {
-      const override = mode === 'global' ? this.getSettings().samplingMode : mode
-      this.db.setSamplingOverride(targetIds, override)
+    if (mode && targetIds.length > 0) {
+      this.db.setSamplingOverride(targetIds, mode)
     }
     let count = 0
     for (const video of targets) {

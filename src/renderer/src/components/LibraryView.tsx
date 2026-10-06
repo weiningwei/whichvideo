@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { DuplicatePair, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { formatBytes, formatDuration, formatPercent } from '../lib/format'
 import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { blockModifierTextSelection } from '../lib/selection'
@@ -24,7 +24,7 @@ interface Props {
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
   onRemoveVideos: (videoIds: number[]) => void
-  onReindex: (videoIds?: number[], mode?: 'global' | 'scene' | 'uniform') => void
+  onReindex: (videoIds?: number[], mode?: SamplingMode) => void
   /** 全局采样模式（视频行未设覆盖时的生效值） */
   globalSampling: 'uniform' | 'scene'
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
