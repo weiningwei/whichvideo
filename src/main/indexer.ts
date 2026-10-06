@@ -356,6 +356,11 @@ export class Indexer {
       // 强制重建索引时清空已处理进度
       this.db.updateProcessedTimestamps(video.id, [])
       this.db.setVideoStatus(video.id, 'pending')
+      // 广播新状态：排队期间应显示「待索引」。此前漏发 video-updated，
+      // UI 靠事件就地刷新行 —— 收不到就一直显示旧的「已索引」，
+      // 直到开始抽帧（那一刻另发 indexing）才纠正。
+      const refreshed = this.db.getVideo(video.id)
+      if (refreshed) this.emit({ type: 'video-updated', video: refreshed })
       this.enqueue(video.id, video.path, true)
       count++
     }
