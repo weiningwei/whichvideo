@@ -81,6 +81,8 @@ export class FrameSearchIndex {
   private videoIds: Int32Array<ArrayBufferLike> = new Int32Array(0)
   private view: DataView | null = null
   private builtAt = 0
+  /** 小端 u32 视图：dHash/结构距离热循环直接索引（FRAME_STRIDE 与各偏移均 4 字节对齐） */
+  private words: Uint32Array | null = null
 
   constructor(private readonly db: LibraryDatabase) {
     this.rebuild()
@@ -107,6 +109,7 @@ export class FrameSearchIndex {
     this.buffer = buffer
     this.videoIds = videoIds
     this.view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+    this.words = new Uint32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength >> 2)
     this.builtAt = Date.now()
     return this.info
   }
@@ -180,8 +183,9 @@ export class FrameSearchIndex {
    */
   search(query: QueryVector, options: SearchOptions): { results: IndexedHit[]; comparedFrames: number } {
     const view = this.view
+    const words = this.words
     const count = this.videoIds.length
-    if (!view || count === 0) return { results: [], comparedFrames: 0 }
+    if (!view || !words || count === 0) return { results: [], comparedFrames: 0 }
 
     const weight =
       COLOR_WEIGHT_MIN + (COLOR_WEIGHT_MAX - COLOR_WEIGHT_MIN) * Math.min(1, Math.max(0, query.colorfulness))
@@ -190,22 +194,28 @@ export class FrameSearchIndex {
     const qDhashLo = Number(BigInt.asUintN(32, BigInt(query.dhash))) >>> 0
     const qStruct = query.struct
     const qColor = query.color
+    // 查询结构指纹转 u32（query 的 byteOffset 均为 4 的倍数：新建数组或
+    // buffer 内 144*idx+8 的 subarray），与小端写入的库侧指纹逐字比较
+    const qS32 = new Uint32Array(qStruct.buffer, qStruct.byteOffset, STRUCT_BYTES >> 2)
     const minHash = options.minHashScore
     const best = new Map<number, IndexedHit & { secondBest: number }>()
 
     for (let i = 0; i < count; i++) {
-      const off = i * FRAME_STRIDE
-      const dLo = view.getUint32(off + DHASH_OFFSET, true)
-      const dHi = view.getUint32(off + DHASH_OFFSET + 4, true)
+      const w = (i * FRAME_STRIDE) >> 2
+      const dLo = words[w]
+      const dHi = words[w + 1]
       const distD = popcount((qDhashLo ^ dLo) >>> 0) + popcount((qDhashHi ^ dHi) >>> 0)
       if (distD > DHASH_PRUNE_BITS) continue
 
-      const structDistance = hammingInBuffer(qStruct, this.buffer, off + STRUCT_OFFSET)
+      const sBase = w + (STRUCT_OFFSET >> 2)
+      let structDistance = 0
+      for (let j = 0; j < STRUCT_BYTES >> 2; j++) structDistance += popcount((qS32[j] ^ words[sBase + j]) >>> 0)
       if (structDistance > STRUCT_PRUNE_BITS) continue
 
       const hashScore = 1 - structDistance / STRUCT_BITS
       if (hashScore < minHash) continue
 
+      const off = i * FRAME_STRIDE
       const colorScore = quantizedHistogramSimilarity(qColor, this.buffer, off + COLOR_OFFSET)
       const score = hashScore * structWeight + colorScore * weight
 
@@ -252,21 +262,6 @@ export class FrameSearchIndex {
 
     return { results, comparedFrames: count }
   }
-}
-
-function hammingInBuffer(a: Uint8Array, b: Uint8Array, bOffset: number): number {
-  let dist = 0
-  for (let i = 0; i < STRUCT_BYTES; i += 4) {
-    const av = (a[i] | (a[i + 1] << 8) | (a[i + 2] << 16) | (a[i + 3] << 24)) >>> 0
-    const bv =
-      (b[bOffset + i] |
-        (b[bOffset + i + 1] << 8) |
-        (b[bOffset + i + 2] << 16) |
-        (b[bOffset + i + 3] << 24)) >>>
-      0
-    dist += popcount((av ^ bv) >>> 0)
-  }
-  return dist
 }
 
 function popcount(x: number): number {
