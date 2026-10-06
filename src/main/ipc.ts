@@ -7,8 +7,10 @@
  */
 import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { findSeekablePlayer } from './media'
 import {
   IPC,
   normalizePath,
@@ -376,9 +378,27 @@ export function registerIpc(deps: IpcDeps): void {
     return picked.filePaths.map((p) => normalizePath(p))
   })
 
-  ipcMain.handle(IPC.videosOpen, async (_e, videoId: number) => {
+  ipcMain.handle(IPC.videosOpen, async (_e, videoId: number, atSeconds?: number) => {
     const video = db.getVideo(videoId)
     if (!video) return
+    // 带时间戳：探测 mpv/VLC 直接从命中位置起播；都没有则退化到系统默认
+    // 播放器（openPath 无法传时间戳，只能打开整个视频），并如实告知用户。
+    if (atSeconds != null && atSeconds > 0) {
+      const player = findSeekablePlayer()
+      if (player) {
+        const child = spawn(player.exe, player.args(video.path, atSeconds), {
+          detached: true,
+          stdio: 'ignore'
+        })
+        child.unref()
+        return
+      }
+      broadcast({
+        type: 'notice',
+        level: 'warn',
+        message: '未找到 mpv 或 VLC，已用系统默认播放器打开（无法直接跳到命中位置）'
+      })
+    }
     const err = await shell.openPath(video.path)
     if (err) broadcast({ type: 'notice', level: 'error', message: `打开失败：${err}` })
   })

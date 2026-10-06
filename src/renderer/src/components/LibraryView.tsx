@@ -18,7 +18,7 @@ interface Props {
   onRemoveFolder: (folderId: number) => void
   onRescan: (folderId?: number) => void
   onToggleFolder: (folderId: number, enabled: boolean) => void
-  onOpen: (videoId: number) => void
+  onOpen: (videoId: number, atSeconds?: number) => void
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
   onRemoveVideos: (videoIds: number[]) => void

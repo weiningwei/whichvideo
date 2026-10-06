@@ -141,8 +141,8 @@ export function useLibrary() {
           notices.pushNotice('info', `已重新排入索引队列：${count} 个视频`)
         })
       },
-      async openVideo(videoId: number): Promise<void> {
-        await window.whichvideo.videos.openFile(videoId)
+      async openVideo(videoId: number, atSeconds?: number): Promise<void> {
+        await window.whichvideo.videos.openFile(videoId, atSeconds)
       },
       async revealVideo(videoId: number): Promise<void> {
         await window.whichvideo.videos.revealFile(videoId)

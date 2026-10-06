@@ -100,7 +100,7 @@ export default function App() {
             onSearchClipboard={() => void runSearch({})}
             onSearchUrl={(url) => void runSearch({ url })}
             onClear={clearSearch}
-            onOpen={(id) => void actions.openVideo(id)}
+            onOpen={(id, atSeconds) => void actions.openVideo(id, atSeconds)}
             onReveal={(id) => void actions.revealVideo(id)}
             onReindex={(id) => void actions.reindex([id])}
           />
@@ -121,7 +121,7 @@ export default function App() {
               onRemoveFolder={(id) => void actions.removeFolder(id)}
               onRescan={(id) => void actions.rescan(id)}
               onToggleFolder={(id, enabled) => void actions.toggleFolder(id, enabled)}
-              onOpen={(id) => void actions.openVideo(id)}
+              onOpen={(id, atSeconds) => void actions.openVideo(id, atSeconds)}
               onReveal={(id) => void actions.revealVideo(id)}
               onRemoveVideo={(id) => void actions.removeVideo(id)}
               onRemoveVideos={(ids) => void actions.removeVideos(ids)}

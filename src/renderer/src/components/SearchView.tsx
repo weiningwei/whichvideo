@@ -17,7 +17,7 @@ interface Props {
   onSearchUrl: (url: string) => void
   onReSearch: () => void
   onClear: () => void
-  onOpen: (videoId: number) => void
+  onOpen: (videoId: number, atSeconds?: number) => void
   onReveal: (videoId: number) => void
   onReindex: (videoId: number) => void
 }
@@ -296,7 +296,7 @@ function ResultCard({
 }: {
   match: SearchMatch
   roots: string[]
-  onOpen: (id: number) => void
+  onOpen: (id: number, atSeconds?: number) => void
   onReveal: (id: number) => void
   onReindex: (id: number) => void
 }) {
@@ -386,8 +386,12 @@ function ResultCard({
                   ? '索引中'
                   : '待索引'}
           </span>
-          <button className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70" onClick={() => onOpen(video.id)}>
-            播放
+          <button
+            className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70"
+            onClick={() => onOpen(video.id, match.timeSeconds)}
+            title={available ? '优先用 mpv/VLC 从命中位置起播；未安装则用系统默认播放器' : '视频不在本地'}
+          >
+            {formatDuration(match.timeSeconds)} 处播放
           </button>
           <button className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70" onClick={() => onReveal(video.id)}>
             定位文件

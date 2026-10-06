@@ -424,3 +424,56 @@ export async function isDecodable(filePath: string, tools?: ToolPaths): Promise<
     return false
   }
 }
+
+/** 支持"从指定时间点起播"的播放器（用于搜索结果定位播放） */
+export interface SeekablePlayer {
+  /** 可执行文件路径 */
+  exe: string
+  /** 展示名（通知文案用） */
+  name: string
+  /** 组装起播参数 */
+  args: (videoPath: string, startSeconds: number) => string[]
+}
+
+function pickExisting(candidates: string[]): string | null {
+  for (const p of candidates) {
+    if (p && existsSync(p) && isExecutable(p)) return p
+  }
+  return null
+}
+
+/**
+ * 找一个支持时间点起播的本地播放器：mpv 优先（轻量、参数稳），
+ * 其次 VLC。都找不到返回 null —— 调用方退化为系统默认播放器（无法定位时间点）。
+ *
+ * 探测顺序：PATH（覆盖 scoop/winget/choco 等包管理器安装）→ 常见安装位置。
+ */
+export function findSeekablePlayer(): SeekablePlayer | null {
+  const mpv =
+    whichSync('mpv') ??
+    pickExisting([
+      join(process.env.APPDATA ?? '', 'mpv', 'mpv.exe'),
+      'C://Program Files\\mpv\\mpv.exe',
+      'C://Program Files (x86)\\mpv\\mpv.exe',
+      join(process.env.LOCALAPPDATA ?? '', 'Programs\\mpv', 'mpv.exe')
+    ])
+  if (mpv) {
+    return { exe: mpv, name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] }
+  }
+
+  const vlc =
+    whichSync('vlc') ??
+    pickExisting([
+      'C://Program Files\\VideoLAN\\VLC\\vlc.exe',
+      'C://Program Files (x86)\\VideoLAN\\VLC\\vlc.exe',
+      join(process.env.LOCALAPPDATA ?? '', 'Programs\\VideoLAN\\VLC\\vlc.exe'),
+      '/Applications/VLC.app/Contents/MacOS/VLC',
+      '/usr/bin/vlc',
+      '/snap/bin/vlc'
+    ])
+  if (vlc) {
+    return { exe: vlc, name: 'VLC', args: (p, s) => ['--start-time=' + Math.floor(s), p] }
+  }
+
+  return null
+}

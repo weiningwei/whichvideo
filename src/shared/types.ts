@@ -315,7 +315,7 @@ export interface WhichVideoApi {
     reindex(videoIds?: number[]): Promise<number>
     importFiles(): Promise<ImportResult>
     importImages(): Promise<string[]>
-    openFile(videoId: number): Promise<void>
+    openFile(videoId: number, atSeconds?: number): Promise<void>
     revealFile(videoId: number): Promise<void>
     thumbnail(videoId: number): Promise<string | null>
     frameProgress(videoId: number): Promise<FrameProgress | null>
