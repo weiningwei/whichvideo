@@ -222,9 +222,19 @@ export function VideoRow({
       <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
         <select
           className="w-[64px] rounded border border-line bg-surface-1 px-1 py-0.5 text-[11px] text-primary"
-          value={pendingSampling ?? (video.samplingOverride ?? globalSampling)}
+          value={
+            // 索引失败时忽略未应用的 pending 选择，回退显示事实值 ——
+            // 失败意味着按 pending 模式的重建没成功，显示它反而误导
+            video.status === 'failed'
+              ? (video.samplingOverride ?? globalSampling)
+              : (pendingSampling ?? (video.samplingOverride ?? globalSampling))
+          }
           title="该视频的抽帧采样方式；更改后点「索引」按新方式重建此视频"
           onClick={(e) => e.stopPropagation()}
+          // stopPropagation 拦 keydown：select 聚焦时按 ↑↓ 是在改选项，
+          // 不拦的话窗口级键盘导航会抢走事件（移动光标 + preventDefault），
+          // 下拉完全无法用键盘操作
+          onKeyDown={(e) => e.stopPropagation()}
           onChange={(e) => setPendingSampling(e.target.value as 'uniform' | 'scene')}
         >
           <option value="uniform">均匀</option>

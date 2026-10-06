@@ -121,7 +121,11 @@ export class Indexer {
 
   enqueue(taskId: number, filePath: string, force = false): void {
     void filePath
-    if (this.queued.has(taskId) && !force) return
+    void force
+    // 已在队列中就不再 push —— 无论是否 force。force 的本意是"重建时强制
+    // 重新入队"，但不查重会让排队中的视频被 push 两次、抽两遍帧。重复请求
+    // 无需重复排队：process() 每次开始时都会按最新设置/覆盖重新生成采样计划。
+    if (this.queued.has(taskId)) return
     this.queued.add(taskId)
     this.queue.push(taskId)
     if (!this.startedAt) this.startedAt = Date.now()
@@ -478,8 +482,9 @@ export class Indexer {
     // 采样计划：视频级覆盖优先（samplingOverride），否则全局 settings.samplingMode。
     // 场景模式 = 场景检测 pass（低分辨率快速解码）+ 场景点/长镜头补充的
     // 非均匀时间点 + 强制逐点 seek（fps 滤镜无法对齐非均匀点）。
-    // 检测失败（ffmpeg 异常等）退回均匀计划，不阻断索引。
-    const effectiveSampling = video.samplingOverride ?? settings.samplingMode
+    // 检测失败（ffmpeg 异常等）退回均匀计划，不阻断索引 —— 此时固化值改为
+    // uniform，保证记录与实际抽帧方式一致（该字段是事实记录，不是意图）。
+    let effectiveSampling = video.samplingOverride ?? settings.samplingMode
     // 把实际使用的采样模式**固化**到视频记录：sampling_override 的语义是
     // "这个视频的帧实际用什么采样抽的"，而不是"用户想让全局怎么抽"。
     // 否则全局切换后，旧视频的 override 仍是 null、effectiveSampling 跟着
@@ -495,6 +500,9 @@ export class Indexer {
       } catch (err) {
         logError(`场景检测失败，退回均匀采样：${video.path}`, err)
         timestamps = planTimestamps(duration, settings.framesPerVideo)
+        // 事实记录修正：实际走的是均匀采样，不能留 'scene' 误导后续判定
+        effectiveSampling = 'uniform'
+        this.db.setSamplingOverride([videoId], 'uniform')
       }
     } else {
       timestamps = planTimestamps(duration, settings.framesPerVideo)
