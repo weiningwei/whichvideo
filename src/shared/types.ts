@@ -15,6 +15,9 @@ export type VideoStatus =
   /** 索引失败（解码错误等） */
   | 'failed'
 
+/** 抽帧采样模式：uniform = 均匀（快），scene = 场景检测（召回高） */
+export type SamplingMode = 'uniform' | 'scene'
+
 export interface VideoRecord {
   id: number
   /** 绝对路径（Windows 反斜杠） */
@@ -42,6 +45,8 @@ export interface VideoRecord {
   folderId: number | null
   /** 已处理的时间点索引数组（断点续传用） */
   processedTimestamps: number[]
+  /** 采样模式覆盖：不设置时跟随全局 settings.samplingMode */
+  samplingOverride: SamplingMode | null
   /** 累计已处理毫秒数（断点续传跨会话累计） */
   processedMs: number
 }
@@ -257,7 +262,7 @@ export interface AppSettings {
    *   每个镜头至少一帧，召回显著更高；代价是额外一次场景检测解码 +
    *   逐点 seek 抽帧，索引更慢。更改后需重建索引才对已索引视频生效。
    */
-  samplingMode: 'uniform' | 'scene'
+  samplingMode: SamplingMode
   /** 启动时检查新版本（查 GitHub Releases，仅一次、失败静默） */
   updateCheck: boolean
 }
@@ -341,7 +346,7 @@ export interface WhichVideoApi {
     list(query: VideoQuery): Promise<VideoPage>
     get(videoId: number): Promise<VideoRecord | null>
     remove(videoId: number): Promise<void>
-    reindex(videoIds?: number[]): Promise<number>
+    reindex(videoIds?: number[], mode?: 'global' | SamplingMode): Promise<number>
     findDuplicates(minScore?: number): Promise<DuplicatePair[]>
     importFiles(): Promise<ImportResult>
     importImages(): Promise<string[]>

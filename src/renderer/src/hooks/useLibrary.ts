@@ -10,6 +10,7 @@ import {
   type DataDirInfo,
   type ImportResult,
   type DuplicatePair,
+  type SamplingMode,
   type IndexerStatus,
   type LibraryStats,
   type SearchResponse,
@@ -136,10 +137,15 @@ export function useLibrary() {
           await refreshAll()
         })
       },
-      async reindex(videoIds?: number[]): Promise<void> {
+      async reindex(videoIds?: number[], mode?: 'global' | SamplingMode): Promise<void> {
         await withBusy('正在重建索引…', async () => {
-          const count = await window.whichvideo.videos.reindex(videoIds)
-          notices.pushNotice('info', `已重新排入索引队列：${count} 个视频`)
+          const count = await window.whichvideo.videos.reindex(videoIds, mode)
+          notices.pushNotice(
+            'info',
+            mode === 'scene'
+              ? `已对 ${count} 个视频应用场景检测采样并重新排入队列（仅对这些视频生效）`
+              : `已重新排入索引队列：${count} 个视频`
+          )
         })
       },
       /** 库内查重：代表帧跨视频互搜。耗时随库增大（每视频一次内存扫描）。 */

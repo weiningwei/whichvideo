@@ -16,6 +16,7 @@ import {
   type AppSettings,
   type FolderWatchState,
   type LibraryStats,
+  type SamplingMode,
   type VideoQuery,
   type VideoRecord,
   type VideoStatus,
@@ -76,6 +77,7 @@ interface VideoRow {
   folder_id: number | null
   processed_timestamps: string
   processed_ms: number
+  sampling_override: string | null
 }
 
 interface FolderRow {
@@ -119,7 +121,8 @@ function rowToVideo(r: VideoRow): VideoRecord {
     indexedAt: r.indexed_at,
     folderId: r.folder_id,
     processedTimestamps,
-    processedMs: r.processed_ms
+    processedMs: r.processed_ms,
+    samplingOverride: (r.sampling_override as SamplingMode | null) ?? null
   }
 }
 
@@ -231,6 +234,12 @@ export class LibraryDatabase {
     // 迁移：旧库没有 file_hash 列（查重第一级：bit 级副本校验，算一次缓存）
     try {
       this.db.exec(`ALTER TABLE videos ADD COLUMN file_hash TEXT`)
+    } catch {
+      /* 列已存在 */
+    }
+    // 迁移：旧库没有 sampling_override 列（视频级采样模式覆盖，null = 跟随全局）
+    try {
+      this.db.exec(`ALTER TABLE videos ADD COLUMN sampling_override TEXT`)
     } catch {
       /* 列已存在 */
     }
@@ -403,6 +412,17 @@ export class LibraryDatabase {
 
   setFileHash(id: number, hash: string): void {
     this.db.prepare('UPDATE videos SET file_hash = ? WHERE id = ?').run(hash, id)
+  }
+
+  /** 迁移：旧库没有 sampling_override 列（视频级采样模式覆盖） */
+  // 在构造函数迁移块中执行（见上方 file_hash 迁移同款 try/catch）
+
+  setSamplingOverride(ids: number[], mode: SamplingMode | null): void {
+    const stmt = this.db.prepare('UPDATE videos SET sampling_override = ? WHERE id = ?')
+    const runAll = this.db.transaction((list: number[]) => {
+      for (const id of list) stmt.run(mode, id)
+    })
+    runAll(ids)
   }
 
   /** 返回 null 表示已存在且无需重建（size/mtime 未变） */

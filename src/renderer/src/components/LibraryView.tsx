@@ -24,7 +24,7 @@ interface Props {
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
   onRemoveVideos: (videoIds: number[]) => void
-  onReindex: (videoIds?: number[]) => void
+  onReindex: (videoIds?: number[], mode?: 'global' | 'scene' | 'uniform') => void
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
   onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
   groupByFolder: boolean
@@ -342,9 +342,16 @@ export function LibraryView(props: Props) {
                 <button
                   className="btn text-[12px] hover:bg-ink-700/70"
                   onClick={() => props.onReindex([...selectedVideoIds])}
-                  title="把选中的视频重新排入索引队列"
+                  title="按全局采样模式把选中的视频重新排入索引队列"
                 >
                   重建索引（{selectedVideoIds.size}）
+                </button>
+                <button
+                  className="btn text-[12px] hover:bg-ink-700/70"
+                  onClick={() => props.onReindex([...selectedVideoIds], 'scene')}
+                  title="用场景检测采样重建选中的视频（每个镜头至少一帧，召回更高、索引更慢；覆盖全局设置，仅对这些视频生效）"
+                >
+                  场景重建（{selectedVideoIds.size}）
                 </button>
                 <button
                   className="btn btn-danger text-[12px] hover:bg-bad/10"

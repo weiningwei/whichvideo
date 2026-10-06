@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type LibraryEvent, type WhichVideoApi } from '@shared/types'
+import { IPC, type LibraryEvent, type SamplingMode, type WhichVideoApi } from '@shared/types'
 
 const api: WhichVideoApi = {
   library: {
@@ -24,7 +24,8 @@ const api: WhichVideoApi = {
     list: (query) => ipcRenderer.invoke(IPC.videosList, query),
     get: (videoId: number) => ipcRenderer.invoke(IPC.videosGet, videoId),
     remove: (videoId: number) => ipcRenderer.invoke(IPC.videosRemove, videoId),
-    reindex: (videoIds?: number[]) => ipcRenderer.invoke(IPC.videosReindex, videoIds),
+    reindex: (videoIds?: number[], mode?: 'global' | SamplingMode) =>
+        ipcRenderer.invoke(IPC.videosReindex, videoIds, mode),
     findDuplicates: (minScore?: number) => ipcRenderer.invoke(IPC.videosFindDuplicates, minScore),
     importFiles: () => ipcRenderer.invoke(IPC.videosImport),
     importImages: () => ipcRenderer.invoke(IPC.videosImportImages),

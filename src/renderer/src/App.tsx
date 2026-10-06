@@ -125,7 +125,7 @@ export default function App() {
               onReveal={(id) => void actions.revealVideo(id)}
               onRemoveVideo={(id) => void actions.removeVideo(id)}
               onRemoveVideos={(ids) => void actions.removeVideos(ids)}
-              onReindex={(ids) => void actions.reindex(ids)}
+              onReindex={(ids, mode) => void actions.reindex(ids, mode)}
               onFindDuplicates={(minScore) => actions.findDuplicates(minScore)}
               groupByFolder={groupByFolder}
               onToggleGroupByFolder={toggleGroupByFolder}

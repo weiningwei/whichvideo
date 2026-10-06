@@ -9,6 +9,7 @@ import {
   type AppSettings,
   type ImportResult,
   type IndexerStatus,
+  type SamplingMode,
   type VideoRecord,
   type VideoStatus,
   type FrameProgress
@@ -352,10 +353,23 @@ export class Indexer {
     }
   }
 
-  async reindex(videoIds?: number[]): Promise<number> {
+  /**
+   * 重建索引。
+   * mode='global'（默认）：清除采样覆盖，按全局 settings.samplingMode 重建；
+   * mode='scene'/'uniform'：为这些视频设置采样覆盖后重建（视频级覆盖，
+   * 不影响其它视频）。
+   */
+  async reindex(
+    videoIds?: number[],
+    mode: 'global' | SamplingMode = 'global'
+  ): Promise<number> {
     const targets = videoIds?.length
       ? videoIds.map((id) => this.db.getVideo(id)).filter((v): v is VideoRecord => !!v)
       : this.db.listVideos({ limit: 2000 }).items
+    const targetIds = targets.map((v) => v.id)
+    if (targetIds.length > 0) {
+      this.db.setSamplingOverride(targetIds, mode === 'global' ? null : mode)
+    }
     let count = 0
     for (const video of targets) {
       if (!existsSync(video.path)) continue
@@ -460,11 +474,12 @@ export class Indexer {
       if (probed.video) this.emit({ type: 'video-updated', video: probed.video })
     }
 
-    // 采样计划：均匀（现状）或场景检测（settings.samplingMode）。
+    // 采样计划：视频级覆盖优先（samplingOverride），否则全局 settings.samplingMode。
     // 场景模式 = 场景检测 pass（低分辨率快速解码）+ 场景点/长镜头补充的
     // 非均匀时间点 + 强制逐点 seek（fps 滤镜无法对齐非均匀点）。
     // 检测失败（ffmpeg 异常等）退回均匀计划，不阻断索引。
-    const forceSeek = settings.samplingMode === 'scene'
+    const effectiveSampling = video.samplingOverride ?? settings.samplingMode
+    const forceSeek = effectiveSampling === 'scene'
     let timestamps: number[]
     if (forceSeek) {
       try {
