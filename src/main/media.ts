@@ -494,8 +494,8 @@ function exeFromCommandTemplate(cmd: string): string | null {
 /** 受支持播放器：exe 文件名（小写）→ 起播参数构造。关联探测与盲扫共用。 */
 const KNOWN_SEEKABLE: Record<string, Pick<SeekablePlayer, 'name' | 'args'>> = {
   'mpv.exe': { name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] },
-  'potplayermini64.exe': { name: 'PotPlayer', args: (p, s) => ['/seek=' + seekClock(s), p] },
-  'potplayermini.exe': { name: 'PotPlayer', args: (p, s) => ['/seek=' + seekClock(s), p] },
+  'potplayermini64.exe': { name: 'PotPlayer', args: (p, s) => [p, '/seek=' + seekClock(s)] },
+  'potplayermini.exe': { name: 'PotPlayer', args: (p, s) => [p, '/seek=' + seekClock(s)] },
   'vlc.exe': { name: 'VLC', args: (p, s) => ['--start-time=' + Math.floor(s), p] }
 }
 
@@ -612,7 +612,7 @@ export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
     return {
       exe: potPlayer,
       name: 'PotPlayer',
-      args: (p, s) => ['/seek=' + seekClock(s), p]
+      args: (p, s) => [p, '/seek=' + seekClock(s)]
     }
   }
 
