@@ -609,7 +609,7 @@ export default mod
       `实际 ${single[3]} 个（应为每行 4 个按钮）`
     )
   }
-  // 表格已精简为 3 列（视频 / 状态 / 操作），元信息合并进视频列第二行。
+  // 表格 4 列（视频 / 状态 / 采样 / 操作），元信息合并进视频列第二行。
   // 状态列仍需禁止换行：中文可逐字断行，列被压窄会竖排成多行。
   // align-top 是配套的——文件名可占两行，状态徽标要与其顶端对齐而不是被拉高中间。
   check(
@@ -625,7 +625,7 @@ export default mod
     (libraryHtml.match(/[^<>]*1:02:05[^<>]*/)?.[0] ?? '没找到信息行').slice(0, 90)
   )
   check(
-    '表格已精简为 3 列（视频 / 状态 / 操作，「选择」列已移除）',
+    '表格 4 列（视频 / 状态 / 采样 / 操作，「选择」列已移除）',
     /视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml) &&
       !/<th[^>]*>\s*<input[^>]*checkbox/.test(libraryHtml),
     (libraryHtml.match(/<th[^>]*>(?:(?!<\/th>)[\s\S])*?<\/th>/g) ?? []).length + ' 个表头，无全选框'
@@ -856,7 +856,7 @@ export default mod
     check(
       '分组标题行拆成两格（colSpan 会盖住吸附列、让分隔线断开）',
       src.includes('colSpan={2}') && !src.includes('colSpan={3}'),
-      '标题格 colSpan=2 + 一个空的吸附格'
+      '标题格 colSpan=2 + 空采样格 + 空吸附格（共 4 列对齐）'
     )
 
     // 分组标题行的吸附格同样要实色——它也是 sticky，标题行滚动时会浮起来
