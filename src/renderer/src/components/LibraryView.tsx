@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DuplicatePair, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
-import { formatBytes, formatDuration, formatPercent, scoreLabel } from '../lib/format'
+import { formatBytes, formatDuration, formatPercent } from '../lib/format'
+import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor, PAGE_JUMP } from '../hooks/useVideoCursor'
 import { SidePanel } from './SidePanel'
@@ -61,6 +62,15 @@ export function LibraryView(props: Props) {
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
+  // 两两 pair 聚合成相似组（连通分量）：AB、BC 相似 → A/B/C 同组，
+  // dupeGuru 式交互 —— 组内挑一个保留、其余移除，不逐对处理。
+  const duplicateGroups = useMemo(
+    () => (duplicates ? buildDuplicateGroups(duplicates) : []),
+    [duplicates]
+  )
+  // 每组用户指定的保留项（videoId）；未指定时用组默认（体积最大）。
+  // 移除后对应 id 自动清除。
+  const [keptIds, setKeptIds] = useState<Set<number>>(new Set())
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
   /** 快捷键 / 会聚焦到这里 */
   const filterInputRef = useRef<HTMLInputElement>(null)
@@ -566,68 +576,108 @@ export function LibraryView(props: Props) {
               <div>
                 <div className="text-[14px] font-medium text-primary">库内查重结果</div>
                 <div className="text-[11px] text-muted">
-                  {duplicates.length === 0
-                    ? '没有发现画面高度相似的视频对'
-                    : `发现 ${duplicates.length} 对画面高度相似的视频（按相似度排序）`}
-                  {' · '}单帧判据：同剧不同集的相同场景可能误报，请自行核对
+                  {duplicateGroups.length === 0
+                    ? '没有发现画面高度相似的视频'
+                    : `发现 ${duplicateGroups.length} 组相似视频 · 组内保留一个、其余建议移除`}
+                  {' · '}同剧不同集的相同场景可能被列入，请自行核对
                 </div>
               </div>
               <button className="btn px-2 py-1 text-[11px]" onClick={() => setDuplicates(null)}>
                 关闭
               </button>
             </div>
-            <div className="flex flex-col gap-2">
-              {duplicates.map((pair) => {
-                const smaller = pair.videoA.size <= pair.videoB.size ? pair.videoA : pair.videoB
+            <div className="flex flex-col gap-3">
+              {duplicateGroups.map((group, gi) => {
+                const keep = keptInGroup(group, keptIds)
+                const toRemove = group.members.filter((m) => m.id !== keep.id)
                 return (
-                  <div key={`${pair.videoA.id}-${pair.videoB.id}`} className="rounded-xl border border-line p-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[12px] text-primary">
-                        {pair.videoA.name}
-                        <span className="mx-1.5 text-tertiary">↔</span>
-                        {pair.videoB.name}
+                  <div key={group.id} className="rounded-xl border border-line p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-[12.5px] text-primary">
+                        相似组 {gi + 1}
+                        <span className="ml-2 text-[11px] text-muted">
+                          {group.members.length} 个视频 · 建议保留体积最大的
+                        </span>
                       </div>
-                      <div className={`shrink-0 text-[13px] font-semibold ${scoreLabel(pair.score).includes('重复') || pair.score >= 0.95 ? 'text-bad' : 'text-warn'}`}>
-                        {formatPercent(pair.score)}
-                      </div>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
-                      {pair.identicalFile && (
-                        <span className="rounded border border-bad/40 bg-bad/10 px-1 py-0.5 text-bad">
-                          完全相同文件
+                      {group.identicalFile && (
+                        <span className="rounded border border-bad/40 bg-bad/10 px-1.5 py-0.5 text-[10.5px] text-bad">
+                          完全相同文件（SHA-256 一致）
                         </span>
                       )}
-                      <span>结构 {(pair.hashScore * 100).toFixed(0)}% · 颜色 {(pair.colorScore * 100).toFixed(0)}%</span>
-                      <span>命中于 {formatDuration(pair.timeSeconds)}</span>
-                      <span>
-                        {pair.videoA.name} {formatBytes(pair.videoA.size)} / {pair.videoB.name} {formatBytes(pair.videoB.size)}
-                      </span>
-                      <button
-                        className="btn px-1.5 py-0.5 text-[10.5px] hover:bg-ink-700/70"
-                        onClick={() => {
-                          props.onOpen(pair.videoA.id, pair.timeSeconds)
-                        }}
-                        title="从命中位置播放 B（mpv/PotPlayer/VLC）"
-                      >
-                        从 {formatDuration(pair.timeSeconds)} 播放 B
-                      </button>
-                      <button
-                        className="btn btn-danger px-1.5 py-0.5 text-[10.5px] hover:bg-bad/10"
-                        onClick={() => {
-                          props.onRemoveVideo(smaller.id)
-                          setDuplicates((prev) =>
-                            prev
-                              ? prev.filter(
-                                  (x) => x.videoA.id !== smaller.id && x.videoB.id !== smaller.id
-                                )
-                              : prev
-                          )
-                        }}
-                        title={`移除体积较小的（${formatBytes(smaller.size)}），不删磁盘文件`}
-                      >
-                        移除较小的（{formatBytes(smaller.size)}）
-                      </button>
+                      <div className={`shrink-0 text-[13px] font-semibold ${group.bestScore >= 0.95 ? 'text-bad' : 'text-warn'}`}>
+                        {formatPercent(group.bestScore)}
+                      </div>
                     </div>
+                    <div className="flex flex-col gap-1">
+                      {group.members.map((m) => {
+                        const isKeep = m.id === keep.id
+                        return (
+                          <div
+                            key={m.id}
+                            className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 ${
+                              isKeep ? 'border-ok/40 bg-ok/10' : 'border-line bg-ink-900/40'
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span
+                                className={`shrink-0 rounded px-1 py-0.5 text-[10px] ${
+                                  isKeep ? 'bg-ok/20 text-ok' : 'bg-bad/10 text-bad'
+                                }`}
+                              >
+                                {isKeep ? '保留' : '将移除'}
+                              </span>
+                              <span className="truncate text-[12px] text-primary" title={m.path}>
+                                {m.name}
+                              </span>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2 text-[10.5px] text-muted">
+                              <span>{formatBytes(m.size)}</span>
+                              <span>{formatDuration(m.duration)}</span>
+                              {!isKeep && (
+                                <button
+                                  className="btn px-1.5 py-0.5 hover:bg-ink-700/70"
+                                  onClick={() => setKeptIds((prev) => new Set(prev).add(m.id))}
+                                  title="改为保留这一个，其余标记移除"
+                                >
+                                  保留这个
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {toRemove.length > 0 && (
+                      <div className="mt-2 flex items-center justify-end gap-2">
+                        <button
+                          className="btn btn-danger px-2 py-1 text-[11px] hover:bg-bad/10"
+                          onClick={() => {
+                            const ids = toRemove.map((m) => m.id)
+                            if (
+                              !window.confirm(
+                                `从索引库移除这 ${ids.length} 个视频？（保留 ${keep.name}；不会删除磁盘文件）`
+                              )
+                            )
+                              return
+                            props.onRemoveVideos(ids)
+                            setDuplicates((prev) =>
+                              prev
+                                ? prev.filter(
+                                    (x) => !ids.includes(x.videoA.id) && !ids.includes(x.videoB.id)
+                                  )
+                                : prev
+                            )
+                            setKeptIds((prev) => {
+                              const next = new Set(prev)
+                              for (const id of ids) next.delete(id)
+                              return next
+                            })
+                          }}
+                        >
+                          移除其余 {toRemove.length} 个（保留 {keep.name}）
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
