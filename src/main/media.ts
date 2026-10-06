@@ -494,8 +494,8 @@ function exeFromCommandTemplate(cmd: string): string | null {
 /** 受支持播放器：exe 文件名（小写）→ 起播参数构造。关联探测与盲扫共用。 */
 const KNOWN_SEEKABLE: Record<string, Pick<SeekablePlayer, 'name' | 'args'>> = {
   'mpv.exe': { name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] },
-  'potplayermini64.exe': { name: 'PotPlayer', args: (p, s) => [p, '/seek=' + seekClock(s)] },
-  'potplayermini.exe': { name: 'PotPlayer', args: (p, s) => [p, '/seek=' + seekClock(s)] },
+  'potplayermini64.exe': { name: 'PotPlayer', args: (p, s) => [p, '/new', '/seek=' + Math.floor(s)] },
+  'potplayermini.exe': { name: 'PotPlayer', args: (p, s) => [p, '/new', '/seek=' + Math.floor(s)] },
   'vlc.exe': { name: 'VLC', args: (p, s) => ['--start-time=' + Math.floor(s), p] }
 }
 
@@ -560,16 +560,6 @@ function findPotPlayerFromRegistry(): string | null {
   return null
 }
 
-/** 秒 → hh:mm:ss（PotPlayer /seek= 的格式；时位不设上限，长视频直接进位） */
-function seekClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds))
-  const hh = Math.floor(s / 3600)
-  const mm = Math.floor((s % 3600) / 60)
-  const ss = s % 60
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`
-}
-
 function pickExisting(candidates: string[]): string | null {
   for (const p of candidates) {
     if (p && existsSync(p) && isExecutable(p)) return p
@@ -601,7 +591,8 @@ export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
     return { exe: mpv, ...KNOWN_SEEKABLE['mpv.exe'] }
   }
 
-  // PotPlayer：国内 Windows 用户最常见，/seek= 要求 hh:mm:ss 格式
+  // PotPlayer：国内 Windows 用户最常见。/new 强制新实例 —— 已运行的实例会
+  // 吞掉命令行参数（/seek 失效 → 从头播）；/seek= 支持纯秒数（官方双格式之一）
   const potPlayer = pickExisting([
     'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe',
     'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini.exe',
@@ -612,7 +603,7 @@ export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
     return {
       exe: potPlayer,
       name: 'PotPlayer',
-      args: (p, s) => [p, '/seek=' + seekClock(s)]
+      args: (p, s) => [p, '/new', '/seek=' + Math.floor(s)]
     }
   }
 
