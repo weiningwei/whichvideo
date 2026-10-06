@@ -377,6 +377,16 @@ export class LibraryDatabase {
     return row ? rowToVideo(row) : null
   }
 
+  /** size 与时长完全一致的视频对 —— bit 级副本的强信号（查重第一级，零抽帧成本） */
+  findIdenticalFilePairs(): { idA: number; idB: number }[] {
+    return this.db
+      .prepare(
+        `SELECT a.id AS idA, b.id AS idB FROM videos a JOIN videos b
+         ON a.id < b.id AND a.size = b.size AND ABS(a.duration - b.duration) < 0.5`
+      )
+      .all() as { idA: number; idB: number }[]
+  }
+
   /** 返回 null 表示已存在且无需重建（size/mtime 未变） */
   upsertVideo(input: NewVideo): { video: VideoRecord; changed: boolean; created: boolean } {
     const normalized = normalizePath(input.path)

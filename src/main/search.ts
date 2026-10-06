@@ -126,16 +126,25 @@ export class FrameSearchIndex {
   }
 
   /**
-   * 某视频的"代表帧"查询向量：取该视频在索引中**时间居中**的那一帧。
+   * 某视频的代表帧查询向量：取该视频在索引中**时间居中**的那一帧。
    *
    * 查重场景下没有外部查询图，只能拿库内自己的帧当查询 —— 中点帧是最具
    * 代表性的单帧选择（片头/片尾黑屏、水印帧都避开了一半以上）。
    * 该视频没有任何帧时返回 null。
    */
   videoQueryVector(videoId: number): QueryVector | null {
+    return this.videoFrameVectors(videoId, 1)[0] ?? null
+  }
+
+  /**
+   * 某视频的均匀采样帧向量（最多 maxCount 个，覆盖该视频在索引中的整个区间）。
+   * 用于查重的深度验证：单帧代表会受画面偶然性影响，多帧覆盖率才是
+   * "两个视频是否同一内容"的可靠判据。
+   */
+  videoFrameVectors(videoId: number, maxCount: number): QueryVector[] {
     const view = this.view
     const count = this.videoIds.length
-    if (!view || count === 0) return null
+    if (!view || count === 0 || maxCount < 1) return []
     let first = -1
     let last = -1
     for (let i = 0; i < count; i++) {
@@ -144,20 +153,25 @@ export class FrameSearchIndex {
         last = i
       }
     }
-    if (first < 0) return null
-    const mid = (first + last) >> 1
-    const off = mid * FRAME_STRIDE
-    const color = this.buffer.subarray(off + COLOR_OFFSET, off + COLOR_OFFSET + 64)
-    // dhash 用与 computeDHash 相同的方式拼回 number（lo 低地址、hi 高地址），
-    // 不直接 getBigUint64 —— QueryVector.dhash 是 number，类型与数值语义都要一致
-    const dLo = view.getUint32(off + DHASH_OFFSET, true)
-    const dHi = view.getUint32(off + DHASH_OFFSET + 4, true)
-    return {
-      dhash: dHi * 0x100000000 + dLo,
-      struct: this.buffer.subarray(off + STRUCT_OFFSET, off + STRUCT_OFFSET + STRUCT_BYTES),
-      color: color,
-      colorfulness: quantizedColorfulness(color)
+    if (first < 0) return []
+    const span = last - first + 1
+    const n = Math.min(maxCount, span)
+    const vectors: QueryVector[] = []
+    for (let k = 0; k < n; k++) {
+      // 均匀取采样位（含首尾），中点帧是其中之一
+      const mid = first + Math.round((k * (span - 1)) / Math.max(1, n - 1))
+      const off = mid * FRAME_STRIDE
+      const color = this.buffer.subarray(off + COLOR_OFFSET, off + COLOR_OFFSET + 64)
+      const dLo = view.getUint32(off + DHASH_OFFSET, true)
+      const dHi = view.getUint32(off + DHASH_OFFSET + 4, true)
+      vectors.push({
+        dhash: dHi * 0x100000000 + dLo,
+        struct: this.buffer.subarray(off + STRUCT_OFFSET, off + STRUCT_OFFSET + STRUCT_BYTES),
+        color: color,
+        colorfulness: quantizedColorfulness(color)
+      })
     }
+    return vectors
   }
 
   /**

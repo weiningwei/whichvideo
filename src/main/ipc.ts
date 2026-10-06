@@ -408,41 +408,67 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   /**
-   * 库内查重：每视频取代表帧跨视频互搜，返回相似对。
+   * 库内查重，两级检测：
+   *
+   * 第一级（零成本）：size 与 duration 完全一致的对 —— bit 级副本的强信号，
+   * 直接报 score=1 并标注 identicalFile。SQL 一次 join。
+   * 第二级：代表帧跨视频互搜（原逻辑）粗筛，命中的对再做**帧覆盖率深度
+   * 验证**（A 的 8 个均匀帧逐帧查 B）—— 复制对覆盖率 100% → 分数逼近 1；
+   * 同剧不同集的相同场景只有零星帧像 → 覆盖率拉低分数，误报自然下沉。
+   *
+   * 为什么要深度验证：视频级打分是"最佳帧 75% + 次佳帧 25%"，单帧代表
+   * 查询下 bit 级复制对也只能报 ~98%（次佳帧是别的时间点），无法到 100%，
+   * 与用户直觉（完全相同的文件应为 100%）冲突。
    *
    * 逐视频循环 + 每 16 个让出一次事件循环（setImmediate）—— 单次 search 是
-   * 毫秒级内存扫描，但 V 个视频连续跑会卡住主进程；让出后 IPC/渲染端照常响应。
-   * 进度经 duplicate-scan-progress 事件广播（UI 暂未消费，留给将来接进度条）。
-   * 误报说明：单帧判据会把同剧不同集的相同场景报为"疑似重复"，
-   * 结果里附得分与命中位置，由用户自行判断，不自动删。
+   * 毫秒级内存扫描，但 V 个视频连续跑会卡住主进程。进度经
+   * duplicate-scan-progress 事件广播（UI 暂未消费，留给进度条）。
    */
   ipcMain.handle(IPC.videosFindDuplicates, async (_e, minScore?: number) => {
     const threshold = typeof minScore === 'number' && minScore > 0 ? minScore : 0.88
     const ids = searchIndex.listVideoIds()
     const pairs: DuplicatePair[] = []
     const seenPair = new Set<string>()
+    const pairKey = (a: number, b: number): string => (a < b ? `${a}-${b}` : `${b}-${a}`)
+
+    // 第一级：size + duration 完全一致 → bit 级副本，直接 100%
+    const identical = db.findIdenticalFilePairs()
+    for (const row of identical) {
+      seenPair.add(pairKey(row.idA, row.idB))
+      const a = db.getVideo(row.idA)
+      const b = db.getVideo(row.idB)
+      if (a && b) {
+        pairs.push({
+          videoA: a,
+          videoB: b,
+          score: 1,
+          hashScore: 1,
+          colorScore: 1,
+          timeSeconds: 0,
+          identicalFile: true
+        })
+      }
+    }
+
+    // 第二级：代表帧粗筛
     let done = 0
+    const roughHits: { idA: number; idB: number; hashScore: number; colorScore: number; timeSeconds: number }[] = []
     for (const id of ids) {
       const vec = searchIndex.videoQueryVector(id)
       if (vec) {
         const { results } = searchIndex.search(vec, { minHashScore: threshold, maxResults: 8 })
         const cross = results.find((r) => r.videoId !== id)
         if (cross) {
-          const key = cross.videoId < id ? `${cross.videoId}-${id}` : `${id}-${cross.videoId}`
+          const key = pairKey(id, cross.videoId)
           if (!seenPair.has(key)) {
             seenPair.add(key)
-            const a = db.getVideo(id)
-            const b = db.getVideo(cross.videoId)
-            if (a && b) {
-              pairs.push({
-                videoA: a,
-                videoB: b,
-                score: cross.score,
-                hashScore: cross.hashScore,
-                colorScore: cross.colorScore,
-                timeSeconds: cross.timeSeconds
-              })
-            }
+            roughHits.push({
+              idA: id,
+              idB: cross.videoId,
+              hashScore: cross.hashScore,
+              colorScore: cross.colorScore,
+              timeSeconds: cross.timeSeconds
+            })
           }
         }
       }
@@ -453,11 +479,44 @@ export function registerIpc(deps: IpcDeps): void {
       }
     }
     broadcast({ type: 'duplicate-scan-progress', done, total: ids.length })
+
+    // 深度验证：A 的 8 个均匀帧逐帧查 B。score = 平均帧分 × (0.5 + 0.5×覆盖率)
+    // —— bit 级复制：帧帧 100% 命中 → 1.0；零星相似 → 覆盖率拉低。
+    for (const hit of roughHits) {
+      const vectors = searchIndex.videoFrameVectors(hit.idA, 8)
+      let hits = 0
+      let sum = 0
+      for (const v of vectors) {
+        const { results } = searchIndex.search(v, { minHashScore: threshold, maxResults: 50 })
+        const toB = results.find((r) => r.videoId === hit.idB)
+        if (toB) {
+          hits++
+          sum += toB.score
+        }
+      }
+      const coverage = vectors.length > 0 ? hits / vectors.length : 0
+      const avgScore = hits > 0 ? sum / hits : 0
+      const a = db.getVideo(hit.idA)
+      const b = db.getVideo(hit.idB)
+      if (a && b) {
+        pairs.push({
+          videoA: a,
+          videoB: b,
+          score: avgScore * (0.5 + 0.5 * coverage),
+          hashScore: hit.hashScore,
+          colorScore: hit.colorScore,
+          timeSeconds: hit.timeSeconds,
+          identicalFile: false
+        })
+      }
+    }
+
     pairs.sort((x, y) => y.score - x.score)
     return pairs
   })
 
-  ipcMain.handle(IPC.videosReveal, (_e, videoId: number) => {    const video = db.getVideo(videoId)
+  ipcMain.handle(IPC.videosReveal, (_e, videoId: number) => {
+    const video = db.getVideo(videoId)
     if (!video) return
     shell.showItemInFolder(video.path)
   })

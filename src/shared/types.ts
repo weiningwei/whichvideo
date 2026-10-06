@@ -201,12 +201,14 @@ export type LibraryEvent =
 export interface DuplicatePair {
   videoA: VideoRecord
   videoB: VideoRecord
-  /** 代表帧跨视频相似度 0~1 */
+  /** 综合相似度 0~1（完全相同文件恒为 1；其余 = 平均帧分 × 覆盖率加权） */
   score: number
   hashScore: number
   colorScore: number
   /** A 的代表帧命中在 B 中的位置（秒） */
   timeSeconds: number
+  /** 文件大小与时长完全一致 —— bit 级副本的强信号 */
+  identicalFile: boolean
 }
 
 export interface ImportResult {

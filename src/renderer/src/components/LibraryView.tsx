@@ -592,6 +592,11 @@ export function LibraryView(props: Props) {
                       </div>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+                      {pair.identicalFile && (
+                        <span className="rounded border border-bad/40 bg-bad/10 px-1 py-0.5 text-bad">
+                          完全相同文件
+                        </span>
+                      )}
                       <span>结构 {(pair.hashScore * 100).toFixed(0)}% · 颜色 {(pair.colorScore * 100).toFixed(0)}%</span>
                       <span>命中于 {formatDuration(pair.timeSeconds)}</span>
                       <span>
