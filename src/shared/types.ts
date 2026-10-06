@@ -194,6 +194,7 @@ export type LibraryEvent =
   | { type: 'folder-removed'; folderId: number }
   | { type: 'stats'; stats: LibraryStats }
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; message: string }
+  | { type: 'settings-updated'; settings: AppSettings }
 
 export interface ImportResult {
   added: number

@@ -231,6 +231,7 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.libraryUpdateSettings, (_e, patch: Partial<AppSettings>) => {
     const updated = db.updateSettings(patch)
     void watcher.syncAll()
+    broadcast({ type: 'settings-updated', settings: updated })
     return updated
   })
   ipcMain.handle(IPC.libraryOpenDb, () => {
@@ -288,11 +289,13 @@ export function registerIpc(deps: IpcDeps): void {
       (f): f is WatchedFolder => !!f
     )
     const total: ImportResult = { added: 0, duplicates: 0, skipped: 0, scanned: 0, folders: 0 }
-    for (const folder of targets) {
-      if (!existsSync(folder.path)) {
-        db.updateFolderState(folder.id, 'missing', '目录不存在')
-        continue
-      }
+     for (const folder of targets) {
+       if (!existsSync(folder.path)) {
+         db.updateFolderState(folder.id, 'missing', '目录不存在')
+         const updatedFolder = db.getFolder(folder.id)
+         if (updatedFolder) broadcast({ type: 'folder-updated', folder: updatedFolder })
+         continue
+       }
       const result = await indexer.importFolder(folder.path, {
         pinned: folder.pinned,
         recursive: folder.recursive
@@ -311,7 +314,9 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.foldersSetEnabled, async (_e, folderId: number, enabled: boolean) => {
     db.setFolderEnabled(folderId, enabled)
     await watcher.syncAll()
-    return db.getFolder(folderId)
+    const folder = db.getFolder(folderId)
+    if (folder) broadcast({ type: 'folder-updated', folder })
+    return folder
   })
 
   ipcMain.handle(IPC.videosList, (_e, query: VideoQuery) => db.listVideos(query ?? {}))
