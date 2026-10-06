@@ -355,9 +355,9 @@ export class Indexer {
 
   /**
    * 重建索引。
-   * mode='global'（默认）：清除采样覆盖，按全局 settings.samplingMode 重建；
-   * mode='scene'/'uniform'：为这些视频设置采样覆盖后重建（视频级覆盖，
-   * 不影响其它视频）。
+   * mode='global'（默认）：把视频的采样模式**固化为当前全局设置**并重建；
+   * mode='scene'/'uniform'：为这些视频固化指定采样模式后重建（视频级覆盖，
+   * 不影响其它视频）。固化的值是"这批帧实际用什么采样抽的"。
    */
   async reindex(
     videoIds?: number[],
@@ -368,7 +368,8 @@ export class Indexer {
       : this.db.listVideos({ limit: 2000 }).items
     const targetIds = targets.map((v) => v.id)
     if (targetIds.length > 0) {
-      this.db.setSamplingOverride(targetIds, mode === 'global' ? null : mode)
+      const override = mode === 'global' ? this.getSettings().samplingMode : mode
+      this.db.setSamplingOverride(targetIds, override)
     }
     let count = 0
     for (const video of targets) {
@@ -479,6 +480,12 @@ export class Indexer {
     // 非均匀时间点 + 强制逐点 seek（fps 滤镜无法对齐非均匀点）。
     // 检测失败（ffmpeg 异常等）退回均匀计划，不阻断索引。
     const effectiveSampling = video.samplingOverride ?? settings.samplingMode
+    // 把实际使用的采样模式**固化**到视频记录：sampling_override 的语义是
+    // "这个视频的帧实际用什么采样抽的"，而不是"用户想让全局怎么抽"。
+    // 否则全局切换后，旧视频的 override 仍是 null、effectiveSampling 跟着
+    // 全局漂移 —— 但它的帧还是旧采样抽的，记录与实际不符。
+    // 固化后：全局切换只影响新视频/重建，每个视频永远记得自己的采样方式。
+    this.db.setSamplingOverride([videoId], effectiveSampling)
     const forceSeek = effectiveSampling === 'scene'
     let timestamps: number[]
     if (forceSeek) {

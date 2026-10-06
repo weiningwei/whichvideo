@@ -162,15 +162,14 @@ export function useLibrary() {
         const prev = core.settings
         const next = await window.whichvideo.library.updateSettings(patch)
         core.setSettings(next)
-        // 采样模式改变只影响"之后抽的帧"—— 已索引视频的时间戳还是旧采样
-        // 的产物，不重建就与新模式混存。切换后立即提示，避免用户误以为
-        // 已自动生效。
+        // 采样模式改变只影响**之后**抽帧的视频 —— 每个已索引视频在自己的
+        // 记录里固化了实际使用的采样方式，全局切换不会改变它们。
         if (prev && next && prev.samplingMode !== next.samplingMode) {
           notices.pushNotice(
             'info',
             next.samplingMode === 'scene'
-              ? '已切换到场景检测采样：建议「重建全部索引」让已索引视频应用新采样'
-              : '已切换到均匀采样：建议「重建全部索引」让已索引视频应用新采样'
+              ? '已切换到场景检测采样：对新导入的视频生效；已索引视频用「重建索引」应用新采样'
+              : '已切换到均匀采样：对新导入的视频生效；已索引视频用「重建索引」应用新采样'
           )
         }
       },
