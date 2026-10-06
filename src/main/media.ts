@@ -8,7 +8,8 @@
  *   4. 常见安装位置（winget / scoop / chocolatey）
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { accessSync, constants, existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { accessSync, constants, createReadStream, existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { VideoProbeInfo } from '@shared/types'
 import { PROBE_MAX_WIDTH, FRAME_COUNT_TABLE, DEFAULT_FRAME_BUDGET, SEEK_VS_FULLSCAN_CROSSOVER } from './constants'
@@ -626,4 +627,21 @@ export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
   }
 
   return null
+}
+
+/**
+ * 文件 SHA-256（流式，大文件不全量进内存）。
+ *
+ * 查重第一级用：size + duration 一致只是副本的**候选**信号（不充分 ——
+ * 不同视频可能同大小同时长），哈希一致才是 bit 级相同的充分证明。
+ * 结果缓存进 videos.file_hash，只算一次。
+ */
+export async function sha256OfFile(filePath: string): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const hash = createHash('sha256')
+    const stream = createReadStream(filePath)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolvePromise(hash.digest('hex')))
+    stream.on('error', reject)
+  })
 }

@@ -228,6 +228,12 @@ export class LibraryDatabase {
     } catch {
       /* 列已存在 */
     }
+    // 迁移：旧库没有 file_hash 列（查重第一级：bit 级副本校验，算一次缓存）
+    try {
+      this.db.exec(`ALTER TABLE videos ADD COLUMN file_hash TEXT`)
+    } catch {
+      /* 列已存在 */
+    }
   }
 
   close(): void {
@@ -377,7 +383,8 @@ export class LibraryDatabase {
     return row ? rowToVideo(row) : null
   }
 
-  /** size 与时长完全一致的视频对 —— bit 级副本的强信号（查重第一级，零抽帧成本） */
+  /** size 与时长完全一致的视频对 —— bit 级副本的**候选**（强信号但非充分，
+   *  须再以 file_hash 确认；查重第一级） */
   findIdenticalFilePairs(): { idA: number; idB: number }[] {
     return this.db
       .prepare(
@@ -385,6 +392,17 @@ export class LibraryDatabase {
          ON a.id < b.id AND a.size = b.size AND ABS(a.duration - b.duration) < 0.5`
       )
       .all() as { idA: number; idB: number }[]
+  }
+
+  getFileHash(id: number): string | null {
+    const row = this.db.prepare('SELECT file_hash FROM videos WHERE id = ?').get(id) as
+      | { file_hash: string | null }
+      | undefined
+    return row?.file_hash ?? null
+  }
+
+  setFileHash(id: number, hash: string): void {
+    this.db.prepare('UPDATE videos SET file_hash = ? WHERE id = ?').run(hash, id)
   }
 
   /** 返回 null 表示已存在且无需重建（size/mtime 未变） */

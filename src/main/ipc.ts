@@ -10,7 +10,7 @@ import type { BrowserWindow } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { findSeekablePlayer } from './media'
+import { findSeekablePlayer, sha256OfFile } from './media'
 import {
   IPC,
   normalizePath,
@@ -407,6 +407,17 @@ export function registerIpc(deps: IpcDeps): void {
     if (err) broadcast({ type: 'notice', level: 'error', message: `打开失败：${err}` })
   })
 
+  /** 哈希缓存优先；未算过则流式 SHA-256 并入库。失败返回 null（调用方降级）。 */
+  async function ensureFileHash(database: LibraryDatabase, videoId: number): Promise<string | null> {
+    const cached = database.getFileHash(videoId)
+    if (cached) return cached
+    const video = database.getVideo(videoId)
+    if (!video) return null
+    const hash = await sha256OfFile(video.path)
+    database.setFileHash(videoId, hash)
+    return hash
+  }
+
   /**
    * 库内查重，两级检测：
    *
@@ -431,21 +442,38 @@ export function registerIpc(deps: IpcDeps): void {
     const seenPair = new Set<string>()
     const pairKey = (a: number, b: number): string => (a < b ? `${a}-${b}` : `${b}-${a}`)
 
-    // 第一级：size + duration 完全一致 → bit 级副本，直接 100%
+    // 第一级：size + duration 一致 → **候选**对（必要非充分），逐对以 SHA-256
+    // 确认。哈希一致 = bit 级副本 → score=1 + identicalFile；不一致 → 不报
+    // 完全相同，也不进 seenPair，交给第二级帧覆盖率继续评估。
+    // 哈希算一次缓存进 file_hash 列；流式计算天然在块间让出事件循环。
     const identical = db.findIdenticalFilePairs()
     for (const row of identical) {
-      seenPair.add(pairKey(row.idA, row.idB))
-      const a = db.getVideo(row.idA)
-      const b = db.getVideo(row.idB)
-      if (a && b) {
-        pairs.push({
-          videoA: a,
-          videoB: b,
-          score: 1,
-          hashScore: 1,
-          colorScore: 1,
-          timeSeconds: 0,
-          identicalFile: true
+      try {
+        const [hashA, hashB] = await Promise.all([
+          ensureFileHash(db, row.idA),
+          ensureFileHash(db, row.idB)
+        ])
+        if (!hashA || !hashB || hashA !== hashB) continue
+        seenPair.add(pairKey(row.idA, row.idB))
+        const a = db.getVideo(row.idA)
+        const b = db.getVideo(row.idB)
+        if (a && b) {
+          pairs.push({
+            videoA: a,
+            videoB: b,
+            score: 1,
+            hashScore: 1,
+            colorScore: 1,
+            timeSeconds: 0,
+            identicalFile: true
+          })
+        }
+      } catch (err) {
+        // 单个文件哈希失败（被占用/被删）不打断整体查重
+        broadcast({
+          type: 'notice',
+          level: 'warn',
+          message: `文件指纹计算失败：${err instanceof Error ? err.message : String(err)}`
         })
       }
     }
