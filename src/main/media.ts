@@ -435,6 +435,16 @@ export interface SeekablePlayer {
   args: (videoPath: string, startSeconds: number) => string[]
 }
 
+/** 秒 → hh:mm:ss（PotPlayer /seek= 的格式；时位不设上限，长视频直接进位） */
+function seekClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds))
+  const hh = Math.floor(s / 3600)
+  const mm = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`
+}
+
 function pickExisting(candidates: string[]): string | null {
   for (const p of candidates) {
     if (p && existsSync(p) && isExecutable(p)) return p
@@ -444,7 +454,7 @@ function pickExisting(candidates: string[]): string | null {
 
 /**
  * 找一个支持时间点起播的本地播放器：mpv 优先（轻量、参数稳），
- * 其次 VLC。都找不到返回 null —— 调用方退化为系统默认播放器（无法定位时间点）。
+ * 其次 PotPlayer（国内 Windows 用户最常见），再次 VLC。都找不到返回 null —— 调用方退化为系统默认播放器（无法定位时间点）。
  *
  * 探测顺序：PATH（覆盖 scoop/winget/choco 等包管理器安装）→ 常见安装位置。
  */
@@ -459,6 +469,21 @@ export function findSeekablePlayer(): SeekablePlayer | null {
     ])
   if (mpv) {
     return { exe: mpv, name: 'mpv', args: (p, s) => ['--start=' + Math.floor(s), p] }
+  }
+
+  // PotPlayer：国内 Windows 用户最常见，/seek= 要求 hh:mm:ss 格式
+  const potPlayer = pickExisting([
+    'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe',
+    'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini.exe',
+    'C:\\Program Files (x86)\\DAUM\\PotPlayer\\PotPlayerMini.exe',
+    join(process.env.APPDATA ?? '', 'DAUM\\PotPlayer\\PotPlayerMini64.exe')
+  ])
+  if (potPlayer) {
+    return {
+      exe: potPlayer,
+      name: 'PotPlayer',
+      args: (p, s) => ['/seek=' + seekClock(s), p]
+    }
   }
 
   const vlc =

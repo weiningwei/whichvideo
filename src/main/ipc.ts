@@ -397,7 +397,7 @@ export function registerIpc(deps: IpcDeps): void {
       broadcast({
         type: 'notice',
         level: 'warn',
-        message: '未找到 mpv 或 VLC，已用系统默认播放器打开（无法直接跳到命中位置）'
+        message: '未找到 mpv / PotPlayer / VLC，已用系统默认播放器打开（无法直接跳到命中位置）'
       })
     }
     const err = await shell.openPath(video.path)

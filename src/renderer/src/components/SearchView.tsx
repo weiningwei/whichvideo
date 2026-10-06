@@ -389,7 +389,7 @@ function ResultCard({
           <button
             className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70"
             onClick={() => onOpen(video.id, match.timeSeconds)}
-            title={available ? '优先用 mpv/VLC 从命中位置起播；未安装则用系统默认播放器' : '视频不在本地'}
+            title={available ? '优先用 mpv / PotPlayer / VLC 从命中位置起播；未安装则用系统默认播放器' : '视频不在本地'}
           >
             {formatDuration(match.timeSeconds)} 处播放
           </button>

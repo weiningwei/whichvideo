@@ -602,7 +602,7 @@ export function LibraryView(props: Props) {
                         onClick={() => {
                           props.onOpen(pair.videoA.id, pair.timeSeconds)
                         }}
-                        title="从命中位置播放 B（mpv/VLC）"
+                        title="从命中位置播放 B（mpv/PotPlayer/VLC）"
                       >
                         从 {formatDuration(pair.timeSeconds)} 播放 B
                       </button>
