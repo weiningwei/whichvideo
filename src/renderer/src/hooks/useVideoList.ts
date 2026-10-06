@@ -56,20 +56,33 @@ export function useVideoList(): UseVideoListReturn {
   const [videoQuery, setVideoQueryState] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
 
   /**
-   * 当前查询条件（过滤视图用）。用 ref 而不是把 videoQuery 放进订阅 effect 的
-   * 依赖 —— 依赖一变就重订阅一次，白折腾；ref 让回调永远读到最新的过滤条件。
+   * 当前查询条件（过滤视图与拉取都用）。用 ref 而不是把 videoQuery 放进
+   * effect/回调的依赖 —— 依赖一变就重订阅/重建回调，白折腾；ref 让
+   * 回调永远读到最新的过滤条件。setVideoQuery 里会同步更新，不等渲染。
    */
   const queryRef = useRef(videoQuery)
   queryRef.current = videoQuery
 
+  /**
+   * 拉取序号：只有**最新一次**拉取允许写 state。
+   *
+   * 此前没有守卫：筛选框每击键发一次 list 请求，快速输入时先发的旧请求
+   * 可能后返回，用过期关键词的结果覆盖新结果（列表内容与筛选框对不上、
+   * 或闪回旧数据）。序号守卫让晚到的旧响应直接丢弃。
+   */
+  const seqRef = useRef(0)
+
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
-    const q = query ?? videoQuery
+    const q = query ?? queryRef.current
+    const seq = ++seqRef.current
     const page: VideoPage = await window.whichvideo.videos.list(q)
+    if (seq !== seqRef.current) return
     setVideos(page.items)
     setTotal(page.total)
-  }, [videoQuery])
+  }, [])
 
   const setVideoQuery = useCallback((next: VideoQuery) => {
+    queryRef.current = next
     setVideoQueryState(next)
     void refreshVideos(next)
   }, [refreshVideos])

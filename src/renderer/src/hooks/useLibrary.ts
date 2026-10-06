@@ -121,6 +121,20 @@ export function useLibrary() {
           await refreshAll()
         })
       },
+      /**
+       * 批量移除：一次 busy、一次全量刷新。
+       *
+       * 此前 UI 层对选中集合循环调 removeVideo —— 每个 id 各自 withBusy +
+       * refreshAll，删 N 个就闪 N 次busy 文案、跑 N 遍全量刷新，且循环里
+       * 没 await，N 个请求并发交错。这里串行逐条调 IPC，最后统一刷新一次；
+       * 主进程广播的 video-removed 事件会由 useVideoList 逐条就地删行。
+       */
+      async removeVideos(videoIds: number[]): Promise<void> {
+        await withBusy(`正在从库中移除 ${videoIds.length} 个视频…`, async () => {
+          for (const id of videoIds) await window.whichvideo.videos.remove(id)
+          await refreshAll()
+        })
+      },
       async reindex(videoIds?: number[]): Promise<void> {
         await withBusy('正在重建索引…', async () => {
           const count = await window.whichvideo.videos.reindex(videoIds)

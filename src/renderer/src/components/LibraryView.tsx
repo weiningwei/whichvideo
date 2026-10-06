@@ -21,6 +21,7 @@ interface Props {
   onOpen: (videoId: number) => void
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
+  onRemoveVideos: (videoIds: number[]) => void
   onReindex: (videoIds?: number[]) => void
   groupByFolder: boolean
   onToggleGroupByFolder: () => void
@@ -220,7 +221,7 @@ export function LibraryView(props: Props) {
             return
           }
           if (selectedVideoIds.size > 0) {
-            for (const id of selectedVideoIds) props.onRemoveVideo(id)
+            props.onRemoveVideos([...selectedVideoIds])
             clearSelection()
           } else {
             const target = getTargetVideo()
@@ -240,7 +241,7 @@ export function LibraryView(props: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, focusedRowPos, navigableItems, videoRowIndexes, focusedVideoId, onToggleGroupByFolder])
+  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, focusedRowPos, navigableItems, videoRowIndexes, focusedVideoId, onToggleGroupByFolder, props.onRemoveVideo, props.onRemoveVideos, props.onReindex, props.onImportFiles, props.onAddFolder, props.onRescan, clearSelection, selectAll, toggleVideoSelection])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">

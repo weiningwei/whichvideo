@@ -124,6 +124,7 @@ export default function App() {
               onOpen={(id) => void actions.openVideo(id)}
               onReveal={(id) => void actions.revealVideo(id)}
               onRemoveVideo={(id) => void actions.removeVideo(id)}
+              onRemoveVideos={(ids) => void actions.removeVideos(ids)}
               onReindex={(ids) => void actions.reindex(ids)}
               groupByFolder={groupByFolder}
               onToggleGroupByFolder={toggleGroupByFolder}
