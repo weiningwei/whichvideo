@@ -7,7 +7,7 @@
  *   3. 系统 PATH
  *   4. 常见安装位置（winget / scoop / chocolatey）
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { accessSync, constants, existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { VideoProbeInfo } from '@shared/types'
@@ -435,6 +435,40 @@ export interface SeekablePlayer {
   args: (videoPath: string, startSeconds: number) => string[]
 }
 
+/**
+ * 注册表兜底：PotPlayer 装在自定义路径时，文件探测全落空，
+ * 但安装器一定会写 Uninstall 键（DisplayIcon 直接指向 exe）。
+ * spawnSync `reg query` 逐键尝试，只在文件探测失败时被调用，无性能顾虑。
+ */
+function findPotPlayerFromRegistry(): string | null {
+  const uninstallKeys = [
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer64bit',
+    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer64bit',
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer',
+    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer'
+  ]
+  for (const key of uninstallKeys) {
+    for (const valueName of ['DisplayIcon', 'InstallLocation']) {
+      const r = spawnSync('reg', ['query', key, '/v', valueName], { encoding: 'utf8', timeout: 2000 })
+      if (r.status !== 0 || !r.stdout) continue
+      const m = r.stdout.match(/REG_SZ\s+(.+)/)
+      if (!m) continue
+      let p = m[1].trim()
+      if (valueName === 'DisplayIcon') {
+        p = p.replace(/,\s*\d+\s*$/, '') // DisplayIcon 形如 "...PotPlayerMini64.exe,0"
+      } else {
+        p = join(p, 'PotPlayerMini64.exe')
+      }
+      if (existsSync(p) && isExecutable(p)) return p
+      // 64 位键指向 Mini64.exe 时，同目录的 32 位版也算数
+      const alt32 = p.replace(/PotPlayerMini64\.exe$/, 'PotPlayerMini.exe')
+      if (existsSync(alt32) && isExecutable(alt32)) return alt32
+    }
+  }
+  return null
+}
+
 /** 秒 → hh:mm:ss（PotPlayer /seek= 的格式；时位不设上限，长视频直接进位） */
 function seekClock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -477,7 +511,7 @@ export function findSeekablePlayer(): SeekablePlayer | null {
     'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini.exe',
     'C:\\Program Files (x86)\\DAUM\\PotPlayer\\PotPlayerMini.exe',
     join(process.env.APPDATA ?? '', 'DAUM\\PotPlayer\\PotPlayerMini64.exe')
-  ])
+  ]) ?? findPotPlayerFromRegistry()
   if (potPlayer) {
     return {
       exe: potPlayer,
