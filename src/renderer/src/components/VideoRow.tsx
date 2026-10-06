@@ -220,26 +220,42 @@ export function VideoRow({
         {frameProgressBar}
       </td>
       <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
-        <select
-          className="w-[64px] rounded border border-line bg-surface-1 px-1 py-0.5 text-[11px] text-primary"
-          value={
-            // 索引失败时忽略未应用的 pending 选择，回退显示事实值 ——
-            // 失败意味着按 pending 模式的重建没成功，显示它反而误导
-            video.status === 'failed'
-              ? (video.samplingOverride ?? globalSampling)
-              : (pendingSampling ?? (video.samplingOverride ?? globalSampling))
-          }
-          title="该视频的抽帧采样方式；更改后点「索引」按新方式重建此视频"
-          onClick={(e) => e.stopPropagation()}
-          // stopPropagation 拦 keydown：select 聚焦时按 ↑↓ 是在改选项，
-          // 不拦的话窗口级键盘导航会抢走事件（移动光标 + preventDefault），
-          // 下拉完全无法用键盘操作
-          onKeyDown={(e) => e.stopPropagation()}
-          onChange={(e) => setPendingSampling(e.target.value as 'uniform' | 'scene')}
-        >
-          <option value="uniform">均匀</option>
-          <option value="scene">场景</option>
-        </select>
+        {(() => {
+          // 两种模式各一个按钮，**单一选中态**：只有"将要生效的"高亮，另一个
+          // 普通灰。曾试过"当前实际=绿 + 将应用=蓝"双色并存 —— 用户实测完全
+          // 分不出哪个是哪个，弃。待应用未点「索引」时 hover 提示说明。
+          const applied = video.samplingOverride ?? globalSampling
+          // 索引失败时忽略未应用的 pending 选择，回退显示事实值 ——
+          // 失败意味着按 pending 模式的重建没成功，显示它反而误导
+          const pending = video.status === 'failed' ? null : pendingSampling
+          const next = pending ?? applied
+          return (
+            <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+              {(['uniform', 'scene'] as const).map((m) => {
+                const isNext = next === m
+                const label = m === 'uniform' ? '均匀' : '场景'
+                return (
+                  <button
+                    key={m}
+                    className={`rounded border px-1 py-0.5 text-[10.5px] leading-tight ${
+                      isNext
+                        ? 'border-accent/60 bg-accent/10 text-accent'
+                        : 'border-line text-muted hover:bg-ink-700/70'
+                    }`}
+                    title={
+                      isNext && pending && pending !== applied
+                        ? `${label}采样已选择，点「索引」生效`
+                        : `${label}采样`
+                    }
+                    onClick={() => setPendingSampling(m)}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })()}
       </td>
       {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
 
