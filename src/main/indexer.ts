@@ -458,8 +458,12 @@ export class Indexer {
     if (startIndex >= timestamps.length) {
       log(`索引已完成，跳过：${video.path}`)
       this.db.setVideoStatus(videoId, 'ready')
-      this.emit({ type: 'video-updated', video: { ...video, status: 'ready' as VideoStatus } })
+      const updatedVideo = this.db.getVideo(videoId)
+      if (updatedVideo) {
+        this.emit({ type: 'video-updated', video: updatedVideo })
+      }
       this.broadcastStatus()
+      this.scheduleIndexRebuild()
       return
     }
 
