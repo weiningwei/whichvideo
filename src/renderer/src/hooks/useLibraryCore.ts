@@ -84,6 +84,9 @@ export function useLibraryCore(): UseLibraryCoreReturn {
         case 'video-updated':
         case 'video-removed':
         case 'notice':
+          // video-updated / video-removed 由 useVideoList 消费（videos state 在那里），
+          // 这里没有对应 state 可更新，别在这里加逻辑。
+          // 曾因该分支为空导致"索引完成后列表仍显示索引中/0 帧"——修复在 useVideoList。
           break
         default:
           break

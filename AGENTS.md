@@ -85,7 +85,7 @@ pnpm test
 # test:config → test:output → test:frames → test:hash → test:path → test:url
 # → test:icon → test:theme → test:network → test:cursor → test:range
 # → test:url（再次） → test:scale → test:startup → test:core → test:portable
-# → test:clipboard → test:pack → test:asar → test:ui
+# → test:clipboard → test:pack → test:asar → test:ui → test:events
 ```
 
 | 套件 | 守护内容 | 改相关代码前必跑 |
@@ -104,6 +104,7 @@ pnpm test
 | `test:startup` | 启动链路 40 项（入口/日志/便携目录/单实例锁/早期崩溃可见） | 启动相关 |
 | `test:pack` | 便携版打包 62 场景（EPERM/回退/校验/data 保留/路径可见性） | 打包脚本 |
 | `test:asar` | asar 解析逻辑（10 项） | asar 相关 |
+| `test:events` | 视频事件消费（12 项）：索引完成 `video-updated` 就地刷新行（状态/帧数）、过滤视图下状态变化即移除、`video-removed` 不留僵尸行；静态守卫订阅必须接在 useVideoList | `useVideoList.ts` 事件处理 |
 
 ### 测试要点
 
