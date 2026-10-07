@@ -1011,6 +1011,18 @@ export default mod
     const sc = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'shortcuts.ts'), 'utf8')
 
     // 键位声明集中在 shortcuts.ts，帮助面板从它生成 —— 不再散落在各组件
+    // 通知分流：状态栏只承载 info，warn/error 固定在右下角浮层 ——
+    // 否则同一条提示随新通知插入在两处之间"搬家"，位置不可预期
+    check(
+      '状态栏通知只取 info（warn/error 不占状态栏）',
+      app.includes("state.notices.find((n) => n.level === 'info')") &&
+        !app.includes('notice={state.notices[0]')
+    )
+    check(
+      '右下角浮层排除状态栏那条（warn/error 全量进入）',
+      app.includes('floating') && app.includes('n.id !== barNotice?.id')
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

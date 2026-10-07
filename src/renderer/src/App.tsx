@@ -154,11 +154,24 @@ export default function App() {
         )}
       </main>
 
-      <StatusBar status={state.status} busy={state.busy} notice={state.notices[0] ?? null} />
+      {/* 通知分流：状态栏只承载 info（进度/操作反馈，就地不打扰）；
+          warn/error 固定在右下角浮层。此前一律取 notices[0] 上状态栏 ——
+          同一条提示会随新通知插入在状态栏与右下角之间"搬家"，位置不可
+          预期（用户实测困惑）。 */}
+      <StatusBar
+        status={state.status}
+        busy={state.busy}
+        notice={state.notices.find((n) => n.level === 'info') ?? null}
+      />
 
-      {state.notices.length > 1 && (
+      {(() => {
+        // 浮层内容：不在状态栏里的通知（warn/error 全部 + 更早的 info），最多 4 条
+        const barNotice = state.notices.find((n) => n.level === 'info')
+        const floating = state.notices.filter((n) => n.id !== barNotice?.id).slice(0, 4)
+        if (floating.length === 0) return null
+        return (
         <div className="pointer-events-auto absolute bottom-12 right-4 flex w-[360px] flex-col gap-2">
-          {state.notices.slice(1, 4).map((notice) => (
+          {floating.map((notice) => (
             <button
               key={notice.id}
               onClick={() => dismissNotice(notice.id)}
@@ -174,7 +187,8 @@ export default function App() {
             </button>
           ))}
         </div>
-      )}
+        )
+      })()}
 
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} inLibrary={tab === 'library'} />
     </div>
