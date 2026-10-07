@@ -31,6 +31,17 @@ files:
   - out/**
   - package.json
   - LICENSE
+  # better-sqlite3 自带 8 份预编译二进制（darwin/linux/linuxmusl/win32 ×
+  # x64/arm64，合计约 25MB），本应用只发布 Windows x64 —— 其余 7 份纯属
+  # 体积负担。先整体排除再单独放行 win32-x64。
+  - '!node_modules/better-sqlite3/prebuilds/*'
+  - 'node_modules/better-sqlite3/prebuilds/win32-x64.node'
+
+# Chromium 默认带 55 个语言包（约 49MB），本应用界面只有中文与英文两种 ——
+# 只保留 zh-CN 与 en-US，其余 53 个语言包直接不打进产物。
+electronLanguages:
+  - zh-CN
+  - en-US
 
 asarUnpack:
   - node_modules/better-sqlite3/**

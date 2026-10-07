@@ -53,6 +53,21 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需�
 ## 🏗️ 打包实现约束（仅仓库侧）
 
 - `build:portable` 产出两份：仓库内 `release\WhichVideo-portable\` + **仓库上一级**同名文件夹（用户双击版）。外层失败不判死整体打包，仅报错提示手动拷走。
+
+### 产物体积优化（勿回退，test:pack 场景 5d 守着）
+
+win-unpacked 约 **535MB**，构成与可优化空间：
+
+| 项 | 体积 | 说明 |
+|------|------|------|
+| `WhichVideo.exe` | ~235MB | Electron 本体，不可优化 |
+| `resources/bin`（ffmpeg+ffprobe） | ~201MB | 抽帧必需；**ffprobe 约 101MB 是可以省的**（probeVideo 改用 ffmpeg stderr 解析），但探测准确性是索引质量基础，需充分测试 |
+| `locales/` | **1.2MB**（已裁） | `electronLanguages: [zh-CN, en-US]` —— Chromium 默认 55 个语言包约 49MB |
+| better-sqlite3 prebuilds | **1.9MB**（已裁） | `files` 排除后单独放行 win32-x64 —— 默认 8 份平台二进制约 25MB |
+| `dxcompiler.dll`(25MB) / `vk_swiftshader.dll`(5.3MB) | — | GPU 渲染路径依赖，删除需实机验证（丢失硬件加速），不建议默认删 |
+| `LICENSES.chromium.html` | 20MB | 合规文件，不删 |
+
+**不要做的事**：UPX 压缩 ffmpeg —— 抽帧每帧启动一次进程（seek 路径 240 次/视频），每次解压开销乘 240 会显著拖慢索引。
 - 外层**保留 `data\`**：`copyOutsideRepository` 先 `renameSync` 挪到 `.data-keep-<ts>`，替换后挪回。校验文件数/字节数用 `countFiles(dir, excludeDirName)` / `directorySize(...)` 排除 `data\`。挪不动退回删除并如实输出。环境变量 `WHICHVIDEO_OUTSIDE_DIR` 指定落点，`WHICHVIDEO_SKIP_OUTSIDE_COPY=1` 跳过（`test:pack` 用）。
 
 ### 路径可见性表（别搞反）

@@ -405,6 +405,29 @@ function main() {
     )
   }
 
+  console.log('\n=== 场景 5d：产物体积优化配置不退化 ===')
+  {
+    /*
+     * 绿色版的两处零风险瘦身（合计约 -73MB）：
+     *   - Chromium 自带 55 个语言包约 49MB，本应用界面只有中文/英文；
+     *   - better-sqlite3 带 8 份平台预编译约 25MB，本应用只发 win32-x64。
+     * 删掉任一条，绿色版会凭空胖 25~48MB —— 用户对体积敏感（596MB → 535MB
+     * 的优化就是这两项 + asar 已有规则的成果）。
+     */
+    const yml = readFileSync(join(root, 'electron-builder.yml'), 'utf8')
+    check(
+      '只打包中文与英文语言包（省约 48MB）',
+      /electronLanguages:/.test(yml) && yml.includes('zh-CN') && yml.includes('en-US'),
+      'Chromium 默认 55 个语言包'
+    )
+    check(
+      'better-sqlite3 只保留 win32-x64 预编译（省约 25MB）',
+      yml.includes('!node_modules/better-sqlite3/prebuilds/*') &&
+        yml.includes('node_modules/better-sqlite3/prebuilds/win32-x64.node'),
+      '8 份平台二进制只留 1 份'
+    )
+  }
+
   console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')
   {
     // 6a) 显式跳过
