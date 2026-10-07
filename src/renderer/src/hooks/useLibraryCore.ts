@@ -30,7 +30,13 @@ export interface UseLibraryCoreReturn {
   setSettings: (settings: AppSettings) => void
 }
 
-export function useLibraryCore(): UseLibraryCoreReturn {
+export interface UseLibraryCoreOptions {
+  /** 主进程广播的 notice 事件消费入口（转成渲染端通知） */
+  onNotice?: (level: 'info' | 'warn' | 'error', message: string) => void
+}
+
+export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryCoreReturn {
+  const { onNotice } = options
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [status, setStatus] = useState<IndexerStatus | null>(null)
   const [folders, setFolders] = useState<WatchedFolder[]>([])
@@ -83,17 +89,24 @@ export function useLibraryCore(): UseLibraryCoreReturn {
           break
         case 'video-updated':
         case 'video-removed':
-        case 'notice':
           // video-updated / video-removed 由 useVideoList 消费（videos state 在那里），
           // 这里没有对应 state 可更新，别在这里加逻辑。
           // 曾因该分支为空导致"索引完成后列表仍显示索引中/0 帧"——修复在 useVideoList。
+          break
+        case 'notice':
+          // 主进程的通知（索引失败/主进程异常/文件被移除/发现新视频等）在此
+          // 转成渲染端通知。此前该分支空置 —— 主进程 9 处 notice 广播全部被
+          // 丢弃，用户看不到"索引失败"这类关键信息。
+          onNotice?.(event.level, event.message)
           break
         default:
           break
       }
     })
     return unsubscribe
-  }, [])
+    // onNotice 必须是稳定引用（useNotices.pushNotice 是 useCallback），
+    // 否则会反复重订阅事件通道
+  }, [onNotice])
 
   const updateSettings = useCallback((next: AppSettings) => {
     setSettings(next)

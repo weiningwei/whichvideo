@@ -133,6 +133,19 @@ console.log('=== 静态守卫：订阅真的接上了 ===')
     coreSrc.includes('由 useVideoList 消费'),
     ''
   )
+  check(
+    'useLibraryCore 消费 notice 事件（主进程通知转渲染端提示）',
+    coreSrc.includes("case 'notice':") && coreSrc.includes('onNotice?.(event.level, event.message)'),
+    '此前该分支空置 —— 主进程 9 处 notice 广播全被丢弃，索引失败等提示看不到'
+  )
+  const libSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8')
+  check(
+    'useLibrary 把 pushNotice 接进 core（notices 先于 core 定义）',
+    /const notices = useNotices\(\)[\s\S]{0,300}useLibraryCore\(\{ onNotice: notices\.pushNotice \}\)/.test(
+      libSrc
+    ),
+    '顺序反了会拿到未初始化的 pushNotice'
+  )
 }
 
 console.log(`\n=== 视频事件消费：${pass}/${pass + fail} 通过 ===`)

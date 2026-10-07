@@ -48,10 +48,12 @@ export interface LibraryState {
 }
 
 export function useLibrary() {
-  const core = useLibraryCore()
+  // notices 先于 core：core 订阅的事件通道里有主进程的 notice（索引失败/
+  // 主进程异常等），需要消费入口转成渲染端通知
+  const notices = useNotices()
+  const core = useLibraryCore({ onNotice: notices.pushNotice })
   const videoList = useVideoList()
   const search = useSearch()
-  const notices = useNotices()
   const busy = useBusy(notices.pushNotice)
   const selection = useSelection(videoList.videos)
   const [groupByFolder, setGroupByFolder] = useState(false)
