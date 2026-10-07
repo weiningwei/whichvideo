@@ -24,7 +24,7 @@ const api: WhichVideoApi = {
     list: (query) => ipcRenderer.invoke(IPC.videosList, query),
     get: (videoId: number) => ipcRenderer.invoke(IPC.videosGet, videoId),
     remove: (videoId: number) => ipcRenderer.invoke(IPC.videosRemove, videoId),
-    reindex: (videoIds?: number[], mode?: 'global' | SamplingMode) =>
+    reindex: (videoIds?: number[], mode?: SamplingMode) =>
         ipcRenderer.invoke(IPC.videosReindex, videoIds, mode),
     findDuplicates: (minScore?: number) => ipcRenderer.invoke(IPC.videosFindDuplicates, minScore),
     importFiles: () => ipcRenderer.invoke(IPC.videosImport),

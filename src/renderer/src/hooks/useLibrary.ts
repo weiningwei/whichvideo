@@ -138,31 +138,22 @@ export function useLibrary() {
         })
       },
       async reindex(videoIds?: number[], mode?: SamplingMode): Promise<void> {
-        // 单视频路径（行内「索引」或工具条单选）统一判定：请求的采样模式与
-        // 该视频已固化的一致 → 重建没有意义，提示而不是重复重建。
-        // 请求模式优先取显式 mode（行内下拉的 pending 选择），未传（工具条
-        // 按钮）时用该视频的生效值（覆盖 ?? 全局）。
-        // 批量/全部重建不判定 —— 多视频采样各异，全量重抽是显式动作。
-        if (videoIds?.length === 1) {
-          const v = videoList.videos.find((x) => x.id === videoIds[0])
-          if (v) {
-            const requested = mode ?? (v.samplingOverride ?? core.settings?.samplingMode ?? 'uniform')
-            if (v.samplingOverride != null && v.samplingOverride === requested) {
-              notices.pushNotice(
-                'warn',
-                `「${v.name}」的采样方式已经是${requested === 'scene' ? '场景检测' : '均匀采样'}，无需重建`
-              )
-              return
-            }
-          }
-        }
         await withBusy('正在重建索引…', async () => {
-          const count = await window.whichvideo.videos.reindex(videoIds, mode)
+          // 判定在主进程（db 是权威数据）—— 渲染端列表可能因过滤/事件时序
+          // 而不新鲜，放这里判定过"无需重建"永不触发。
+          const res = await window.whichvideo.videos.reindex(videoIds, mode)
+          if (res.skipped) {
+            notices.pushNotice(
+              'warn',
+              `「${res.skipped.name}」的采样方式已经是${res.skipped.mode === 'scene' ? '场景检测' : '均匀采样'}，无需重建`
+            )
+            return
+          }
           notices.pushNotice(
             'info',
             mode === 'scene'
-              ? `已对 ${count} 个视频应用场景检测采样并重新排入队列（仅对这些视频生效）`
-              : `已重新排入索引队列：${count} 个视频`
+              ? `已对 ${res.count} 个视频应用场景检测采样并重新排入队列（仅对这些视频生效）`
+              : `已重新排入索引队列：${res.count} 个视频`
           )
         })
       },

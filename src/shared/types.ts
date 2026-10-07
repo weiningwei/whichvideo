@@ -346,7 +346,10 @@ export interface WhichVideoApi {
     list(query: VideoQuery): Promise<VideoPage>
     get(videoId: number): Promise<VideoRecord | null>
     remove(videoId: number): Promise<void>
-    reindex(videoIds?: number[], mode?: 'global' | SamplingMode): Promise<number>
+    reindex(
+      videoIds?: number[],
+      mode?: SamplingMode
+    ): Promise<{ count: number; skipped: { name: string; mode: SamplingMode } | null }>
     findDuplicates(minScore?: number): Promise<DuplicatePair[]>
     importFiles(): Promise<ImportResult>
     importImages(): Promise<string[]>

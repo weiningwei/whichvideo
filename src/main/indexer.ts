@@ -362,18 +362,35 @@ export class Indexer {
    *
    * mode（'scene'/'uniform'）仅在需要**同时更改**采样方式时传入
    * （行内下拉切换 → 点「索引」）：设置覆盖并重建。
-   * 工具条的重建按钮不传 mode —— 只重建、不动覆盖。此前 mode='global'
-   * 会清除覆盖，用户行内设置的场景采样被工具条按钮悄悄抹掉，
-   * 表现为"场景采样不生效、重复索引"。
+   * 工具条的重建按钮不传 mode —— 只重建、不动覆盖。
+   *
+   * 返回 skipped：单视频且请求模式与已固化值一致时**跳过**并回传原因。
+   * 判定放在主进程（db 是权威数据）—— 渲染端列表数据可能因过滤、
+   * 事件时序而不新鲜，之前放渲染端判定导致\"无需重建\"永不触发。
    */
-  async reindex(videoIds?: number[], mode?: SamplingMode): Promise<number> {
+  async reindex(
+    videoIds?: number[],
+    mode?: SamplingMode
+  ): Promise<{ count: number; skipped: { name: string; mode: SamplingMode } | null }> {
     const targets = videoIds?.length
       ? videoIds.map((id) => this.db.getVideo(id)).filter((v): v is VideoRecord => !!v)
       : this.db.listVideos({ limit: 2000 }).items
+
+    // 主进程权威判定：单视频 + 请求模式与已固化值一致 → 重抽无意义，跳过
+    if (targets.length === 1) {
+      const only = targets[0]
+      const requested = mode ?? only.samplingOverride ?? this.getSettings().samplingMode
+      if (only.samplingOverride != null && only.samplingOverride === requested) {
+        log(`重建跳过（采样方式未变）：${only.path} [${requested}]`)
+        return { count: 0, skipped: { name: only.name, mode: requested } }
+      }
+    }
+
     const targetIds = targets.map((v) => v.id)
     if (mode && targetIds.length > 0) {
       this.db.setSamplingOverride(targetIds, mode)
     }
+    log(`重建开始：${targets.length} 个视频，采样模式 ${mode ?? '（各自记录）'}`)
     let count = 0
     for (const video of targets) {
       if (!existsSync(video.path)) continue
@@ -384,7 +401,7 @@ export class Indexer {
       this.enqueue(video.id, video.path, true)
       count++
     }
-    return count
+    return { count, skipped: null }
   }
 
   /** 手动/文件监听移除视频时同步清理 Indexer 内部状态 */

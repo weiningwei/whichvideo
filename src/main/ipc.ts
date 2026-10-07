@@ -17,6 +17,7 @@ import {
   normalizePath,
   pathKeyOf,
   type AppSettings,
+  type SamplingMode,
   type ImportResult,
   type SearchMatch,
   type SearchResponse,
@@ -350,7 +351,9 @@ export function registerIpc(deps: IpcDeps): void {
     broadcast({ type: 'video-removed', videoId, path: '' })
     broadcast({ type: 'stats', stats: db.stats() })
   })
-  ipcMain.handle(IPC.videosReindex, async (_e, videoIds?: number[]) => indexer.reindex(videoIds))
+  ipcMain.handle(IPC.videosReindex, async (_e, videoIds?: number[], mode?: SamplingMode) =>
+    indexer.reindex(videoIds, mode)
+  )
   ipcMain.handle(IPC.videosThumbnail, (_e, videoId: number) => db.getThumbnail(videoId))
   ipcMain.handle(IPC.videosFrameProgress, (_e, videoId: number): FrameProgress | null => indexer.getFrameProgress(videoId))
 
