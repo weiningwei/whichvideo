@@ -243,7 +243,9 @@ export function useLibrary() {
     clearSearch: search.clearSearch,
     refreshAll,
     refreshVideos,
-    dismissNotice: notices.dismissNotice
+    dismissNotice: notices.dismissNotice,
+    pauseNotice: notices.pauseNotice,
+    resumeNotice: notices.resumeNotice
   }
 }
 

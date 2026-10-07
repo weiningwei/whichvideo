@@ -1029,6 +1029,32 @@ export default mod
       '避免最新那条插到最上面第 1 位'
     )
 
+    // 通知定时自动关闭：TTL 表三级齐全 + 悬停暂停挂钩 + 严格模式安全
+    const noticesSrc = readFileSync(
+      join(root, 'src', 'renderer', 'src', 'hooks', 'useNotices.ts'),
+      'utf8'
+    )
+    check(
+      '通知 TTL 按级别配置（info/warn/error 三级齐全）',
+      noticesSrc.includes('export const NOTICE_TTL') &&
+        /info: \d+/.test(noticesSrc) &&
+        /warn: \d+/.test(noticesSrc) &&
+        /error: \d+/.test(noticesSrc)
+    )
+    check(
+      '推送时按级别调度自动关闭',
+      noticesSrc.includes('schedule(next.id, NOTICE_TTL[level])')
+    )
+    check(
+      'notice 构造在 setNotices updater 之外（严格模式不双执行副作用）',
+      /const next: Notice = \{ id: \+\+noticeSeq/.test(noticesSrc)
+    )
+    check(
+      '浮层条目悬停暂停、移开恢复倒计时',
+      app.includes('onMouseEnter={() => pauseNotice(notice.id)}') &&
+        app.includes('onMouseLeave={() => resumeNotice(notice.id)}')
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

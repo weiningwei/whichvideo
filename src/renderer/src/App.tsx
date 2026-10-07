@@ -10,7 +10,8 @@ import { SettingsPanel } from './components/SettingsPanel'
 
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
-  const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice } = useLibrary()
+  const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice, pauseNotice, resumeNotice } =
+    useLibrary()
   const { hasIndexedFrames, groupByFolder, selectedVideoIds, expandedFolderIds } = state
   const { reSearch, toggleGroupByFolder, toggleVideoSelection, clearSelection, selectAll,
     toggleFolderExpanded, expandAllFolders, collapseAllFolders, isVideoSelected, isFolderExpanded } = actions
@@ -178,6 +179,9 @@ export default function App() {
             <button
               key={notice.id}
               onClick={() => dismissNotice(notice.id)}
+              onMouseEnter={() => pauseNotice(notice.id)}
+              onMouseLeave={() => resumeNotice(notice.id)}
+              title="悬停暂停自动关闭；点击立即关闭"
               className={`rounded-xl border px-3 py-2 text-left text-[11.5px] shadow-lg backdrop-blur ${
                 notice.level === 'error'
                   ? 'border-bad/50 bg-bad/15 text-bad'
