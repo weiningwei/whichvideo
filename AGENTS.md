@@ -16,7 +16,7 @@
 ```bash
 pnpm dev              # electron-vite dev（渲染端热更新）
 pnpm typecheck        # node + web 两套 tsc，无产物
-pnpm test             # 19 套自检按序跑（见下「测试」）
+pnpm test             # 21 套自检按序跑（见下「测试」）
 pnpm build            # typecheck + electron-vite build + icon → out/
 pnpm build:portable   # build + scripts/build-portable-folder.mjs → release/WhichVideo-portable/
 pnpm build:win        # build + electron-builder --win → NSIS 安装包 + win-unpacked/
@@ -78,13 +78,13 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需�
 
 ---
 
-## 🧪 测试（19 套，顺序固定）
+## 🧪 测试（21 套，顺序固定）
 
 ```bash
 pnpm test
 # test:config → test:output → test:frames → test:hash → test:path → test:url
 # → test:icon → test:theme → test:network → test:cursor → test:range
-# → test:url（再次） → test:scale → test:startup → test:core → test:portable
+# → test:url（再次） → test:scale → test:sampling → test:startup → test:core → test:portable
 # → test:clipboard → test:pack → test:asar → test:ui → test:events
 ```
 
@@ -100,7 +100,8 @@ pnpm test
 | `test:cursor` | 光标算法行为（28 项）：移动/单选跟随、Ctrl 只移光标、分组跳过标题、点击行后光标同步 | `LibraryView` 光标/选中 |
 | `test:range` | 连选行为（24 项）：Shift 累积、Ctrl 点选、clearSelection 清锚点、静态守卫锚点用 ref | 连选逻辑 |
 | `test:theme` | 组件无十六进制/内置色、语义 token 双侧齐全 | tsx 写固定色前 |
-| `test:scale` | 指纹尺度不变：帧 320 宽、查询图原分辨率、盒式重采样+均值归一化 | `toGray`/`EXTRACT_WIDTH` |
+| `test:scale` | 指纹尺度不变：帧 320 宽、查询图超宽先缩 320、盒式重采样+均值归一化 | `toGray`/`EXTRACT_WIDTH` |
+| `test:sampling` | 场景采样计划（10 项）：均匀回退、场景点全保留、长镜头补帧、预算裁剪只裁补充点、越界夹值 | `media.ts` 采样计划 |
 | `test:startup` | 启动链路 40 项（入口/日志/便携目录/单实例锁/早期崩溃可见） | 启动相关 |
 | `test:pack` | 便携版打包 62 场景（EPERM/回退/校验/data 保留/路径可见性） | 打包脚本 |
 | `test:asar` | asar 解析逻辑（10 项） | asar 相关 |
@@ -183,7 +184,7 @@ src/shared/            # 主/渲染共用：types.ts(含 IPC 频道)、hash.ts�
 | `README.md` | 用户 | 快速开始、使用流程、配置项、用户级 FAQ |
 | `docs/how-search-works.md` | 实现者 | 检索原理、内存布局、实测距离量级、调参依据 |
 | `docs/troubleshooting.md` | 打包维护者 | 启动无反应、EPERM、环境崩溃、Electron 下载、构建期报错 |
-| `AGENTS.md` | 开发者 | 架构约束、踩坑记录、19 套自检性质 |
+| `AGENTS.md` | 开发者 | 架构约束、踩坑记录、21 套自检性质 |
 
 > 写 README 先问：这条信息「用户」关心吗？不是 → `docs/`。崩溃排查与数学推导别进 README。
 
