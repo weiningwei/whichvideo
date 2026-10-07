@@ -1023,6 +1023,12 @@ export default mod
       app.includes('floating') && app.includes('n.id !== barNotice?.id')
     )
 
+    check(
+      '浮层用 flex-col-reverse（新通知在底部、旧的向上累积）',
+      app.includes('flex-col-reverse') && !/flex w-\[360px\] flex-col gap-2/.test(app),
+      '避免最新那条插到最上面第 1 位'
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

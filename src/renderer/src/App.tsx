@@ -169,8 +169,11 @@ export default function App() {
         const barNotice = state.notices.find((n) => n.level === 'info')
         const floating = state.notices.filter((n) => n.id !== barNotice?.id).slice(0, 4)
         if (floating.length === 0) return null
+        // flex-col-reverse：floating 头部=最新，反转后新通知渲染在底部
+        // （贴近状态栏的固定位置），旧的向上累积 —— 像聊天消息的时间序。
+        // 用户实测"最新那条跑到最上面第 1 位"不符合直觉，故反转。
         return (
-        <div className="pointer-events-auto absolute bottom-12 right-4 flex w-[360px] flex-col gap-2">
+        <div className="pointer-events-auto absolute bottom-12 right-4 flex w-[360px] flex-col-reverse gap-2">
           {floating.map((notice) => (
             <button
               key={notice.id}
