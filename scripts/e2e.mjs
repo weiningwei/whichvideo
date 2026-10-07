@@ -349,6 +349,53 @@ async function main() {
   index.rebuild()
   check('移除视频后内存索引同步', removed && index.frameCount === db.frameCount(), `${index.frameCount} 帧`)
 
+  /* ---------------------------------------------------------------- *
+   * 重建索引必须清空旧帧。
+   * 增量写入按 (video_id, frame_index) 覆盖 —— 新采样计划比旧的短时
+   * （场景 49 帧 → 均匀 38 帧）多余帧全部残留：帧数虚高（用户实测标题
+   * 下一直显示 49），残帧还会进搜索索引。reindex 现在先 clearFrames。
+   * ---------------------------------------------------------------- */
+  {
+    const stubFrames = (count) =>
+      Array.from({ length: count }, (_, i) => ({
+        dhash: 0n,
+        struct: Buffer.alloc(64),
+        color: Buffer.alloc(64),
+        frameIndex: i,
+        timeMs: i * 1000
+      }))
+    const tmp = db.upsertVideo({
+      path: join(work, 'frames-clear-test.mp4'),
+      size: 1,
+      mtimeMs: 1,
+      duration: 60,
+      width: 320,
+      height: 180,
+      videoCodec: 'h264',
+      folderId: null
+    })
+    db.upsertFramesIncremental(tmp.video.id, stubFrames(49))
+    check('旧采样计划写入 49 帧', db.getVideo(tmp.video.id).frameCount === 49, '')
+
+    db.clearFrames([tmp.video.id])
+    check('clearFrames 清空帧并把帧数归零', db.getVideo(tmp.video.id).frameCount === 0, '')
+
+    db.upsertFramesIncremental(tmp.video.id, stubFrames(38))
+    check(
+      '清帧后重写 38 帧 → 帧数不虚高（不清帧会得 49）',
+      db.getVideo(tmp.video.id).frameCount === 38,
+      `实际 ${db.getVideo(tmp.video.id).frameCount}`
+    )
+    db.removeVideo(tmp.video.id)
+
+    const indexerSrc = readFileSync(join(root, 'src', 'main', 'indexer.ts'), 'utf8')
+    check(
+      'reindex 重建前调用 clearFrames（防回归静态守卫）',
+      /clearFrames\(targetIds\)/.test(indexerSrc),
+      '新计划比旧计划短时多余帧会残留'
+    )
+  }
+
   /* ================================================================ *
    * B. 完整流水线（真实抽帧 / 扫描 / 监听）
    * ================================================================ */

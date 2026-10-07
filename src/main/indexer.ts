@@ -390,6 +390,11 @@ export class Indexer {
     if (mode && targetIds.length > 0) {
       this.db.setSamplingOverride(targetIds, mode)
     }
+    if (targetIds.length > 0) {
+      // 重建 = 全量重抽：先清空旧帧。否则新采样计划比旧的短时（场景 49 帧
+      // → 均匀 38 帧），多余帧会残留 —— 帧数虚高、残帧还会进搜索索引。
+      this.db.clearFrames(targetIds)
+    }
     log(`重建开始：${targets.length} 个视频，采样模式 ${mode ?? '（各自记录）'}`)
     let count = 0
     for (const video of targets) {

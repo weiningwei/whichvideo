@@ -567,9 +567,28 @@ export class LibraryDatabase {
     insertMany(frames)
   }
 
+  /**
+   * 清空这些视频的帧指纹并把 frame_count 归零。
+   *
+   * **重建索引前必须调用**：重建 = 全量重抽，旧采样计划的帧必须作废。
+   * 增量写入（upsertFramesIncremental）按 (video_id, frame_index) 覆盖，
+   * 新计划比旧计划短时（如场景采样 49 帧 → 均匀采样 38 帧），多余的
+   * 39~49 号帧会全部残留 —— 帧数虚高，残帧还会进搜索索引被搜到。
+   */
+  clearFrames(ids: number[]): void {
+    const delFrames = this.db.prepare('DELETE FROM frames WHERE video_id = ?')
+    const resetCount = this.db.prepare('UPDATE videos SET frame_count = 0 WHERE id = ?')
+    const runAll = this.db.transaction((list: number[]) => {
+      for (const id of list) {
+        delFrames.run(id)
+        resetCount.run(id)
+      }
+    })
+    runAll(ids)
+  }
+
   /** 更新已处理的时间点索引（断点续传进度） */
-  updateProcessedTimestamps(videoId: number, processedIndices: number[]): void {
-    this.db
+  updateProcessedTimestamps(videoId: number, processedIndices: number[]): void {    this.db
       .prepare('UPDATE videos SET processed_timestamps = ? WHERE id = ?')
       .run(JSON.stringify(processedIndices), videoId)
   }
