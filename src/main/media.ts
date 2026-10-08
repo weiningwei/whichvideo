@@ -106,8 +106,15 @@ export interface RunResult {
 interface RunOptions {
   /** 只收集前 N 字节 stdout，防止误用大输出撑爆内存 */
   maxStdoutBytes?: number
+  /**
+   * 只收集前 N 字节 stderr（默认 64KB）。
+   * 需要**完整保留 stderr 内容**（如 showinfo 逐帧输出）且同时启用 -progress
+   * 时必须调大 —— 进度行与业务行共用 stderr，64KB 会被进度挤满，
+   * 后面的业务行静默丢失（场景检测曾因此丢场景点）。
+   */
+  maxStderrBytes?: number
   timeoutMs?: number
-  /** ffmpeg -progress 回调 (frame, fps, out_time_ms, progress) */
+  /** ffmpeg -progress 回调；out_time_ms 已归一化为**真毫秒**（见解析处注释） */
   onProgress?: (info: { frame: number; fps: number; out_time_ms: number; progress: string }) => void
 }
 
@@ -135,26 +142,47 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
     })
     child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
-      if (stderr.length < 64 * 1024) stderr += text
+      // 上限可调：启用 -progress 时进度行与业务行共用 stderr，默认 64KB
+      // 会被进度挤满导致业务行（showinfo）丢失
+      if (stderr.length < (options.maxStderrBytes ?? 64 * 1024)) stderr += text
       if (options.onProgress) {
         progressBuf += text
         const lines = progressBuf.split('\n')
         progressBuf = lines.pop() || ''
+        // 一个进度块是多行 key=value（frame/fps/.../out_time_ms/progress），
+        // 累积到 progress= 行时整体回调一次。
+        //
+        // 注意这里是**累积** info 而非逐行独立解析：frame 与 out_time_ms 在
+        // 同一块的不同行上，只在 progress= 那一行触发才能带全信息。
+        const info: Record<string, string> = {}
         for (const line of lines) {
-          if (line.startsWith('frame=') || line.startsWith('fps=') || line.startsWith('out_time_ms=') || line.startsWith('progress=')) {
-            const info: Record<string, string> = {}
-            for (const part of line.split('=')) {
-              const [k, v] = part.split('=')
-              if (k && v !== undefined) info[k] = v
-            }
-            if (info.frame || info.fps || info.out_time_ms || info.progress) {
-              options.onProgress({
-                frame: Number(info.frame) || 0,
-                fps: Number(info.fps) || 0,
-                out_time_ms: Number(info.out_time_ms) || 0,
-                progress: info.progress || ''
-              })
-            }
+          if (
+            line.startsWith('frame=') ||
+            line.startsWith('fps=') ||
+            line.startsWith('out_time_ms=') ||
+            line.startsWith('progress=')
+          ) {
+            // 按**第一个** = 拆分。历史实现写成 line.split('=') 再对每段
+            // split('=')，导致 k/v 永远取不到值（info 恒为空、回调永不触发）——
+            // onProgress 因此一直是死代码，检测与全片解码的进度都拿不到。
+            const eq = line.indexOf('=')
+            if (eq <= 0) continue
+            const k = line.slice(0, eq).trim()
+            const v = line.slice(eq + 1).trim()
+            if (k && v) info[k] = v
+          }
+          if (info.progress) {
+            options.onProgress({
+              frame: Number(info.frame) || 0,
+              fps: Number(info.fps) || 0,
+              // ⚠️ ffmpeg 的进度字段 out_time_ms 单位是**微秒**（历史命名坑，
+              // 与 out_time_us 同值），这里归一化成真毫秒，调用方按毫秒理解。
+              // 曾直接当毫秒用 → 6 秒视频报 6000 秒，进度瞬间爆表。
+              out_time_ms: Math.round((Number(info.out_time_ms) || 0) / 1000),
+              progress: info.progress
+            })
+            // 块已消费，清空避免下一块复用旧值
+            for (const key of Object.keys(info)) delete info[key]
           }
         }
       }
@@ -664,7 +692,12 @@ export async function detectScenes(
   filePath: string,
   threshold: number,
   tools?: ToolPaths,
-  timeoutMs = 10 * 60_000
+  timeoutMs = 10 * 60_000,
+  /**
+   * 检测进度回调（秒）：全片解码一趟，用 -progress 的 out_time_ms 折算
+   * 已解码时长 —— 长视频检测期间界面不再是\"卡住\"的静默态。
+   */
+  onProgress?: (decodedSeconds: number) => void
 ): Promise<number[]> {
   const t = tools ?? requireTools()
   const args = [
@@ -675,17 +708,42 @@ export async function detectScenes(
     '-hwaccel',
     'auto',
     '-i',
-    filePath,
-    '-vf',
-    `scale=w=160:h=-2,select='gt(scene,${threshold})',showinfo`,
+    filePath
+  ]
+  // 进度输出到 stderr，复用 run() 的 onProgress 解析
+  if (onProgress) args.push('-progress', 'pipe:2')
+  // 关键结构：split 两路 + nullsink
+  //
+  //   [d] select+showinfo → nullsink   ← 场景点（pts_time 打到 stderr）
+  //   [p] 全帧 → map 到 null muxer      ← 进度（frame/out_time_ms 才有效）
+  //
+  // 为什么不能直接 `-vf select=...,showinfo -f null -`：-progress 报的是
+  // **muxer 收到的帧**，select 在 muxer 之前把绝大多数帧丢掉 → frame=0、
+  // out_time_ms=N/A（实测），进度永远是 0。split 一路不 select 喂给 muxer，
+  // 进度才反映真实解码位置。nullsink 让场景那路无需 -map 就能终止。
+  args.push(
+    '-filter_complex',
+    `[0:v]split=2[d][p];[d]scale=w=160:h=-2,select='gt(scene,${threshold})',showinfo,nullsink;[p]scale=w=160:h=-2[prog]`,
+    '-map',
+    '[prog]',
     '-an',
     '-sn',
     '-dn',
     '-f',
     'null',
     '-'
-  ]
-  const { code, stderr } = await run(t.ffmpeg, args, { timeoutMs })
+  )
+  const { code, stderr } = await run(t.ffmpeg, args, {
+    timeoutMs,
+    // 进度行与 showinfo 行共用 stderr：64KB 默认上限会被进度挤满，
+    // 后面的 showinfo（场景点）静默丢失 → 调到 8MB（长片 showinfo 实测 <2MB）
+    maxStderrBytes: 8 * 1024 * 1024,
+    onProgress: onProgress
+      ? (info) => {
+          if (info.out_time_ms > 0) onProgress(info.out_time_ms / 1000)
+        }
+      : undefined
+  })
   // 退出码非 0（滤镜串错误、文件损坏等）必须抛出 —— 静默返回空数组会让
   // 场景采样**悄悄退化成均匀采样**，用户毫无感知（历史上真发生过）。
   // indexer 的 catch 会 logError 并退回均匀计划，行为与失败语义一致。

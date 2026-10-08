@@ -42,8 +42,15 @@ export class Indexer {
   private lastError: string | null = null
   private toolsInstance: ToolPaths | null = null
   private rebuildTimer: NodeJS.Timeout | null = null
-  /** 单视频帧进度：videoId -> {done, total} */
-  private frameProgress = new Map<number, { done: number; total: number }>()
+  /**
+   * 单视频进度：videoId -> {done, total, phase}。
+   * phase='detecting' 时 done/total 是「已解码秒数 / 总时长秒数」（场景检测
+   * 阶段，一次全片低分辨率解码）；phase='extracting' 时是帧数（抽帧阶段）。
+   */
+  private frameProgress = new Map<
+    number,
+    { done: number; total: number; phase?: 'detecting' | 'extracting' }
+  >()
 
   constructor(
     private readonly db: LibraryDatabase,
@@ -516,7 +523,18 @@ export class Indexer {
     let timestamps: number[]
     if (forceSeek) {
       try {
-        const scenes = await detectScenes(video.path, 0.3, t)
+        // 检测阶段进度：done/total = 已解码秒数 / 总时长。场景检测对长视频
+        // 要跑数秒（一次全片解码），不显示进度的话界面像卡死 —— 这是场景
+        // 采样比均匀采样多出来的第一段静默期（第二阶段算计划是毫秒级）。
+        const totalSeconds = duration && duration > 0 ? duration : 0
+        this.frameProgress.set(videoId, { done: 0, total: totalSeconds, phase: 'detecting' })
+        const scenes = await detectScenes(video.path, 0.3, t, undefined, (decoded) => {
+          this.frameProgress.set(videoId, {
+            done: totalSeconds > 0 ? Math.min(decoded, totalSeconds) : decoded,
+            total: totalSeconds,
+            phase: 'detecting'
+          })
+        })
         timestamps = planSceneTimestamps(scenes, duration, settings.framesPerVideo)
         log(`场景检测：${video.path} 检出 ${scenes.length} 个切换点，采样 ${timestamps.length} 帧`)
       } catch (err) {
@@ -545,7 +563,7 @@ export class Indexer {
     }
 
     // 初始化帧进度
-    this.frameProgress.set(videoId, { done: startIndex, total: timestamps.length })
+    this.frameProgress.set(videoId, { done: startIndex, total: timestamps.length, phase: 'extracting' })
     this.broadcastStatus()
 
     // 增量处理：每处理一批就落库、更新进度
@@ -560,7 +578,7 @@ export class Indexer {
         startIndex: batchStart,
         forceSeek,
         onFrame: (done, total) => {
-          this.frameProgress.set(videoId, { done, total })
+          this.frameProgress.set(videoId, { done, total, phase: 'extracting' })
         },
         width: video.width,
         height: video.height
@@ -582,7 +600,7 @@ export class Indexer {
       }
     }
 
-    this.frameProgress.set(videoId, { done: currentProcessed.length, total: timestamps.length })
+    this.frameProgress.set(videoId, { done: currentProcessed.length, total: timestamps.length, phase: 'extracting' })
     this.broadcastStatus()
 
     // 生成缩略图并更新最终状态（兜底：即使缩略图失败也要标记完成）

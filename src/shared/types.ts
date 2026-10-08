@@ -115,6 +115,13 @@ export interface FrameProgress {
   videoId: number
   done: number
   total: number
+  /**
+   * 阶段标识：
+   * - 'detecting'：场景检测中（一次全片低分辨率解码），done/total 是**已解码秒数 / 总时长秒数**
+   * - 'extracting'（默认）：抽帧中，done/total 是**帧数**
+   * 两者共用一组字段是因为 UI 只需一条进度条，语义由 phase 决定。
+   */
+  phase?: 'detecting' | 'extracting'
 }
 
 /** 一次搜索中命中的视频 */

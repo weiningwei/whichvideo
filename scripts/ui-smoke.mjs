@@ -1055,6 +1055,18 @@ export default mod
         app.includes('onMouseLeave={() => resumeNotice(notice.id)}')
     )
 
+    // 进度条按阶段区分：场景采样多一段「检测」
+    check(
+      '进度条区分场景检测与抽帧两阶段',
+      lib.includes("frameProgress.phase === 'detecting'") && lib.includes('场景检测'),
+      '检测阶段不显示的话长视频索引期间界面像卡死'
+    )
+    check(
+      '检测时长未知时显示不定态（不报假百分比）',
+      lib.includes('分析中') && lib.includes('pct === null'),
+      '时长探测失败时 total=0'
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

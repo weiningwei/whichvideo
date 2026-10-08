@@ -60,7 +60,7 @@ async function main() {
   const { FolderWatcher } = await load('watcher')
   const { createEventBus } = await load('interfaces')
   const { extractAndHash, scanVideoFiles, statFile } = await load('scan')
-  const { resolveTools, planTimestamps, probeVideo } = await load('media')
+  const { detectScenes, resolveTools, planTimestamps, probeVideo } = await load('media')
   const { computeSignature, hammingBytes, STRUCT_BYTES } = await import(
     pathToFileURL(join(out, 'shared', 'hash.js')).href
   )
@@ -446,6 +446,23 @@ async function main() {
   } else {
     skip('ffprobe 读取视频元数据', 'ffprobe 也走子进程管道，当前环境被拦')
   }
+  /* 场景检测的进度上报：长视频检测要跑数秒（一次全片解码），
+     不报进度界面像卡死 —— indexer 用它填 phase='detecting' 的进度条。
+     顺带验证 stderr 上限放大后 showinfo 行不被进度行挤掉。 */
+  if (pipeWorks) {
+    const progresses = []
+    const scenes = await detectScenes(videoA, 0.3, tools, undefined, (s) => progresses.push(s))
+    check(
+      '场景检测上报解码进度（最后一拍应接近视频时长）',
+      progresses.length > 0 && progresses[progresses.length - 1] > 0,
+      `回调 ${progresses.length} 次，最后 ${progresses[progresses.length - 1]?.toFixed(1) ?? '-'}s`
+    )
+    check('场景检测返回时间点数组', Array.isArray(scenes), `${scenes.length} 个切换点（纯色测试源可能为 0）`)
+  } else {
+    skip('场景检测上报解码进度', '子进程管道被拦')
+    skip('场景检测返回时间点数组', '子进程管道被拦')
+  }
+
   const scan = await scanVideoFiles(mediaDir)
   check('目录递归扫描', scan.files === 1, `扫描到 ${scan.files} 个视频`)
   check('文件 stat', !!statFile(videoA), `${statFile(videoA)?.size} 字节`)

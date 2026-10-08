@@ -128,25 +128,62 @@ export function VideoRow({
 
   const selected = isVideoSelected(video.id)
 
-  // 帧进度条 + 时间显示（仅索引中且有进度数据时显示）
-  const frameProgressBar = frameProgress && video.status === 'indexing' && frameProgress.total > 0 ? (
-    <div className="mt-1 space-y-0.5">
-      <div className="flex items-center gap-1.5 text-[10px] text-muted">
-        <span className="whitespace-nowrap flex items-center gap-1">
-          <span>已用 {formatDuration(Math.round(elapsedMs / 1000))}</span>
-          <span className="text-line">·</span>
-          <span>剩余 {remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
-        </span>
-        <span className="whitespace-nowrap text-primary ml-auto">{frameProgress.done}/{frameProgress.total}</span>
+  /**
+   * 进度条（仅索引中显示）。两个阶段共用一条进度条，语义由 phase 决定：
+   * - phase='detecting'：场景检测（一次全片低分辨率解码），done/total 是
+   *   已解码秒数 / 总时长秒数 —— 这是场景采样比均匀采样多出的第一段等待，
+   *   不显示的话长视频检测期间界面像卡死；时长未知时显示不定态「分析中」
+   * - phase='extracting'（默认）：抽帧，done/total 是帧数
+   * 算采样计划（阶段 2）是毫秒级纯计算，不单独占进度条。
+   */
+  const frameProgressBar = (() => {
+    if (!frameProgress || video.status !== 'indexing') return null
+    const detecting = frameProgress.phase === 'detecting'
+    const hasTotal = frameProgress.total > 0
+    if (!detecting && !hasTotal) return null
+    const pct = hasTotal
+      ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100))
+      : null
+    const label = detecting
+      ? `场景检测${pct === null ? '中…' : ''}`
+      : `已用 ${formatDuration(Math.round(elapsedMs / 1000))}`
+    return (
+      <div className="mt-1 space-y-0.5">
+        <div className="flex items-center gap-1.5 text-[10px] text-muted">
+          <span className="whitespace-nowrap flex items-center gap-1">
+            <span>{label}</span>
+            {!detecting && (
+              <>
+                <span className="text-line">·</span>
+                <span>剩余 {remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
+              </>
+            )}
+          </span>
+          <span className="whitespace-nowrap text-primary ml-auto">
+            {pct === null ? '分析中' : detecting ? `${pct}%` : `${frameProgress.done}/${frameProgress.total}`}
+          </span>
+        </div>
+        <div
+          className="h-2 bg-line rounded-full overflow-hidden relative"
+          role="progressbar"
+          aria-valuenow={pct ?? 0}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={detecting ? `场景检测进度 ${pct ?? 0}%` : `帧进度 ${frameProgress.done}/${frameProgress.total}`}
+        >
+          <div
+            className="h-full bg-accent transition-[width] duration-200 ease-out"
+            style={{ width: `${pct ?? 0}%` }}
+          />
+          {pct !== null && (
+            <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/90 select-none pointer-events-none whitespace-nowrap">
+              {pct}%
+            </span>
+          )}
+        </div>
       </div>
-      <div className="h-2 bg-line rounded-full overflow-hidden relative" role="progressbar" aria-valuenow={Math.round((frameProgress.done / frameProgress.total) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`帧进度 ${frameProgress.done}/${frameProgress.total}`}>
-        <div className="h-full bg-accent transition-[width] duration-200 ease-out" style={{ width: `${Math.min(100, (frameProgress.done / frameProgress.total) * 100)}%` }} />
-        <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/90 select-none pointer-events-none whitespace-nowrap">
-          {Math.round((frameProgress.done / frameProgress.total) * 100)}%
-        </span>
-      </div>
-    </div>
-  ) : null
+    )
+  })()
 
   /**
    * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。

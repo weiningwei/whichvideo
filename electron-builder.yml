@@ -27,6 +27,12 @@ npmRebuild: false
 electronDownload:
   unsafelyDisableChecksums: true
 
+# 打包后钩子：移除 electron-builder 自动生成的 app-update.yml。
+# 它从 git remote/package.json 推断出 provider=github 的更新源配置 ——
+# 本项目不用 electron-updater（见 scripts/after-pack.cjs 注释），
+# 产物里留着会让 test:network 的「产物无更新源」断言失败。
+afterPack: scripts/after-pack.cjs
+
 files:
   - out/**
   - package.json
