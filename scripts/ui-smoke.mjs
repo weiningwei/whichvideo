@@ -1067,6 +1067,12 @@ export default mod
       '时长探测失败时 total=0'
     )
 
+    check(
+      '检测阶段状态徽标显示「场景检测中」（不只说索引中）',
+      lib.includes("detecting") && lib.includes('场景检测中'),
+      '徽标只写「索引中」用户看不出在跑检测'
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

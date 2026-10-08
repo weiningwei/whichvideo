@@ -117,13 +117,18 @@ export function VideoRow({
         : video.status === 'indexing'
           ? 'border-accent/40 bg-accent/10 text-accent'
           : 'border-warn/40 bg-warn/10 text-warn'
+  // 场景检测阶段（phase='detecting'）徽标单独成词：检测是一次全片解码、
+  // 与抽帧是两回事，长视频要跑数秒 —— 只写「索引中」用户看不出在干什么。
+  const detecting = frameProgress?.phase === 'detecting'
   const statusText =
     video.status === 'ready'
       ? '已索引'
       : video.status === 'failed'
         ? '索引失败'
         : video.status === 'indexing'
-          ? '索引中'
+          ? detecting
+            ? '场景检测中'
+            : '索引中'
           : '待索引'
 
   const selected = isVideoSelected(video.id)
