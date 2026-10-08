@@ -148,6 +148,8 @@ export function VideoRow({
   const frameProgressBar = (() => {
     if (!frameProgress || video.status !== 'indexing') return null
     const detecting = frameProgress.phase === 'detecting'
+    // 只有场景采样才有「检测 → 抽帧」两段（均匀采样只有抽帧一段）
+    const twoPhase = (video.samplingOverride ?? globalSampling) === 'scene'
     const hasTotal = frameProgress.total > 0
     if (!detecting && !hasTotal) return null
     const pct = hasTotal
@@ -170,13 +172,16 @@ export function VideoRow({
     return (
       <div className="mt-1 space-y-1" title={hint}>
         <div className="flex items-center gap-1.5">
-          {/* 阶段标签 + 同色进度条：两个阶段各有身份（检测=琥珀 / 抽帧=蓝） */}
+          {/* 阶段标签：场景采样有检测/抽帧两段，标序号（1/2、2/2）避免"数字
+              忽然归零"被误读为进度回退 —— 实测序列：检测 79% → 抽帧 0/18，
+              两段各自 0~100%，不标序号就像同一条进度在倒退。
+              均匀采样只有一段，不标序号（没有歧义）。 */}
           <span
             className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
               detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
             }`}
           >
-            {detecting ? '场景检测' : '抽帧'}
+            {detecting ? '场景检测 1/2' : twoPhase ? '抽帧 2/2' : '抽帧'}
           </span>
           <span className="ml-auto text-[10px] leading-tight text-primary">{countText}</span>
         </div>

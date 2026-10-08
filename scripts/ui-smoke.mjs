@@ -1069,8 +1069,19 @@ export default mod
 
     check(
       '徽标只表达状态（「索引中」），阶段交给进度条标签（不再两处重复）',
-      !lib.includes('场景检测中') && lib.includes("'场景检测' : '抽帧'"),
+      !lib.includes('场景检测中') && lib.includes("'场景检测 1/2'"),
       '用户实测"场景检测出现两次"：徽标与标签都在说阶段'
+    )
+    // 阶段标签：两个阶段各有身份（检测=琥珀 / 抽帧=蓝）+ 场景采样标阶段序号
+    check(
+      '两阶段各有常驻标签与配色（检测=琥珀 / 抽帧=蓝）',
+      lib.includes("'场景检测 1/2'") && lib.includes("detecting ? 'bg-warn' : 'bg-accent'"),
+      '只靠文案区分太弱，阶段切换用户看不出是另一段进度'
+    )
+    check(
+      '场景采样标阶段序号（1/2、2/2），均匀采样不标',
+      lib.includes('twoPhase') && lib.includes("'抽帧 2/2'") && lib.includes(": '抽帧'"),
+      '实测：检测 79% → 抽帧 0/18，不标序号会被误读为进度回退'
     )
     check(
       '进度数字只出现一次，且不压在进度条上（条会变色，压字看不清）',
@@ -1091,19 +1102,7 @@ export default mod
       '已用/剩余保留在 title 里可查，但不重复占版面'
     )
 
-    check(
-      '两阶段各有常驻标签与配色（检测=琥珀 / 抽帧=蓝）',
-      lib.includes("'场景检测' : '抽帧'") &&
-        lib.includes("detecting ? 'bg-warn' : 'bg-accent'"),
-      '只靠文案区分太弱，阶段切换用户看不出是另一段进度'
-    )
 
-    check(
-      '两阶段各有常驻标签与配色（检测=琥珀 / 抽帧=蓝）',
-      lib.includes("'场景检测' : '抽帧'") &&
-        lib.includes("detecting ? 'bg-warn' : 'bg-accent'"),
-      '只靠文案区分太弱，阶段切换用户看不出是另一段进度'
-    )
 
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
