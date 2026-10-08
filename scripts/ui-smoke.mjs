@@ -1073,6 +1073,20 @@ export default mod
       '徽标只写「索引中」用户看不出在跑检测'
     )
 
+    check(
+      '两阶段各有常驻标签与配色（检测=琥珀 / 抽帧=蓝）',
+      lib.includes("'场景检测' : '抽帧'") &&
+        lib.includes("detecting ? 'bg-warn' : 'bg-accent'"),
+      '只靠文案区分太弱，阶段切换用户看不出是另一段进度'
+    )
+
+    check(
+      '两阶段各有常驻标签与配色（检测=琥珀 / 抽帧=蓝）',
+      lib.includes("'场景检测' : '抽帧'") &&
+        lib.includes("detecting ? 'bg-warn' : 'bg-accent'"),
+      '只靠文案区分太弱，阶段切换用户看不出是另一段进度'
+    )
+
     check('有集中的快捷键定义', sc.includes('export const SHORTCUTS'))
     check('帮助面板按 group 聚合', sc.includes('export function groupShortcuts'))
     check('平台适配（Mac 显示 ⌘/⇧/⌥）', sc.includes("k === 'Ctrl'") && sc.includes('isMac'))

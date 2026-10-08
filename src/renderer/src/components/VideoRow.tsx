@@ -149,16 +149,25 @@ export function VideoRow({
     const pct = hasTotal
       ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100))
       : null
-    const label = detecting
-      ? `场景检测${pct === null ? '中…' : ''}`
-      : `已用 ${formatDuration(Math.round(elapsedMs / 1000))}`
     return (
       <div className="mt-1 space-y-0.5">
         <div className="flex items-center gap-1.5 text-[10px] text-muted">
+          {/* 阶段标签：两个阶段各有一枚常驻标识（检测=琥珀 / 抽帧=蓝），
+              配合进度条本身的同色填充 —— 只靠文案区分太弱，阶段切换时
+              用户看不出\"这是另一段进度\"。 */}
+          <span
+            className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
+              detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
+            }`}
+          >
+            {detecting ? '场景检测' : '抽帧'}
+          </span>
           <span className="whitespace-nowrap flex items-center gap-1">
-            <span>{label}</span>
-            {!detecting && (
+            {detecting ? (
+              <span>分析镜头切换点…</span>
+            ) : (
               <>
+                <span>已用 {formatDuration(Math.round(elapsedMs / 1000))}</span>
                 <span className="text-line">·</span>
                 <span>剩余 {remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
               </>
@@ -177,7 +186,7 @@ export function VideoRow({
           aria-label={detecting ? `场景检测进度 ${pct ?? 0}%` : `帧进度 ${frameProgress.done}/${frameProgress.total}`}
         >
           <div
-            className="h-full bg-accent transition-[width] duration-200 ease-out"
+            className={`h-full transition-[width] duration-200 ease-out ${detecting ? 'bg-warn' : 'bg-accent'}`}
             style={{ width: `${pct ?? 0}%` }}
           />
           {pct !== null && (
