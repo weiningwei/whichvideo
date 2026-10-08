@@ -426,6 +426,19 @@ function main() {
         yml.includes('node_modules/better-sqlite3/prebuilds/win32-x64.node'),
       '8 份平台二进制只留 1 份'
     )
+
+    // EBUSY 类失败：打包前清理中间目录 + 给出可操作提示（不让用户看天书）
+    const packSrc = readFileSync(builder, 'utf8')
+    check(
+      '打包前清理 win-unpacked.tmp 残留（防 EBUSY）',
+      packSrc.includes('function cleanStaleTmpDir') && packSrc.includes('cleanStaleTmpDir(`${unpackedDir}.tmp`)'),
+      '上次打包被打断的中间目录会让这次 unlink 失败'
+    )
+    check(
+      '占用类失败给出可操作提示（Defender / 运行中程序 / 重启）',
+      packSrc.includes('EBUSY') && packSrc.includes('Defender') && packSrc.includes('重启'),
+      ''
+    )
   }
 
   console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')

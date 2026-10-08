@@ -456,6 +456,35 @@ function assertBuildOutput() {
 }
 
 /**
+ * 打包前清理 electron-builder 的中间目录（win-unpacked.tmp）。
+ *
+ * 该目录是 electron-builder 解压 Electron → 替换 app.asar → 改名 的中间态。
+ * 若上一次打包被打断（或其中的 default_app.asar 正被杀软实时扫描锁定），
+ * 这次打包会在 unlink 阶段抛 `EBUSY: resource busy or locked` —— 错误指向
+ * asar 文件，看起来像代码/资源问题，实际是文件被别的进程占用。
+ * 提前清理并把"谁占用、怎么办"讲清楚，比让用户对着 EBUSY 猜要强。
+ *
+ * 清理失败不硬中止：交给 electron-builder 自己再试（它偶尔能处理），
+ * 但把可操作的排查步骤打出来。
+ */
+function cleanStaleTmpDir(tmpDir) {
+  if (!existsSync(tmpDir)) return
+  try {
+    rmSync(tmpDir, { recursive: true, force: true })
+    console.log(`已清理上次打包的中间目录残留：${tmpDir}`)
+  } catch (err) {
+    console.warn(`\n⚠ 上次打包的中间目录清理失败（可能有进程正在占用）：${tmpDir}`)
+    console.warn(`  原因：${err.code ?? ''} ${String(err.message ?? '').split('\n')[0]}`)
+    console.warn('  常见持有者：Windows Defender 实时扫描、资源管理器正打开该目录、正在运行的 WhichVideo')
+    console.warn('  处理办法（任选，通常第 1 条即可）：')
+    console.warn('    ① 把仓库目录加入 Windows Defender 排除项（实时扫描是最常见原因）')
+    console.warn('    ② 关闭正在运行的 WhichVideo / 关闭打开该目录的资源管理器窗口')
+    console.warn('    ③ 手动删除该目录后重试')
+    console.warn('    ④ 重启后再打包（释放残留句柄）\n')
+  }
+}
+
+/**
  * 用 electron-builder 产出 win-unpacked。
  *
  * 关键点：**每次都重新打包**，并且校验生成的 app.asar 确实比 out/ 新。
@@ -464,6 +493,8 @@ function assertBuildOutput() {
  * 脚本仍然拿旧目录做出一个"看起来正常"的绿色版 —— 装的是旧代码。
  */
 function runElectronBuilder() {
+  cleanStaleTmpDir(`${unpackedDir}.tmp`)
+
   const packedAsar = join(unpackedDir, 'resources', 'app.asar')
   const outMain = join(root, 'out', 'main', 'index.js')
   const outMtime = statSync(outMain).mtimeMs
@@ -482,8 +513,11 @@ function runElectronBuilder() {
 
   if (!existsSync(join(unpackedDir, 'WhichVideo.exe'))) {
     console.error(`\n打包失败：没有生成 ${join(unpackedDir, 'WhichVideo.exe')}`)
-    console.error('常见原因：electron-builder 在 iOS/原生模块重建阶段中断（spawn EPERM 等）。')
-    console.error('可尝试： pnpm rebuild:native  或手动执行 npx electron-builder --win dir')
+    console.error('常见原因：')
+    console.error('  · 文件被占用（EBUSY: resource busy or locked）—— 杀软实时扫描或程序正在运行，')
+    console.error('    处理：把仓库目录加入 Defender 排除项 / 关闭运行中的 WhichVideo / 重启后重试')
+    console.error('  · 原生模块重建中断（spawn EPERM 等）—— 可尝试 pnpm rebuild:native')
+    console.error('  · 或手动执行 npx electron-builder --win dir 复现完整报错')
     writeTestReport({ ok: false, reason: 'electron-builder-failed', exitCode: r.status })
     process.exit(1)
   }
