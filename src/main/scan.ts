@@ -51,6 +51,15 @@ export interface ExtractOptions {
   onFrame?: (done: number, total: number) => void
   /** 从哪个时间点索引开始处理（断点续传） */
   startIndex?: number
+  /**
+   * 处理到哪个时间点索引为止（**不含**），缺省到末尾。
+   *
+   * 调用方（indexer）按批落库，天然要求"只抽我这批"。此前只有 startIndex、
+   * 没有上界 —— 逐点 seek 路径 slice(startIndex) 会**一路抽到片尾**：
+   * 49 帧的计划被抽成 49 + 17 = 66 帧（第二批把 32~48 又抽一遍），
+   * 进度分子随之出现"涨到 100% → 回退到 33 → 再涨到 100%"的假回退。
+   */
+  endIndex?: number
   /** 视频宽度（用于 4K 判断） */
   width?: number | null
   /** 视频高度（用于 4K 判断） */
@@ -96,7 +105,8 @@ async function extractAndHashBySeek(
   options?: ExtractOptions
 ): Promise<NewFrame[]> {
   const startIndex = options?.startIndex ?? 0
-  const targetTimestamps = timestamps.slice(startIndex)
+  const endIndex = options?.endIndex ?? timestamps.length
+  const targetTimestamps = timestamps.slice(startIndex, endIndex)
   if (targetTimestamps.length === 0) return []
 
   const t = tools()
@@ -187,7 +197,12 @@ async function extractAndHashByFullScan(
   options?: ExtractOptions
 ): Promise<NewFrame[]> {
   const startIndex = options?.startIndex ?? 0
-  const targetTimestamps = timestamps.slice(startIndex)
+  const endIndex = options?.endIndex ?? timestamps.length
+  // 注：本路径的 fps 采样是"按帧数在全片均匀取点"，**无法对齐任意子区间** ——
+  // 因此调用方（indexer）对全片解码路径不做分批，一次传整份计划（见 indexer
+  // 的 batchSize 计算）。这里的 slice 只为兼容显式传入的窗口，语义是"取前
+  // N 个位置"。
+  const targetTimestamps = timestamps.slice(startIndex, endIndex)
   if (targetTimestamps.length === 0) return []
 
   const extracted = await extractFrames(filePath, targetTimestamps, tools(), {

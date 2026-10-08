@@ -399,6 +399,17 @@ async function main() {
       /clearFrames\(targetIds\)/.test(indexerSrc),
       '新计划比旧计划短时多余帧会残留'
     )
+    check(
+      '分批抽帧把批上界 endIndex 传给抽帧（否则每批都抽到片尾）',
+      /startIndex:\s*batchStart,\s*\n[^\n]*\n?\s*endIndex:\s*batchEnd,/.test(indexerSrc) ||
+        (/startIndex: batchStart,/.test(indexerSrc) && /endIndex: batchEnd,/.test(indexerSrc)),
+      '漏传上界 → 49 帧计划被抽成 66 帧、进度出现假回退'
+    )
+    check(
+      '全片解码路径不分批（usesFullScan → 单批，防整片重复解码）',
+      /usesFullScan/.test(indexerSrc) && /usesFullScan \? Math\.max\(1, timestamps\.length - startIndex\) : 32/.test(indexerSrc),
+      '240 帧 = 8 批 = 8 次全片解码'
+    )
   }
 
   /* ================================================================ *
@@ -451,6 +462,34 @@ async function main() {
   } else {
     skip('ffprobe 读取视频元数据', 'ffprobe 也走子进程管道，当前环境被拦')
   }
+
+  /* 批区间契约：indexer 按批落库，要求"只抽我这批"（startIndex..endIndex）。
+     曾漏传上界 —— 逐点 seek 会 slice(startIndex) 一路抽到片尾，49 帧的
+     计划被抽成 49+17=66 帧，进度分子出现"涨到 100% → 回退 → 再涨"的假回退。
+     这里直接验证窗口：抽第 2~4 个位置必须只回 2 帧、序号 1/2 对齐。 */
+  if (pipeWorks) {
+    const plan = planTimestamps(6, 6)
+    const windowed = await extractAndHash(videoA, plan, db.getSettings(), null, {
+      startIndex: 1,
+      endIndex: 3,
+      forceSeek: true
+    })
+    check(
+      '抽帧遵守批区间（只抽 startIndex..endIndex）',
+      windowed.length === 2 && windowed[0].frameIndex === 1 && windowed[1].frameIndex === 2,
+      `${windowed.length} 帧，序号 ${windowed.map((f) => f.frameIndex).join('/')}（应 2 帧、1/2）`
+    )
+    check(
+      '区间为空时不抽帧（不越界到片尾）',
+      (await extractAndHash(videoA, plan, db.getSettings(), null, { startIndex: 3, endIndex: 3, forceSeek: true }))
+        .length === 0,
+      ''
+    )
+  } else {
+    skip('抽帧遵守批区间（只抽 startIndex..endIndex）', '子进程管道被拦')
+    skip('区间为空时不抽帧（不越界到片尾）', '子进程管道被拦')
+  }
+
   /* 场景检测的进度上报：长视频检测要跑数秒（一次全片解码），
      不报进度界面像卡死 —— indexer 用它填 phase='detecting' 的进度条。
      顺带验证 stderr 上限放大后 showinfo 行不被进度行挤掉。 */

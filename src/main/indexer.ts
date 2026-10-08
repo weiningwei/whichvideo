@@ -15,7 +15,16 @@ import {
   type FrameProgress
 } from '@shared/types'
 import { normalizePath } from '@shared/types'
-import { detectScenes, makeThumbnail, planSceneTimestamps, planTimestamps, probeVideo, requireTools, type ToolPaths } from './media'
+import {
+  detectScenes,
+  makeThumbnail,
+  planSceneTimestamps,
+  planTimestamps,
+  probeVideo,
+  requireTools,
+  shouldUseFullScan,
+  type ToolPaths
+} from './media'
 import { extractAndHash, scanVideoFiles, statFile } from './scan'
 import type { EmitLibraryEvent, LibraryFileEvent } from './interfaces'
 import { log, logError } from './logger'
@@ -566,8 +575,12 @@ export class Indexer {
     this.frameProgress.set(videoId, { done: startIndex, total: timestamps.length, phase: 'extracting' })
     this.broadcastStatus()
 
-    // 增量处理：每处理一批就落库、更新进度
-    const batchSize = 32 // 每批处理的帧数
+    // 增量处理：每处理一批就落库、更新进度。
+    // 分批只对**逐点 seek 路径**有意义（边抽边落库 + 断点续传）；全片解码
+    // 路径单次解码成本与帧数无关，分批只会把整片解码重复 N 遍
+    // （240 帧 / 32 = 8 批 = 8 次全片解码），故一次做完。
+    const usesFullScan = !forceSeek && shouldUseFullScan(timestamps.length, video.width, video.height)
+    const batchSize = usesFullScan ? Math.max(1, timestamps.length - startIndex) : 32
     let allNewFrames: NewFrame[] = []
     let currentProcessed = [...processed]
 
@@ -576,6 +589,9 @@ export class Indexer {
       const batchStartTime = Date.now()
       const batchFrames = await extractAndHash(video.path, timestamps, settings, duration, {
         startIndex: batchStart,
+        // 批上界必须下传：缺它时逐点 seek 会一路抽到片尾，49 帧的计划被抽成
+        // 49+17=66 帧（第二批重复抽 32~48），进度分子出现"涨到 100% → 回退 → 再涨"
+        endIndex: batchEnd,
         forceSeek,
         onFrame: (done, total) => {
           this.frameProgress.set(videoId, { done, total, phase: 'extracting' })

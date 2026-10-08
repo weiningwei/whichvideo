@@ -37,6 +37,7 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需�
 | **主进程惰性 `require` 加载核心模块** | `loadCoreModules()` 捕获原生模块加载失败落日志。**别改顶层 ESM import**。配套两件事不可动：① `mainEntries()` 扫描 `src/main` 自动生成入口（曾手写漏文件），② `preserveModules: true`（多入口时 Rollup 复制共享模块会导致 `logger.ts` 模块级缓冲状态分裂、早期日志丢失）。 | `pnpm test:output` |
 | **`package.json` 禁 `"type": "module"`** | Electron 会把 CJS 主进程当 ESM 加载，首行抛错 → 无窗口无日志。 | `pnpm test:startup` 场景 0 |
 | **`.gitignore` Python 规则锚定根目录** | 必须以 `/` 开头（如 `/lib/`），否则误伤 `src/renderer/src/lib/`。 | — |
+| **抽帧批区间必须两头都给** | `indexer` 按批落库（每批 32 帧），调用 `extractAndHash` 时必须同时传 `startIndex` **和** `endIndex`。只传前者时逐点 seek 会 `slice(startIndex)` 一路抽到片尾 —— 49 帧的计划被抽成 49+17=66 帧（日志「新增帧」虚高），进度分子出现"涨到 100% → 回退 → 再涨"的假回退（用户实测）。另外**全片解码路径不分批**（单次解码成本与帧数无关，分批 = 整片重复解码 N 遍），由 `usesFullScan` 决定 `batchSize`。 | `pnpm test:core`（批区间 + 单批断言） |
 
 ---
 
