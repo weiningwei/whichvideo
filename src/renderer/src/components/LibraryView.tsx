@@ -395,14 +395,14 @@ export function LibraryView(props: Props) {
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-ink-900">
           {/* min-w 是"低于这个宽度才允许横向滚动"的阈值，取各列下限之和：
-              视频列 200（够一行缩略图+几个字）+ 状态 96 + 采样 80 + 操作 180。
+              视频列 200（够一行缩略图+几个字）+ 状态 128（要放下两行进度条）+ 采样 80 + 操作 180。
               别设更高——文件名已改成两行显示，内容并不需要那么宽，
               阈值定高反而会凭空造出横向滚动条。 */}
           <table className="w-full min-w-[480px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
                 <th className="px-3 py-2 font-medium">视频</th>
-                <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">状态</th>
+                <th className="w-32 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">采样</th>
                 {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
                     左侧那条线标示"这里是浮在内容之上的固定区"。 */}

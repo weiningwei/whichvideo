@@ -1073,9 +1073,17 @@ export default mod
       '用户实测"场景检测出现两次"：徽标与标签都在说阶段'
     )
     check(
-      '进度数字只在进度条内出现一次（右侧不再重复一行）',
-      lib.includes('const barText') && !lib.includes('whitespace-nowrap text-primary ml-auto'),
-      '条内 + 右侧两处显示同一个数字'
+      '进度数字只出现一次，且不压在进度条上（条会变色，压字看不清）',
+      lib.includes('const countText') &&
+        !lib.includes('text-[8px] text-primary') &&
+        lib.includes('ml-auto text-[10px] leading-tight text-primary'),
+      '数字移出条内：条随阶段变色（琥珀/蓝），压字对比度不稳'
+    )
+    check(
+      '进度条独占一行并占满列宽（不被标签挤窄）',
+      lib.includes('h-2 rounded-full overflow-hidden bg-line') &&
+        !lib.includes('h-2.5 flex-1 rounded-full'),
+      '标签与条并排时条只剩几十像素'
     )
     check(
       '冗余时长信息收进 hover title（不占视觉）',

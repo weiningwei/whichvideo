@@ -134,12 +134,16 @@ export function VideoRow({
   const selected = isVideoSelected(video.id)
 
   /**
-   * 进度条（仅索引中显示）。**一行结构**：阶段标签 + 进度条，数字嵌在条内
-   * （只出现一次，不再右侧重复）。语义由 phase 决定：
+   * 进度条（仅索引中显示）。**两行结构**，各司其职：
+   *   第 1 行：[阶段标签] ................ 数字   ← 数字放文字行，不压在条上
+   *   第 2 行：[━━━━━━━━ 进度条（占满列宽）━━━━━━]
+   *
+   * 为什么数字不进条内：条会随进度变色（检测=琥珀、抽帧=蓝），文字压在
+   * 变色条上对比度不稳（实测看不清）；且挤在条里时列宽不够。
+   * 语义由 phase 决定：
    * - phase='detecting'：场景检测（全片低分辨率解码），done/total = 已解码秒 / 总时长
    * - phase='extracting'：抽帧，done/total = 帧数
-   * 已用/剩余时长、已分析秒数这类补充信息放 hover title，不占视觉。
-   * 算采样计划（阶段 2）是毫秒级纯计算，不单独占进度条。
+   * 已用/剩余时长、已分析秒数放 hover title，不占视觉。
    */
   const frameProgressBar = (() => {
     if (!frameProgress || video.status !== 'indexing') return null
@@ -149,8 +153,8 @@ export function VideoRow({
     const pct = hasTotal
       ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100))
       : null
-    // 条内文字：检测报百分比、抽帧报帧数（形式随阶段不同，位置统一在条内）
-    const barText =
+    // 数字：检测报百分比、抽帧报帧数（形式随阶段不同，位置统一在文字行右侧）
+    const countText =
       pct === null
         ? '分析中'
         : detecting
@@ -164,18 +168,20 @@ export function VideoRow({
           remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中'
         }`
     return (
-      <div className="mt-1 flex items-center gap-1" title={hint}>
-        {/* 阶段标签 + 同色进度条：两个阶段各有身份（检测=琥珀 / 抽帧=蓝），
-            切换时一眼看出是另一段进度 */}
-        <span
-          className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
-            detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
-          }`}
-        >
-          {detecting ? '场景检测' : '抽帧'}
-        </span>
+      <div className="mt-1 space-y-1" title={hint}>
+        <div className="flex items-center gap-1.5">
+          {/* 阶段标签 + 同色进度条：两个阶段各有身份（检测=琥珀 / 抽帧=蓝） */}
+          <span
+            className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
+              detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
+            }`}
+          >
+            {detecting ? '场景检测' : '抽帧'}
+          </span>
+          <span className="ml-auto text-[10px] leading-tight text-primary">{countText}</span>
+        </div>
         <div
-          className="h-2.5 flex-1 rounded-full overflow-hidden relative bg-line"
+          className="h-2 rounded-full overflow-hidden bg-line"
           role="progressbar"
           aria-valuenow={pct ?? 0}
           aria-valuemin={0}
@@ -186,9 +192,6 @@ export function VideoRow({
             className={`h-full transition-[width] duration-200 ease-out ${detecting ? 'bg-warn' : 'bg-accent'}`}
             style={{ width: `${pct ?? 0}%` }}
           />
-          <span className="absolute inset-0 flex items-center justify-center text-[8px] text-primary select-none pointer-events-none whitespace-nowrap">
-            {barText}
-          </span>
         </div>
       </div>
     )
