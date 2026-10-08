@@ -390,6 +390,11 @@ async function main() {
 
     const indexerSrc = readFileSync(join(root, 'src', 'main', 'indexer.ts'), 'utf8')
     check(
+      'getFrameProgress 展开内部对象（不手写字段清单，防漏 phase）',
+      indexerSrc.includes('return p ? { videoId, ...p } : null'),
+      '曾手写 { done, total } 漏掉 phase —— UI 阶段显示全失效'
+    )
+    check(
       'reindex 重建前调用 clearFrames（防回归静态守卫）',
       /clearFrames\(targetIds\)/.test(indexerSrc),
       '新计划比旧计划短时多余帧会残留'

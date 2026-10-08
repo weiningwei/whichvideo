@@ -626,7 +626,10 @@ export class Indexer {
   /** 获取单视频帧进度（供 IPC 查询） */
   getFrameProgress(videoId: number): FrameProgress | null {
     const p = this.frameProgress.get(videoId)
-    return p ? { videoId, done: p.done, total: p.total } : null
+    // 展开内部对象而不是手写字段清单 —— 曾因手写 { done, total } 漏掉 phase，
+    // 导致渲染端永远判定不出「场景检测」阶段（徽标恒为「索引中」、进度条
+    // 拿秒数当帧数显示）。以后内部对象加字段会自动带出去。
+    return p ? { videoId, ...p } : null
   }
 }
 
