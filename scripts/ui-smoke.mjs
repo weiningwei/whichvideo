@@ -1068,9 +1068,19 @@ export default mod
     )
 
     check(
-      '检测阶段状态徽标显示「场景检测中」（不只说索引中）',
-      lib.includes("detecting") && lib.includes('场景检测中'),
-      '徽标只写「索引中」用户看不出在跑检测'
+      '徽标只表达状态（「索引中」），阶段交给进度条标签（不再两处重复）',
+      !lib.includes('场景检测中') && lib.includes("'场景检测' : '抽帧'"),
+      '用户实测"场景检测出现两次"：徽标与标签都在说阶段'
+    )
+    check(
+      '进度数字只在进度条内出现一次（右侧不再重复一行）',
+      lib.includes('const barText') && !lib.includes('whitespace-nowrap text-primary ml-auto'),
+      '条内 + 右侧两处显示同一个数字'
+    )
+    check(
+      '冗余时长信息收进 hover title（不占视觉）',
+      lib.includes('title={hint}') && lib.includes('已用 ') && lib.includes('剩余 '),
+      '已用/剩余保留在 title 里可查，但不重复占版面'
     )
 
     check(

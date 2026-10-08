@@ -117,28 +117,28 @@ export function VideoRow({
         : video.status === 'indexing'
           ? 'border-accent/40 bg-accent/10 text-accent'
           : 'border-warn/40 bg-warn/10 text-warn'
-  // 场景检测阶段（phase='detecting'）徽标单独成词：检测是一次全片解码、
-  // 与抽帧是两回事，长视频要跑数秒 —— 只写「索引中」用户看不出在干什么。
-  const detecting = frameProgress?.phase === 'detecting'
+  /**
+   * 徽标只表达**状态**（索引中 / 已索引 / 失败 / 待索引），阶段信息交给
+   * 进度条左侧的阶段标签 —— 两处都说阶段会重复，措辞还容易打架
+   * （徽标「索引中」vs 标签「抽帧」）。职责分离：徽标=状态，标签=阶段。
+   */
   const statusText =
     video.status === 'ready'
       ? '已索引'
       : video.status === 'failed'
         ? '索引失败'
         : video.status === 'indexing'
-          ? detecting
-            ? '场景检测中'
-            : '索引中'
+          ? '索引中'
           : '待索引'
 
   const selected = isVideoSelected(video.id)
 
   /**
-   * 进度条（仅索引中显示）。两个阶段共用一条进度条，语义由 phase 决定：
-   * - phase='detecting'：场景检测（一次全片低分辨率解码），done/total 是
-   *   已解码秒数 / 总时长秒数 —— 这是场景采样比均匀采样多出的第一段等待，
-   *   不显示的话长视频检测期间界面像卡死；时长未知时显示不定态「分析中」
-   * - phase='extracting'（默认）：抽帧，done/total 是帧数
+   * 进度条（仅索引中显示）。**一行结构**：阶段标签 + 进度条，数字嵌在条内
+   * （只出现一次，不再右侧重复）。语义由 phase 决定：
+   * - phase='detecting'：场景检测（全片低分辨率解码），done/total = 已解码秒 / 总时长
+   * - phase='extracting'：抽帧，done/total = 帧数
+   * 已用/剩余时长、已分析秒数这类补充信息放 hover title，不占视觉。
    * 算采样计划（阶段 2）是毫秒级纯计算，不单独占进度条。
    */
   const frameProgressBar = (() => {
@@ -149,36 +149,33 @@ export function VideoRow({
     const pct = hasTotal
       ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100))
       : null
+    // 条内文字：检测报百分比、抽帧报帧数（形式随阶段不同，位置统一在条内）
+    const barText =
+      pct === null
+        ? '分析中'
+        : detecting
+          ? `${pct}%`
+          : `${frameProgress.done}/${frameProgress.total}`
+    const hint = detecting
+      ? hasTotal
+        ? `场景检测：已分析 ${Math.round(frameProgress.done)}/${Math.round(frameProgress.total)} 秒`
+        : '场景检测：正在分析镜头切换点'
+      : `抽帧：已用 ${formatDuration(Math.round(elapsedMs / 1000))} · 剩余 ${
+          remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中'
+        }`
     return (
-      <div className="mt-1 space-y-0.5">
-        <div className="flex items-center gap-1.5 text-[10px] text-muted">
-          {/* 阶段标签：两个阶段各有一枚常驻标识（检测=琥珀 / 抽帧=蓝），
-              配合进度条本身的同色填充 —— 只靠文案区分太弱，阶段切换时
-              用户看不出\"这是另一段进度\"。 */}
-          <span
-            className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
-              detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
-            }`}
-          >
-            {detecting ? '场景检测' : '抽帧'}
-          </span>
-          <span className="whitespace-nowrap flex items-center gap-1">
-            {detecting ? (
-              <span>分析镜头切换点…</span>
-            ) : (
-              <>
-                <span>已用 {formatDuration(Math.round(elapsedMs / 1000))}</span>
-                <span className="text-line">·</span>
-                <span>剩余 {remainingMs > 0 ? formatDuration(Math.round(remainingMs / 1000)) : '计算中...'}</span>
-              </>
-            )}
-          </span>
-          <span className="whitespace-nowrap text-primary ml-auto">
-            {pct === null ? '分析中' : detecting ? `${pct}%` : `${frameProgress.done}/${frameProgress.total}`}
-          </span>
-        </div>
+      <div className="mt-1 flex items-center gap-1" title={hint}>
+        {/* 阶段标签 + 同色进度条：两个阶段各有身份（检测=琥珀 / 抽帧=蓝），
+            切换时一眼看出是另一段进度 */}
+        <span
+          className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
+            detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
+          }`}
+        >
+          {detecting ? '场景检测' : '抽帧'}
+        </span>
         <div
-          className="h-2 bg-line rounded-full overflow-hidden relative"
+          className="h-2.5 flex-1 rounded-full overflow-hidden relative bg-line"
           role="progressbar"
           aria-valuenow={pct ?? 0}
           aria-valuemin={0}
@@ -189,11 +186,9 @@ export function VideoRow({
             className={`h-full transition-[width] duration-200 ease-out ${detecting ? 'bg-warn' : 'bg-accent'}`}
             style={{ width: `${pct ?? 0}%` }}
           />
-          {pct !== null && (
-            <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/90 select-none pointer-events-none whitespace-nowrap">
-              {pct}%
-            </span>
-          )}
+          <span className="absolute inset-0 flex items-center justify-center text-[8px] text-primary select-none pointer-events-none whitespace-nowrap">
+            {barText}
+          </span>
         </div>
       </div>
     )
