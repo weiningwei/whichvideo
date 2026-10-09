@@ -14,16 +14,20 @@ import {
   DHASH_OFFSET,
   FRAME_STRIDE,
   META_OFFSET,
+  SPATIAL_BYTES,
+  SPATIAL_OFFSET,
   STRUCT_BYTES,
   STRUCT_OFFSET,
   quantizeColor,
   quantizedColorfulness,
-  quantizedHistogramSimilarity
+  quantizedHistogramSimilarity,
+  spatialSimilarity
 } from '@shared/framepack'
 import { DHASH_PRUNE_BITS, STRUCT_PRUNE_BITS } from './constants'
 import {
   COLOR_WEIGHT_MAX,
   COLOR_WEIGHT_MIN,
+  SPATIAL_WEIGHT,
   computeSignature,
   type ImageDataLike
 } from '@shared/hash'
@@ -60,6 +64,8 @@ export interface QueryVector {
   struct: Uint8Array
   /** 64 字节量化颜色直方图 */
   color: Uint8Array
+  /** 48 字节空间颜色布局（4×4 网格每格 RGB 均值） */
+  spatial: Uint8Array
   /** 颜色鲜明度，决定结构与颜色的权重 */
   colorfulness: number
 }
@@ -72,6 +78,7 @@ export function queryVectorFromImage(img: ImageDataLike): QueryVector {
     dhash: signature.dhash,
     struct: signature.struct,
     color,
+    spatial: signature.spatial,
     colorfulness: quantizedColorfulness(color)
   }
 }
@@ -171,6 +178,7 @@ export class FrameSearchIndex {
         dhash: dHi * 0x100000000 + dLo,
         struct: this.buffer.subarray(off + STRUCT_OFFSET, off + STRUCT_OFFSET + STRUCT_BYTES),
         color: color,
+        spatial: this.buffer.subarray(off + SPATIAL_OFFSET, off + SPATIAL_OFFSET + SPATIAL_BYTES),
         colorfulness: quantizedColorfulness(color)
       })
     }
@@ -194,6 +202,7 @@ export class FrameSearchIndex {
     const qDhashLo = Number(BigInt.asUintN(32, BigInt(query.dhash))) >>> 0
     const qStruct = query.struct
     const qColor = query.color
+    const qSpatial = query.spatial
     // 查询结构指纹转 u32（query 的 byteOffset 均为 4 的倍数：新建数组或
     // buffer 内 144*idx+8 的 subarray），与小端写入的库侧指纹逐字比较
     const qS32 = new Uint32Array(qStruct.buffer, qStruct.byteOffset, STRUCT_BYTES >> 2)
@@ -216,7 +225,10 @@ export class FrameSearchIndex {
       if (hashScore < minHash) continue
 
       const off = i * FRAME_STRIDE
-      const colorScore = quantizedHistogramSimilarity(qColor, this.buffer, off + COLOR_OFFSET)
+      const histogramScore = quantizedHistogramSimilarity(qColor, this.buffer, off + COLOR_OFFSET)
+      const spatialScore = spatialSimilarity(qSpatial, this.buffer, off + SPATIAL_OFFSET)
+      // 颜色分 = 直方图相交(判颜色组成) + 空间布局(判颜色摆位)，两者互补
+      const colorScore = histogramScore * (1 - SPATIAL_WEIGHT) + spatialScore * SPATIAL_WEIGHT
       const score = hashScore * structWeight + colorScore * weight
 
       const videoId = this.videoIds[i]

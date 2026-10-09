@@ -55,6 +55,11 @@ const bottomOnly = makeImage(64, 64, (x, y) => (y >= 32 ? [stripes(x), stripes(x
 /** 只有上半部分有条纹，下半纯黑 */
 const topOnly = makeImage(64, 64, (x, y) => (y < 32 ? [stripes(x), stripes(x), stripes(x)] : [0, 0, 0]))
 
+/** 左红右蓝：颜色组成 50% 红 + 50% 蓝 */
+const leftRedRightBlue = makeImage(64, 64, (x, y) => (x < 32 ? [255, 0, 0] : [0, 0, 255]))
+/** 上红下蓝：颜色组成与左红右蓝完全一致，只是摆法不同 */
+const topRedBottomBlue = makeImage(64, 64, (x, y) => (y < 32 ? [255, 0, 0] : [0, 0, 255]))
+
 function popcount(x) {
   let v = x - ((x >>> 1) & 0x55555555)
   v = (v + (v >>> 2)) & 0x33333333
@@ -73,7 +78,7 @@ async function main() {
     console.error(`找不到 ${hashPath}，请先运行 node scripts/build-core.mjs`)
     process.exit(1)
   }
-  const { computeStructHash, structSimilarity, STRUCT_BYTES } = await import(
+  const { computeStructHash, structSimilarity, STRUCT_BYTES, computeSpatialLayout, SPATIAL_BYTES, computeColorHistogram } = await import(
     pathToFileURL(hashPath).href
   )
   const BITS = STRUCT_BYTES * 8
@@ -153,6 +158,30 @@ async function main() {
     '指纹位利用率合理（非退化全 0/全 1）',
     usage > 0.05 && usage < 0.95,
     `1 的占比 ${(usage * 100).toFixed(1)}%`
+  )
+
+  console.log('\n=== 空间颜色布局 ===')
+
+  check('导出 computeSpatialLayout', typeof computeSpatialLayout === 'function')
+  const spatialLR = computeSpatialLayout(leftRedRightBlue)
+  check('空间描述符为 48 字节', SPATIAL_BYTES === 48 && spatialLR.length === 48, `${spatialLR.length} 字节`)
+
+  // 核心性质：直方图只统计颜色组成、丢掉空间位置 —— 「左红右蓝」与「上红下蓝」
+  // 都是 50% 红 + 50% 蓝，直方图完全一致；空间布局描述符必须能把它们区分开。
+  const histLR = computeColorHistogram(leftRedRightBlue)
+  const histTB = computeColorHistogram(topRedBottomBlue)
+  let histDiff = 0
+  for (let i = 0; i < histLR.length; i++) histDiff += Math.abs(histLR[i] - histTB[i])
+  check('直方图无法区分两种摆法（同一颜色组成）', histDiff < 1e-6, `直方图差 ${histDiff.toFixed(6)}`)
+
+  const spatialTB = computeSpatialLayout(topRedBottomBlue)
+  let spatialDiff = 0
+  for (let i = 0; i < spatialLR.length; i++) spatialDiff += Math.abs(spatialLR[i] - spatialTB[i])
+  check('空间布局能区分两种摆法（直方图做不到）', spatialDiff > 0, `L1 差 ${spatialDiff}`)
+
+  check(
+    '空间描述符两次计算结果一致（确定性）',
+    computeSpatialLayout(leftRedRightBlue).every((v, i) => v === spatialLR[i])
   )
 
   console.log(`\n=== 结构指纹：${passed}/${passed + failed} 通过 ===`)

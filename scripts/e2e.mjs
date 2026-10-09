@@ -239,6 +239,7 @@ async function main() {
         dhash: sig.dhash,
         struct: sig.struct,
         color: quantizeColor(sig.color),
+        spatial: sig.spatial,
         frameIndex: i,
         timeMs: Math.round(time * 1000)
       }
@@ -361,6 +362,7 @@ async function main() {
         dhash: 0n,
         struct: Buffer.alloc(64),
         color: Buffer.alloc(64),
+        spatial: Buffer.alloc(48),
         frameIndex: i,
         timeMs: i * 1000
       }))

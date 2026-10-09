@@ -15,6 +15,8 @@ import {
   DHASH_OFFSET,
   FRAME_STRIDE,
   META_OFFSET,
+  SPATIAL_BYTES,
+  SPATIAL_OFFSET,
   STRUCT_BYTES,
   STRUCT_OFFSET,
   dequantizeColor
@@ -26,6 +28,7 @@ export interface RawFrameRow {
   dhash: Buffer
   struct: Buffer
   color: Buffer
+  spatial: Buffer
   frame_index: number
   time_ms: number
 }
@@ -57,6 +60,7 @@ export function buildFrameMatrix(rows: RawFrameRow[]): FrameMatrix {
     buffer.set(row.dhash.subarray(0, DHASH_BYTES), off + DHASH_OFFSET)
     buffer.set(row.struct.subarray(0, STRUCT_BYTES), off + STRUCT_OFFSET)
     buffer.set(row.color.subarray(0, COLOR_BYTES), off + COLOR_OFFSET)
+    buffer.set(row.spatial.subarray(0, SPATIAL_BYTES), off + SPATIAL_OFFSET)
     view.setUint32(off + META_OFFSET, row.frame_index >>> 0, true)
     view.setUint32(off + META_OFFSET + 4, row.time_ms >>> 0, true)
     videoIds[i] = row.video_id
@@ -67,7 +71,7 @@ export function buildFrameMatrix(rows: RawFrameRow[]): FrameMatrix {
 /** 一次性把所有帧指纹读进内存（供搜索全量扫描） */
 export function loadFrameMatrix(db: SqliteDatabase): FrameMatrix {
   const rows = db
-    .prepare('SELECT video_id, dhash, struct, color, frame_index, time_ms FROM frames')
+    .prepare('SELECT video_id, dhash, struct, color, spatial, frame_index, time_ms FROM frames')
     .all() as RawFrameRow[]
   return buildFrameMatrix(rows)
 }
@@ -79,7 +83,7 @@ export function loadFrameMatrixForVideos(db: SqliteDatabase, videoIds: number[])
   const placeholders = videoIds.map(() => '?').join(',')
   const rows = db
     .prepare(
-      `SELECT video_id, dhash, struct, color, frame_index, time_ms FROM frames WHERE video_id IN (${placeholders})`
+      `SELECT video_id, dhash, struct, color, spatial, frame_index, time_ms FROM frames WHERE video_id IN (${placeholders})`
     )
     .all(...videoIds) as RawFrameRow[]
   return buildFrameMatrix(rows)

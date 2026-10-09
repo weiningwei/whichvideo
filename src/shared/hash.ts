@@ -30,6 +30,8 @@ export interface FrameSignature {
   struct: Uint8Array
   /** 归一化颜色直方图，元素为 0~1 */
   color: Float32Array
+  /** 空间颜色布局：4×4 网格每格 RGB 均值（48 字节，u8），补直方图丢掉的"颜色在哪" */
+  spatial: Uint8Array
   /** 画面平均亮度 0~255 */
   luma: number
 }
@@ -37,6 +39,8 @@ export interface FrameSignature {
 export const COLOR_BINS = 64
 export const STRUCT_BYTES = 64
 export const DHASH_BYTES = 8
+export const SPATIAL_GRID = 4
+export const SPATIAL_BYTES = SPATIAL_GRID * SPATIAL_GRID * 3
 
 /** 结构指纹网格：16x16 × 4 通道 = 1024 个格子，每通道等距抽样 128 个共 512 bit */
 const STRUCT_GRID = 16
@@ -272,6 +276,41 @@ export function meanLuma(gray: GrayImage): number {
 }
 
 /* ------------------------------------------------------------------ *
+ * 空间颜色布局：4x4 网格每格 RGB 均值
+ * ------------------------------------------------------------------ */
+
+/**
+ * 把图切成 4×4 网格，记录每格的 R/G/B 均值（各量化为 u8），共 48 字节。
+ *
+ * 全局颜色直方图只统计"画面里有哪些颜色、各占多少"，完全丢掉"颜色分布在哪"：
+ * 上半红下半蓝与上半蓝下半红直方图完全一致，却显然是两幅画面。空间布局描述符
+ * 补上这块：直方图负责"颜色组成"，网格均值负责"颜色在空间上的摆法"，二者合起来
+ * 才是完整的颜色判据。网格均值用 box 平均（与 cellGrid 同一套），对缩放/再压缩
+ * 稳定；绝对值（非均值归一化）——颜色绝对值本就该由颜色通道保留，结构指纹才做
+ * 相对归一化。
+ */
+export function computeSpatialLayout(img: ImageDataLike): Uint8Array {
+  const { width: w, height: h, channels, data } = img
+  const bgr = img.order === 'bgr'
+  const out = new Uint8Array(SPATIAL_BYTES)
+  const channel = (c: number) => (x: number, y: number): number => {
+    const idx = (y * w + x) * channels
+    if (c === 0) return bgr ? data[idx + 2] : data[idx]
+    if (c === 1) return data[idx + 1]
+    return bgr ? data[idx] : data[idx + 2]
+  }
+  let o = 0
+  for (let c = 0; c < 3; c++) {
+    const grid = cellGrid(w, h, SPATIAL_GRID, channel(c))
+    for (let i = 0; i < grid.length; i++) {
+      const v = grid[i]
+      out[o++] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v)
+    }
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ *
  * 像素级结构相似度（SSIM）—— 二阶段验证重排用
  * ------------------------------------------------------------------ */
 
@@ -340,6 +379,7 @@ export function computeSignature(img: ImageDataLike): FrameSignature {
     dhash: computeDHash(gray98),
     struct: computeStructHash(img),
     color: computeColorHistogram(img),
+    spatial: computeSpatialLayout(img),
     luma: meanLuma(gray98)
   }
 }
@@ -354,3 +394,5 @@ export function computeSignature(img: ImageDataLike): FrameSignature {
  */
 export const COLOR_WEIGHT_MIN = 0.3
 export const COLOR_WEIGHT_MAX = 0.7
+/** 颜色分内部：空间布局相似度占比（直方图相交占 1 - 该值） */
+export const SPATIAL_WEIGHT = 0.35

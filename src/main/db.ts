@@ -22,7 +22,7 @@ import {
   type VideoStatus,
   type WatchedFolder
 } from '@shared/types'
-import { COLOR_BYTES, STRUCT_BYTES } from '@shared/framepack'
+import { COLOR_BYTES, FRAME_FORMAT_VERSION, SPATIAL_BYTES, STRUCT_BYTES } from '@shared/framepack'
 import {
   exportFrameColor,
   frameCount,
@@ -39,6 +39,8 @@ export interface NewFrame {
   struct: Uint8Array
   /** 64 字节量化颜色直方图 */
   color: Uint8Array
+  /** 48 字节空间颜色布局（4×4 网格每格 RGB 均值） */
+  spatial: Uint8Array
   frameIndex: number
   timeMs: number
 }
@@ -152,8 +154,8 @@ export class LibraryDatabase {
     this.db.pragma('foreign_keys = ON')
     this.migrate()
     this.insertFrameStmt = this.db.prepare(
-      `INSERT OR REPLACE INTO frames (video_id, frame_index, time_ms, dhash, struct, color)
-       SELECT ?, ?, ?, ?, ?, ?
+      `INSERT OR REPLACE INTO frames (video_id, frame_index, time_ms, dhash, struct, color, spatial)
+       SELECT ?, ?, ?, ?, ?, ?, ?
        WHERE EXISTS (SELECT 1 FROM videos WHERE id = ?)`
     )
   }
@@ -195,6 +197,7 @@ export class LibraryDatabase {
         dhash BLOB NOT NULL,
         struct BLOB NOT NULL,
         color BLOB NOT NULL,
+        spatial BLOB NOT NULL,
         PRIMARY KEY (video_id, frame_index)
       ) WITHOUT ROWID;
 
@@ -240,6 +243,24 @@ export class LibraryDatabase {
       this.db.exec(`ALTER TABLE videos ADD COLUMN sampling_override TEXT`)
     } catch {
       /* 列已存在 */
+    }
+    // 迁移：旧库没有 spatial 列（空间颜色布局描述符，4×4 网格每格 RGB 均值）
+    try {
+      this.db.exec(`ALTER TABLE frames ADD COLUMN spatial BLOB`)
+    } catch {
+      /* 列已存在 */
+    }
+    // 帧格式版本迁移：user_version 落后于 FRAME_FORMAT_VERSION 说明旧库的指纹
+    // 与新布局不兼容（字段/字节数变了），清空帧并把全部视频标回 pending ——
+    // resumePending 会在启动时自动重抽。旧指纹不能留着，否则会以错误偏移参与比对。
+    const currentVersion = this.db.pragma('user_version', { simple: true }) as number
+    if (currentVersion !== FRAME_FORMAT_VERSION) {
+      this.db.exec(`
+        DELETE FROM frames;
+        UPDATE videos SET status = 'pending', frame_count = 0, indexed_at = NULL,
+          processed_timestamps = '[]', processed_ms = 0;
+      `)
+      this.db.pragma(`user_version = ${FRAME_FORMAT_VERSION}`)
     }
   }
 
@@ -523,6 +544,7 @@ export class LibraryDatabase {
           Buffer.from(u64ToLe(f.dhash)),
           Buffer.from(f.struct.subarray(0, STRUCT_BYTES)),
           Buffer.from(f.color.subarray(0, COLOR_BYTES)),
+          Buffer.from(f.spatial.subarray(0, SPATIAL_BYTES)),
           videoId
         )
       }
@@ -553,6 +575,7 @@ export class LibraryDatabase {
           Buffer.from(u64ToLe(f.dhash)),
           Buffer.from(f.struct.subarray(0, STRUCT_BYTES)),
           Buffer.from(f.color.subarray(0, COLOR_BYTES)),
+          Buffer.from(f.spatial.subarray(0, SPATIAL_BYTES)),
           videoId
         )
       }

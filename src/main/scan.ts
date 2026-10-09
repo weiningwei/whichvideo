@@ -162,6 +162,7 @@ async function extractAndHashBySeek(
         dhash: sig.dhash,
         struct: sig.struct,
         color: quantizeColor(sig.color),
+        spatial: sig.spatial,
         frameIndex,
         timeMs: Math.round(batchTimestamps[i] * 1000)
       })
@@ -216,6 +217,7 @@ async function extractAndHashByFullScan(
       dhash: sig.dhash,
       struct: sig.struct,
       color: quantizeColor(sig.color),
+      spatial: sig.spatial,
       frameIndex,
       timeMs: Math.round(time * 1000)
     })

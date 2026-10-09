@@ -5,9 +5,10 @@
  *   0   : 8 字节  64bit dHash（搜索时先比它做剪枝）
  *   8   : 64 字节 512bit 均值归一化结构指纹
  *   72  : 64 字节 颜色直方图（4x4x4 RGB 分桶，量化为 u8）
- *   136 : 4 字节  frameIndex (u32)
- *   140 : 4 字节  timeMs (u32)
- * 合计 144 字节/帧 —— 10 万帧约 14MB，可以整块常驻内存。
+ *   136 : 48 字节 空间颜色布局（4x4 网格每格 RGB 均值，u8）
+ *   184 : 4 字节  frameIndex (u32)
+ *   188 : 4 字节  timeMs (u32)
+ * 合计 192 字节/帧 —— 10 万帧约 19MB，可以整块常驻内存。
  */
 export const DHASH_OFFSET = 0
 export const DHASH_BYTES = 8
@@ -15,8 +16,17 @@ export const STRUCT_OFFSET = DHASH_OFFSET + DHASH_BYTES
 export const STRUCT_BYTES = 64
 export const COLOR_OFFSET = STRUCT_OFFSET + STRUCT_BYTES
 export const COLOR_BYTES = 64
-export const META_OFFSET = COLOR_OFFSET + COLOR_BYTES
+export const SPATIAL_OFFSET = COLOR_OFFSET + COLOR_BYTES
+export const SPATIAL_BYTES = 48
+export const META_OFFSET = SPATIAL_OFFSET + SPATIAL_BYTES
 export const FRAME_STRIDE = META_OFFSET + 8
+
+/**
+ * 帧指纹格式版本。**任何**布局/尺寸变更（增删字段、改字节数）都必须 +1：
+ * 库启动时对比 SQLite 的 user_version，落后即清空 frames 并标记全部视频
+ * 待重索引（resumePending 会自动重抽）。旧指纹与新布局不兼容，不能留着。
+ */
+export const FRAME_FORMAT_VERSION = 2
 
 /**
  * Float32 颜色直方图（和为 1）→ u8 量化。
@@ -58,4 +68,17 @@ export function quantizedColorfulness(color: Uint8Array): number {
   let max = 0
   for (let i = 0; i < COLOR_BYTES; i++) if (color[i] > max) max = color[i]
   return max / 255
+}
+
+/**
+ * 空间颜色布局相似度（0~1）：48 字节（16 格 × RGB）的归一化 L1 距离。
+ * 与直方图相交相似度互补 —— 直方图判"颜色组成"，这里判"颜色摆在哪"。
+ */
+export function spatialSimilarity(a: Uint8Array, b: Uint8Array, bOffset = 0): number {
+  let diff = 0
+  for (let i = 0; i < SPATIAL_BYTES; i++) {
+    const d = a[i] - b[bOffset + i]
+    diff += d < 0 ? -d : d
+  }
+  return Math.max(0, 1 - diff / (SPATIAL_BYTES * 255))
 }
