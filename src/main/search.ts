@@ -20,7 +20,8 @@ import {
   quantizedColorfulness,
   quantizedHistogramSimilarity
 } from '@shared/framepack'
-import { DHASH_PRUNE_BITS, STRUCT_PRUNE_BITS } from './constants'
+import { temporalSupport } from './aggregate'
+import { DHASH_PRUNE_BITS, STRUCT_PRUNE_BITS, TEMPORAL_WINDOW_SECONDS } from './constants'
 import {
   COLOR_WEIGHT_MAX,
   COLOR_WEIGHT_MIN,
@@ -29,6 +30,8 @@ import {
 } from '@shared/hash'
 
 const STRUCT_BITS = STRUCT_BYTES * 8
+/** 视频级聚合保留的命中帧数（top-K）：足够捕获时间上贴近最佳帧的次强命中 */
+const TOP_K = 4
 
 export interface FrameIndexInfo {
   frames: number
@@ -39,6 +42,16 @@ export interface FrameIndexInfo {
 
 export interface IndexedHit {
   videoId: number
+  frameIndex: number
+  timeSeconds: number
+  score: number
+  hashScore: number
+  colorScore: number
+  hashDistance: number
+}
+
+/** 单个视频内的一帧命中（搜索聚合用），按 score 降序保留 top-K */
+interface VideoHit {
   frameIndex: number
   timeSeconds: number
   score: number
@@ -179,7 +192,9 @@ export class FrameSearchIndex {
 
   /**
    * 视频级结果：
-   * score = 最佳帧(0.75) + 次佳帧(0.25)，避免单帧偶然命中把无关视频排到前面。
+   * score = 最佳帧(0.75) + 时间一致性支持度(0.25)。次佳帧不再取「全局次佳」
+   * （可在任意时间点），而是取「时间上贴近最佳帧」的次强命中（见 aggregate.ts），
+   * 避免散落整片时间轴的偶然命中抬高无关视频。
    */
   search(query: QueryVector, options: SearchOptions): { results: IndexedHit[]; comparedFrames: number } {
     const view = this.view
@@ -198,7 +213,7 @@ export class FrameSearchIndex {
     // buffer 内 144*idx+8 的 subarray），与小端写入的库侧指纹逐字比较
     const qS32 = new Uint32Array(qStruct.buffer, qStruct.byteOffset, STRUCT_BYTES >> 2)
     const minHash = options.minHashScore
-    const best = new Map<number, IndexedHit & { secondBest: number }>()
+    const best = new Map<number, VideoHit[]>()
 
     for (let i = 0; i < count; i++) {
       const w = (i * FRAME_STRIDE) >> 2
@@ -220,43 +235,36 @@ export class FrameSearchIndex {
       const score = hashScore * structWeight + colorScore * weight
 
       const videoId = this.videoIds[i]
-      const current = best.get(videoId)
       const frameIndex = view.getUint32(off + META_OFFSET, true)
       const timeSeconds = view.getUint32(off + META_OFFSET + 4, true) / 1000
-      if (!current) {
-        best.set(videoId, {
-          videoId,
-          frameIndex,
-          timeSeconds,
-          score,
-          hashScore,
-          colorScore,
-          hashDistance: structDistance,
-          secondBest: 0
-        })
-      } else if (score > current.score) {
-        current.secondBest = current.score
-        current.frameIndex = frameIndex
-        current.timeSeconds = timeSeconds
-        current.score = score
-        current.hashScore = hashScore
-        current.colorScore = colorScore
-        current.hashDistance = structDistance
-      } else if (score > current.secondBest) {
-        current.secondBest = score
+      let hits = best.get(videoId)
+      if (!hits) {
+        hits = []
+        best.set(videoId, hits)
       }
+      // 按 score 降序插入，只保留 top-K，供时间一致性聚合
+      let pos = hits.length
+      for (let j = 0; j < hits.length; j++) {
+        if (score > hits[j].score) { pos = j; break }
+      }
+      hits.splice(pos, 0, { frameIndex, timeSeconds, score, hashScore, colorScore, hashDistance: structDistance })
+      if (hits.length > TOP_K) hits.pop()
     }
 
-    const results = [...best.values()]
-      .map((v) => ({
-        videoId: v.videoId,
-        frameIndex: v.frameIndex,
-        timeSeconds: v.timeSeconds,
-        score: v.score * 0.75 + v.secondBest * 0.25,
-        hashScore: v.hashScore,
-        colorScore: v.colorScore,
-        hashDistance: v.hashDistance
-      }))
+    const results = [...best.entries()]
+      .map(([videoId, hits]) => {
+        const b = hits[0]
+        const support = temporalSupport(hits, TEMPORAL_WINDOW_SECONDS)
+        return {
+          videoId,
+          frameIndex: b.frameIndex,
+          timeSeconds: b.timeSeconds,
+          score: b.score * 0.75 + support * 0.25,
+          hashScore: b.hashScore,
+          colorScore: b.colorScore,
+          hashDistance: b.hashDistance
+        }
+      })
       .sort((a, b) => b.score - a.score)
       .slice(0, options.maxResults)
 

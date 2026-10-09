@@ -49,6 +49,13 @@ export const DHASH_PRUNE_BITS = 24
 /** 结构距离上限：超过则直接丢弃（512bit 中 224bit 不同） */
 export const STRUCT_PRUNE_BITS = 224
 
+/**
+ * 时间一致性窗口（秒）：视频级打分时，次强命中帧距最佳帧超过该窗口即视为
+ * 时间上不相关的偶然命中，衰减为 0（见 aggregate.ts::temporalSupport）。
+ * 真命中通常聚在某个时间窗内（同一镜头 ±若干秒），假命中随机散落整片时间轴。
+ */
+export const TEMPORAL_WINDOW_SECONDS = 20
+
 // ===== 网络请求（仅 url-image.ts 链接取图） =====
 /** 单个响应体上限（字节，10 MB） */
 export const MAX_BYTES = 10 * 1024 * 1024
