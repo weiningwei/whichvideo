@@ -22,17 +22,15 @@ import {
   type VideoStatus,
   type WatchedFolder
 } from '@shared/types'
+import { COLOR_BYTES, STRUCT_BYTES } from '@shared/framepack'
 import {
-  COLOR_BYTES,
-  COLOR_OFFSET,
-  DHASH_BYTES,
-  DHASH_OFFSET,
-  FRAME_STRIDE,
-  META_OFFSET,
-  STRUCT_BYTES,
-  STRUCT_OFFSET,
-  dequantizeColor
-} from '@shared/framepack'
+  exportFrameColor,
+  frameCount,
+  loadFrameMatrix,
+  loadFrameMatrixForVideos,
+  u64ToLe,
+  type FrameMatrix
+} from './framestore'
 
 export interface NewFrame {
   /** 64bit dHash */
@@ -711,28 +709,12 @@ export class LibraryDatabase {
    * 一次性把所有帧指纹读进内存。上万视频（数十万帧）约几十 MB，
    * 之后每次图片搜索都只是纯内存的汉明距离扫描。
    */
-  loadFrameMatrix(): { buffer: Uint8Array<ArrayBufferLike>; videoIds: Int32Array<ArrayBufferLike>; count: number } {
-    const rows = this.db
-      .prepare('SELECT video_id, dhash, struct, color, frame_index, time_ms FROM frames')
-      .all() as RawFrameRow[]
-    return buildFrameMatrix(rows)
+  loadFrameMatrix(): FrameMatrix {
+    return loadFrameMatrix(this.db)
   }
 
-  loadFrameMatrixForVideos(videoIds: number[]): {
-    buffer: Uint8Array<ArrayBufferLike>
-    videoIds: Int32Array<ArrayBufferLike>
-    count: number
-  } {
-    if (videoIds.length === 0) {
-      return { buffer: new Uint8Array(0), videoIds: new Int32Array(0), count: 0 }
-    }
-    const placeholders = videoIds.map(() => '?').join(',')
-    const rows = this.db
-      .prepare(
-        `SELECT video_id, dhash, struct, color, frame_index, time_ms FROM frames WHERE video_id IN (${placeholders})`
-      )
-      .all(...videoIds) as RawFrameRow[]
-    return buildFrameMatrix(rows)
+  loadFrameMatrixForVideos(videoIds: number[]): FrameMatrix {
+    return loadFrameMatrixForVideos(this.db, videoIds)
   }
 
   getThumbnail(videoId: number): string | null {
@@ -755,54 +737,12 @@ export class LibraryDatabase {
 
   /** 内置演示/自检用：把一帧的量化颜色还原 */
   exportFrameColor(videoId: number, frameIndex: number): Float32Array | null {
-    const row = this.db
-      .prepare('SELECT color FROM frames WHERE video_id = ? AND frame_index = ?')
-      .get(videoId, frameIndex) as { color: Buffer } | undefined
-    if (!row) return null
-    return dequantizeColor(new Uint8Array(row.color.subarray(0, 64)))
+    return exportFrameColor(this.db, videoId, frameIndex)
   }
 
   /** 打包后的帧行数（用于确认索引规模） */
   frameCount(): number {
-    return (this.db.prepare('SELECT COUNT(*) AS c FROM frames').get() as { c: number }).c
+    return frameCount(this.db)
   }
 }
 
-interface RawFrameRow {
-  video_id: number
-  dhash: Buffer
-  struct: Buffer
-  color: Buffer
-  frame_index: number
-  time_ms: number
-}
-
-export function u64ToLe(value: number): Uint8Array {
-  const out = new Uint8Array(8)
-  const big = BigInt.asUintN(64, BigInt(value))
-  for (let i = 0; i < 8; i++) out[i] = Number(BigInt.asUintN(8, big >> BigInt(8 * i)))
-  return out
-}
-
-/** 把查询结果按统一 stride 拼成一块连续内存，供搜索时顺序扫描 */
-function buildFrameMatrix(rows: RawFrameRow[]): {
-  buffer: Uint8Array<ArrayBufferLike>
-  videoIds: Int32Array<ArrayBufferLike>
-  count: number
-} {
-  const count = rows.length
-  const buffer = new Uint8Array(count * FRAME_STRIDE)
-  const videoIds = new Int32Array(count)
-  const view = new DataView(buffer.buffer)
-  for (let i = 0; i < count; i++) {
-    const row = rows[i]
-    const off = i * FRAME_STRIDE
-    buffer.set(row.dhash.subarray(0, DHASH_BYTES), off + DHASH_OFFSET)
-    buffer.set(row.struct.subarray(0, STRUCT_BYTES), off + STRUCT_OFFSET)
-    buffer.set(row.color.subarray(0, COLOR_BYTES), off + COLOR_OFFSET)
-    view.setUint32(off + META_OFFSET, row.frame_index >>> 0, true)
-    view.setUint32(off + META_OFFSET + 4, row.time_ms >>> 0, true)
-    videoIds[i] = row.video_id
-  }
-  return { buffer, videoIds, count }
-}
