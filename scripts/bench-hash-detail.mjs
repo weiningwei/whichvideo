@@ -93,18 +93,18 @@ async function main() {
   console.log(`  dhash = ${dhash.toString(16).padStart(16, '0')}，64 bit 中 ${dOnes} 个 1`)
   console.log('  位数来源：8 行 × (9-1) 组相邻比较 = 64')
 
-  console.log('\n=== ③ 结构指纹：16x16 网格 × 4 通道 = 1024 格，等距取 512 ===')
+  console.log('\n=== ③ 结构指纹：16x16 网格 × 4 通道 = 1024 格，全量 1024 bit ===')
   const st = computeStructHash(img)
   let offset = 0
   const chName = ['Y(亮度)', 'R', 'G', 'B']
   for (let c = 0; c < 4; c++) {
     let n = 0
-    for (let b = 0; b < 16; b++) n += popcount(st[offset + b])
-    console.log(`  通道 ${chName[c]}：128 bit 中 ${String(n).padStart(3)} 个 1（${((n / 128) * 100).toFixed(1)}%）`)
-    offset += 16
+    for (let b = 0; b < 32; b++) n += popcount(st[offset + b])
+    console.log(`  通道 ${chName[c]}：256 bit 中 ${String(n).padStart(3)} 个 1（${((n / 256) * 100).toFixed(1)}%）`)
+    offset += 32
   }
   console.log(`  合计 ${onesOf(st)} / ${BITS} 个 1（${((onesOf(st) / BITS) * 100).toFixed(1)}%）`)
-  console.log(`  网格 16×16 = 256 格，每通道取 128 格 → 步长 ${(256 / 128).toFixed(0)}（覆盖全部 16 行）`)
+  console.log(`  网格 16×16 = 256 格，每通道 256 格全量（不再抽样）`)
 
   console.log('\n=== ④ 颜色直方图 4×4×4 ===')
   const hist = computeColorHistogram(img)
@@ -133,7 +133,7 @@ async function main() {
   console.log('  → 各格均值都等于全局均值 → 比特高度集中，与有纹理画面拉不开距离')
   console.log('  → 此时靠颜色直方图区分，搜索会自动把颜色权重升到 0.7')
 
-  console.log('\n=== ⑥ 距离矩阵（结构指纹 512bit）===')
+  console.log('\n=== ⑥ 距离矩阵（结构指纹 1024bit）===')
   const imgs = {
     纯白: makeImage(64, 64, () => [255, 255, 255]),
     结构图: img,
@@ -157,7 +157,7 @@ async function main() {
     console.log(`    ${k.padEnd(18)} ${structSimilarity(hk, 0, hk, 0).toFixed(4)}`)
   }
 
-  console.log('\n=== ⑦ 单帧耗时（320x180，README 引用的 10.4ms/帧）===')
+  console.log('\n=== ⑦ 单帧耗时（320x180，三个指纹合计）===')
   const W = 320
   const H = 180
   const frame = makeImage(W, H, (x, y) => [(x * 3) % 256, (y * 5) % 256, (x + y) % 256])

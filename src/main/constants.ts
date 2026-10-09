@@ -46,8 +46,8 @@ export const DEFAULT_FRAME_BUDGET = 240
 /** dHash 剪枝阈值：超过该距离的帧不可能成为好匹配 */
 export const DHASH_PRUNE_BITS = 24
 
-/** 结构距离上限：超过则直接丢弃（512bit 中 224bit 不同） */
-export const STRUCT_PRUNE_BITS = 224
+/** 结构距离上限：超过则直接丢弃（1024bit 中 448bit 不同） */
+export const STRUCT_PRUNE_BITS = 448
 
 // ===== 网络请求（仅 url-image.ts 链接取图） =====
 /** 单个响应体上限（字节，10 MB） */

@@ -1,10 +1,11 @@
 /**
  * 结构指纹（computeStructHash）的纯逻辑自检（不依赖 ffmpeg / Electron）。
  *
- * 背景：encodeChannel 原先顺序填 bit，遇到 maxBits 就停，
- * 而网格是 16x16=256 格、每通道只分配 128 bit —— 于是只有前 128 个格子
- * （即前 8 行）参与指纹，画面下半部分从未被读取。字幕条、下三分之一构图
- * 这类内容会被系统性低估相似度。现改为等距抽样，本脚本守住该性质。
+ * 背景：encodeChannel 曾顺序填 bit、遇到 maxBits 就停，而网格是 16x16=256 格、
+ * 每通道一度只分配 128 bit —— 于是只有前 128 个格子（即前 8 行）参与指纹，
+ * 画面下半部分从未被读取，字幕条、下三分之一构图这类内容被系统性低估。
+ * 现在每通道分配 256 bit（1024bit 结构指纹），256 格全量参与；本脚本守住
+ * 「下半部分必须参与指纹」这条性质，防止将来再退化回截断/偏置采样。
  *
  * 运行： node scripts/build-core.mjs && node scripts/test-hash-coverage.mjs
  */
@@ -86,7 +87,7 @@ async function main() {
   console.log('=== 结构指纹覆盖度 ===')
 
   check('导出 computeStructHash', typeof computeStructHash === 'function')
-  check('指纹长度为 64 字节', STRUCT_BYTES === 64, `${BITS} bit`)
+  check('指纹长度为 128 字节', STRUCT_BYTES === 128, `${BITS} bit`)
 
   // 核心性质：下半部分有内容时，指纹必须与纯黑明显不同
   // （修复前下半部分不参与指纹，这里会距离为 0）
@@ -111,7 +112,7 @@ async function main() {
   check(
     '上下半都有内容时两者可区分（原缺陷点）',
     hamming(hashTop, hashBottom) > 0,
-    `距离 ${hamming(hashTop, hashBottom)}/512`
+    `距离 ${hamming(hashTop, hashBottom)}/1024`
   )
 
   // 对称性：抽样必须覆盖全图，不能偏向任何一侧
@@ -146,7 +147,7 @@ async function main() {
   const h2 = computeStructHash(bottomOnly)
   check('同一张图两次计算结果一致', h1.every((v, i) => v === h2[i]))
   check(
-    '等距抽样未越界写入（最后一个 bit 在 512 内）',
+    '结构指纹写入 128 字节未越界',
     h1.length === STRUCT_BYTES && h1.every((v) => v >= 0)
   )
 

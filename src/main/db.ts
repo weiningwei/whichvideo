@@ -35,7 +35,7 @@ import {
 export interface NewFrame {
   /** 64bit dHash */
   dhash: number
-  /** 64 字节结构指纹 */
+  /** 128 字节结构指纹 */
   struct: Uint8Array
   /** 64 字节量化颜色直方图 */
   color: Uint8Array

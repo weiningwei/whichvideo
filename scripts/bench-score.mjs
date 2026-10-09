@@ -101,11 +101,11 @@ function samplers(img) {
   return { w, luma, chan }
 }
 
-/** 结构指纹：64bit dHash + 512bit 均值归一化（16x16 网格 × 4 通道） */
+/** 结构指纹：64bit dHash + 1024bit 均值归一化（16x16 网格 × 4 通道） */
 function structHash(img) {
   const { w, h } = img
   const { luma, chan } = samplers(img)
-  const bits = new Uint8Array(8 + 64)
+  const bits = new Uint8Array(8 + 128)
   // 64bit dHash（9x8）
   let bit = 0
   const g98 = cellGrid(w, h, 8, (idx) => luma(idx))
@@ -120,7 +120,7 @@ function structHash(img) {
     if (g98[i] < g98[8 + i]) bits[bit >> 3] |= 1 << (bit & 7)
     bit++
   }
-  // 512bit 均值归一化：Y/R/G/B 各 16x16=256bit
+  // 1024bit 均值归一化：Y/R/G/B 各 16x16=256bit 全量
   let off = 64
   for (const fn of [luma, chan(0), chan(1), chan(2)]) {
     const g = cellGrid(w, h, 16, (idx) => fn(idx))
@@ -154,7 +154,7 @@ function colorHist(img) {
   return out
 }
 
-function hamming(a, b, aOff = 0, bOff = 0, bytes = 64) {
+function hamming(a, b, aOff = 0, bOff = 0, bytes = 128) {
   let d = 0
   for (let i = 0; i < bytes; i++) {
     let x = (a[aOff + i] ^ b[bOff + i]) >>> 0
@@ -229,8 +229,8 @@ async function main() {
       const q = queryData[c.name]
       const conf = colorfulness(q.color)
       const scored = Object.entries(libData).map(([k, v]) => {
-        const d = hamming(q.struct, v.struct, 0, 0, 64) // 512bit 结构
-        const struct = 1 - d / 512
+        const d = hamming(q.struct, v.struct, 0, 0, 128) // 1024bit 结构
+        const struct = 1 - d / 1024
         const color = histSim(q.color, v.color)
         return { k, score: fn(struct, color, conf), struct, color }
       })

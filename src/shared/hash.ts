@@ -3,14 +3,14 @@
  *
  * 一张图片被压成三部分指纹：
  *  1. 64bit dHash  —— 9x8 灰度梯度，用于搜索时的快速剪枝
- *  2. 512bit 均值归一化结构指纹 —— 16x16 网格 × Y/R/G/B 四通道。
+ *  2. 1024bit 均值归一化结构指纹 —— 16x16 网格 × Y/R/G/B 四通道，每通道 256 格全量。
  *     每个格子的均值与该通道全局均值比较，因此对分辨率、再压缩、亮度轻微变化稳定，
  *     同时又能把"纯色画面"与"有内容的画面"明显区分开（纯色帧的归一化位几乎全为 1，
- *     任何有纹理的画面都会产生大量 0，因此 512bit 距离很大）。
+ *     任何有纹理的画面都会产生大量 0，因此 1024bit 距离很大）。
  *  3. 4x4x4 RGB 颜色直方图 —— 负责区分"结构相同但颜色不同"的画面。
  *
  * 实测（见 scripts/bench-score.mjs）：同源截图与视频帧的结构距离为 0，
- * 而不同内容之间结构距离 ≥ 246/512，纯色与彩色之间 ≥ 246/512。
+ * 而不同内容之间结构距离拉开数百 bit，纯色与彩色之间同样如此。
  */
 
 export interface ImageDataLike {
@@ -26,7 +26,7 @@ export interface ImageDataLike {
 export interface FrameSignature {
   /** 64bit dHash */
   dhash: number
-  /** 512bit 均值归一化结构指纹（64 字节） */
+  /** 1024bit 均值归一化结构指纹（128 字节） */
   struct: Uint8Array
   /** 归一化颜色直方图，元素为 0~1 */
   color: Float32Array
@@ -37,12 +37,12 @@ export interface FrameSignature {
 }
 
 export const COLOR_BINS = 64
-export const STRUCT_BYTES = 64
+export const STRUCT_BYTES = 128
 export const DHASH_BYTES = 8
 export const SPATIAL_GRID = 4
 export const SPATIAL_BYTES = SPATIAL_GRID * SPATIAL_GRID * 3
 
-/** 结构指纹网格：16x16 × 4 通道 = 1024 个格子，每通道等距抽样 128 个共 512 bit */
+/** 结构指纹网格：16x16 × 4 通道 = 1024 个格子，每通道 256 个全量共 1024 bit */
 const STRUCT_GRID = 16
 const STRUCT_BITS = STRUCT_BYTES * 8
 const CHANNELS_IN_HASH = 4
@@ -182,11 +182,12 @@ function cellGrid(
  * 纯色画面的格子均值彼此相等，会全部记为 1；有内容的画面则 0/1 混杂，
  * 因此该指纹天然能把"纯色"与"有画面"分开。
  *
- * 网格有 STRUCT_GRID² 个格子（256），但每通道只分配 128 bit，必须**等距抽样**
- * 而不是顺序截取。顺序填满会在 bit 达到 maxBits 时停在网格前半部分
- * （16 行只用到前 8 行），导致画面下半部分完全不参与指纹——字幕条、
- * 下三分之一构图这类内容会因此被系统性低估相似度。
- * 这里按下标 `floor(bit * grid.length / maxBits)` 均匀取样，覆盖全部 16 行。
+ * 网格有 STRUCT_GRID² 个格子（256），当前每通道分配 256 bit，正好全量取用
+ * （grid.length === bits，逐格直取）。历史上一度每通道只分配 128 bit，若顺序
+ * 截取会停在网格前半部分（16 行只用到前 8 行），画面下半部分完全不参与指纹——
+ * 字幕条、下三分之一构图这类内容被系统性低估。故此处保留等距抽样分支
+ * （`floor(bit * grid.length / maxBits)`）兜底：一旦 maxBits 再小于网格数，
+ * 仍会均匀覆盖全部 16 行，而不是顺序截断。
  */
 function encodeChannel(
   grid: Float32Array,
@@ -236,7 +237,7 @@ export function computeStructHash(img: ImageDataLike): Uint8Array {
   return out
 }
 
-/** 512bit 结构相似度（0~1） */
+/** 1024bit 结构相似度（0~1） */
 export function structSimilarity(a: Uint8Array, aOffset: number, b: Uint8Array, bOffset: number): number {
   return 1 - hammingBytes(a, aOffset, b, bOffset, STRUCT_BYTES) / STRUCT_BITS
 }

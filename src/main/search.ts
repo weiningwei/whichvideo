@@ -1,8 +1,8 @@
 /**
  * 内存帧索引 + 搜索打分。
  *
- * 帧指纹（8 字节 dHash + 64 字节结构 + 64 字节颜色 + 8 字节元信息）全量常驻内存，
- * 图片搜索 = 纯内存扫描：先用 64bit dHash 剪枝，再做 512bit 结构距离与颜色相交。
+ * 帧指纹（8 字节 dHash + 128 字节结构 + 64 字节颜色 + 48 字节空间 + 8 字节元信息）全量常驻内存，
+ * 图片搜索 = 纯内存扫描：先用 64bit dHash 剪枝，再做 1024bit 结构距离与颜色分。
  *
  * 打分公式（内联于 search()，颜色权重上下界见 @shared/hash 的 COLOR_WEIGHT_MIN/MAX）：
  *   颜色越鲜明的查询图，颜色直方图权重越高（0.3 → 0.7），
@@ -60,7 +60,7 @@ export interface SearchOptions {
 
 export interface QueryVector {
   dhash: number
-  /** 64 字节结构指纹 */
+  /** 128 字节结构指纹 */
   struct: Uint8Array
   /** 64 字节量化颜色直方图 */
   color: Uint8Array

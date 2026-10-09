@@ -3,17 +3,17 @@
  *
  * 内存布局：
  *   0   : 8 字节  64bit dHash（搜索时先比它做剪枝）
- *   8   : 64 字节 512bit 均值归一化结构指纹
- *   72  : 64 字节 颜色直方图（4x4x4 RGB 分桶，量化为 u8）
- *   136 : 48 字节 空间颜色布局（4x4 网格每格 RGB 均值，u8）
- *   184 : 4 字节  frameIndex (u32)
- *   188 : 4 字节  timeMs (u32)
- * 合计 192 字节/帧 —— 10 万帧约 19MB，可以整块常驻内存。
+ *   8   : 128 字节 1024bit 均值归一化结构指纹
+ *   136 : 64 字节 颜色直方图（4x4x4 RGB 分桶，量化为 u8）
+ *   200 : 48 字节 空间颜色布局（4x4 网格每格 RGB 均值，u8）
+ *   248 : 4 字节  frameIndex (u32)
+ *   252 : 4 字节  timeMs (u32)
+ * 合计 256 字节/帧 —— 10 万帧约 26MB，可以整块常驻内存。
  */
 export const DHASH_OFFSET = 0
 export const DHASH_BYTES = 8
 export const STRUCT_OFFSET = DHASH_OFFSET + DHASH_BYTES
-export const STRUCT_BYTES = 64
+export const STRUCT_BYTES = 128
 export const COLOR_OFFSET = STRUCT_OFFSET + STRUCT_BYTES
 export const COLOR_BYTES = 64
 export const SPATIAL_OFFSET = COLOR_OFFSET + COLOR_BYTES
@@ -26,7 +26,7 @@ export const FRAME_STRIDE = META_OFFSET + 8
  * 库启动时对比 SQLite 的 user_version，落后即清空 frames 并标记全部视频
  * 待重索引（resumePending 会自动重抽）。旧指纹与新布局不兼容，不能留着。
  */
-export const FRAME_FORMAT_VERSION = 2
+export const FRAME_FORMAT_VERSION = 3
 
 /**
  * Float32 颜色直方图（和为 1）→ u8 量化。

@@ -173,12 +173,12 @@ async function main() {
     const fromPng = computeSignature(rgbFromImage(png))
     hashes.set(item.key, { raw, fromPng })
     const dist64 = hammingBytes(raw.struct, 0, fromPng.struct, 0, STRUCT_BYTES)
-    check(`「${item.label}」raw↔PNG 结构距离 ≤ 8（共 512bit）`, dist64 <= 8, `距离 ${dist64}`)
+    check(`「${item.label}」raw↔PNG 结构距离 ≤ 8（共 1024bit）`, dist64 <= 8, `距离 ${dist64}`)
   }
 
   // 结构与色彩本身都无法区分两个不同的纯色画面，因此只比较"至少一方有内容"的组合
   const isFlat = (key) => key === 'blue' || key === 'amber'
-  let minCross = 512
+  let minCross = 1024
   let minCrossPair = ''
   for (const a of sources) {
     for (const b of sources) {
@@ -193,7 +193,7 @@ async function main() {
   }
   check(
     '有内容的画面之间结构距离足够大',
-    minCross >= 100,
+    minCross >= 200,
     `最小跨内容距离 ${minCross}（${minCrossPair}）`
   )
   // 纯色之间结构距离为 0 是预期行为：此时颜色直方图负责区分（见 A2 的排序结果）
