@@ -42,6 +42,9 @@ export const SEEK_VS_FULLSCAN_CROSSOVER = 48
 /** 帧数封顶的兜底上限（用户设置 `framesPerVideo` 也是封顶，与策略值取小） */
 export const DEFAULT_FRAME_BUDGET = 240
 
+/** 场景采样：镜头长度达到该值（秒）才补中点帧 —— 过短镜头的中点贴近场景点，无意义 */
+export const SCENE_MIDPOINT_MIN_GAP = 2
+
 // ===== 指纹与检索 =====
 /** dHash 剪枝阈值：超过该距离的帧不可能成为好匹配 */
 export const DHASH_PRUNE_BITS = 24

@@ -5,10 +5,10 @@
  * 帧数决策链：framesForDuration（时长 → 策略帧数）→ plannedFrameCount（与用户设置取小）。
  * 时间点两条来源：
  *   · planTimestamps —— 按时长均匀取每段中点（避开片头片尾黑场）
- *   · planSceneTimestamps —— 场景切换点优先 + 长镜头补帧（场景点由 media.ts::detectScenes 产出）
+ *   · planSceneTimestamps —— 场景切换点优先 + 每镜头中点帧 + 长镜头补帧（场景点由 media.ts::detectScenes 产出）
  * shouldUseFullScan 决定抽帧走逐点 seek 还是单次全片解码。
  */
-import { DEFAULT_FRAME_BUDGET, FRAME_COUNT_TABLE, SEEK_VS_FULLSCAN_CROSSOVER } from './constants'
+import { DEFAULT_FRAME_BUDGET, FRAME_COUNT_TABLE, SCENE_MIDPOINT_MIN_GAP, SEEK_VS_FULLSCAN_CROSSOVER } from './constants'
 
 // 对外转出这两个策略常量：media.ts 作为门面再转出，test-frame-policy 依赖
 export { DEFAULT_FRAME_BUDGET, SEEK_VS_FULLSCAN_CROSSOVER }
@@ -64,10 +64,14 @@ export function planTimestamps(duration: number | null, frameBudget: number): nu
 }
 
 /**
- * 场景采样计划：场景切换点优先 + 长镜头内部均匀补充，总数不超过 frameBudget。
+ * 场景采样计划：场景切换点优先 + 每镜头中点帧 + 长镜头内部均匀补充，总数不超过 frameBudget。
  *
  * - 场景点 = 每个镜头的代表帧来源，**全部保留**（它们是"每个镜头至少一帧"
  *   的保证，也是本模式存在的意义）
+ * - 场景点只是镜头**开头**，镜头内部画面随运镜/移动漂移：只存开头帧时，
+ *   中段截图可能离最近指纹太远（dHash 剪枝直接丢弃 → 搜不到）。因此每个
+ *   长度 ≥ SCENE_MIDPOINT_MIN_GAP 的镜头补一个中点帧；长镜头的均匀补点为
+ *   奇数个时已含正中点，不重复加
  * - 相邻间隔超过 max(2×理想间隔, 8s) 的段视为长镜头，段内均匀补帧
  *   （idealGap = 时长/预算；8s 下限避免超长预算时无意义密采）
  * - 补充点总数超预算时均匀丢弃补充点（不动场景点）；预算有富余则不再增补
@@ -91,7 +95,7 @@ export function planSceneTimestamps(
   const idealGap = D / Math.max(1, frameBudget)
   const minGap = Math.max(2 * idealGap, 8)
 
-  // 长镜头内部补充点
+  // 长镜头内部补充点 + 每镜头中点帧
   const fills: number[] = []
   for (let i = 0; i < scenes.length; i++) {
     const cur = scenes[i]
@@ -99,6 +103,9 @@ export function planSceneTimestamps(
     const gap = next - cur
     const extra = Math.floor(gap / minGap) - 1
     for (let k = 1; k <= extra; k++) fills.push(cur + (gap * k) / (extra + 1))
+    // 中点帧：extra 个均匀点落在 gap*k/(extra+1)，k=(extra+1)/2 为整数（extra 奇数）
+    // 时正中点已在其中，不重复加；extra < 0（无均匀点）时 JS 取模为 -1，需单独放行
+    if (gap >= SCENE_MIDPOINT_MIN_GAP && (extra < 0 || extra % 2 === 0)) fills.push(cur + gap / 2)
   }
 
   // 预算裁剪：只裁补充点（场景点全保留），均匀丢弃保持覆盖均匀
