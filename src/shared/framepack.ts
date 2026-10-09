@@ -18,38 +18,6 @@ export const COLOR_BYTES = 64
 export const META_OFFSET = COLOR_OFFSET + COLOR_BYTES
 export const FRAME_STRIDE = META_OFFSET + 8
 
-export interface PackedFrameRow {
-  /** 64bit dHash */
-  dhash: number
-  /** 64 字节结构指纹 */
-  struct: Uint8Array
-  /** 64 字节量化颜色直方图 */
-  color: Uint8Array
-  frameIndex: number
-  timeMs: number
-}
-
-export function packFrame(row: PackedFrameRow): Buffer {
-  const buf = Buffer.allocUnsafe(FRAME_STRIDE)
-  buf.writeBigUInt64LE(BigInt.asUintN(64, BigInt(row.dhash)), DHASH_OFFSET)
-  buf.set(row.struct.subarray(0, STRUCT_BYTES), STRUCT_OFFSET)
-  buf.set(row.color.subarray(0, COLOR_BYTES), COLOR_OFFSET)
-  buf.writeUInt32LE(row.frameIndex >>> 0, META_OFFSET)
-  buf.writeUInt32LE(Math.max(0, Math.round(row.timeMs)) >>> 0, META_OFFSET + 4)
-  return buf
-}
-
-export function unpackFrame(buf: Uint8Array | Buffer): PackedFrameRow {
-  const view = Buffer.isBuffer(buf) ? buf : Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength)
-  return {
-    dhash: Number(view.readBigUInt64LE(DHASH_OFFSET)),
-    struct: new Uint8Array(view.subarray(STRUCT_OFFSET, STRUCT_OFFSET + STRUCT_BYTES)),
-    color: new Uint8Array(view.subarray(COLOR_OFFSET, COLOR_OFFSET + COLOR_BYTES)),
-    frameIndex: view.readUInt32LE(META_OFFSET),
-    timeMs: view.readUInt32LE(META_OFFSET + 4)
-  }
-}
-
 /**
  * Float32 颜色直方图（和为 1）→ u8 量化。
  * 统一按 255 直接取整：直方图本身已归一化，弱分桶同样保留信息，

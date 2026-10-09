@@ -37,7 +37,6 @@ export interface FrameSignature {
 export const COLOR_BINS = 64
 export const STRUCT_BYTES = 64
 export const DHASH_BYTES = 8
-export const FAST_HASH_BYTES = DHASH_BYTES + STRUCT_BYTES
 
 /** 结构指纹网格：16x16 × 4 通道 = 1024 个格子，每通道等距抽样 128 个共 512 bit */
 const STRUCT_GRID = 16
@@ -48,8 +47,8 @@ const CHANNELS_IN_HASH = 4
  * 基础工具
  * ------------------------------------------------------------------ */
 
-/** 32bit popcount */
-export function popcount32(x: number): number {
+/** 32bit popcount（仅供 hammingBytes 内部使用） */
+function popcount32(x: number): number {
   x = x - ((x >>> 1) & 0x55555555)
   x = (x & 0x33333333) + ((x >>> 2) & 0x33333333)
   x = (x + (x >>> 4)) & 0x0f0f0f0f
@@ -272,20 +271,6 @@ export function meanLuma(gray: GrayImage): number {
   return gray.g.length ? sum / gray.g.length : 0
 }
 
-/** 直方图相交相似度（0~1） */
-export function histogramSimilarity(a: Float32Array, b: Float32Array): number {
-  let sum = 0
-  for (let i = 0; i < COLOR_BINS; i++) sum += Math.min(a[i], b[i])
-  return Math.min(1, sum)
-}
-
-/** 颜色鲜明度：直方图主导分桶占比，用来决定"结构 vs 颜色"的权重 */
-export function colorfulness(hist: Float32Array): number {
-  let max = 0
-  for (let i = 0; i < COLOR_BINS; i++) if (hist[i] > max) max = hist[i]
-  return max
-}
-
 /* ------------------------------------------------------------------ *
  * 对外入口
  * ------------------------------------------------------------------ */
@@ -302,20 +287,12 @@ export function computeSignature(img: ImageDataLike): FrameSignature {
 }
 
 /**
- * 综合打分。
+ * 颜色权重上下界：结构分与颜色分加权时，颜色越"鲜明"（画面越接近纯色/少色），
+ * 颜色直方图越可信，权重从 COLOR_WEIGHT_MIN 提升到 COLOR_WEIGHT_MAX；反之纹理
+ * 丰富时以结构为主。这样纯色截图能稳稳命中同色画面，而不会因为结构指纹退化成
+ * 全 1 而误配到彩色画面。
  *
- * 结构分与颜色分加权：颜色越"鲜明"（画面越接近纯色/少色），
- * 颜色直方图越可信，权重从 0.3 提升到 0.7；反之纹理丰富时以结构为主。
- * 这样纯色截图能稳稳命中同色画面，而不会因为结构指纹退化成全 1 而误配到彩色画面。
+ * 打分公式内联在 src/main/search.ts 的 search()（权重只算一次，不进逐帧热循环）。
  */
 export const COLOR_WEIGHT_MIN = 0.3
 export const COLOR_WEIGHT_MAX = 0.7
-
-export function combinedScore(
-  structScore: number,
-  colorScore: number,
-  queryColorfulness: number
-): number {
-  const weight = COLOR_WEIGHT_MIN + (COLOR_WEIGHT_MAX - COLOR_WEIGHT_MIN) * Math.min(1, Math.max(0, queryColorfulness))
-  return structScore * (1 - weight) + colorScore * weight
-}
