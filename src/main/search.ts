@@ -29,6 +29,7 @@ import {
   COLOR_WEIGHT_MIN,
   SPATIAL_WEIGHT,
   computeSignature,
+  hammingBytes,
   type ImageDataLike
 } from '@shared/hash'
 
@@ -81,6 +82,64 @@ export function queryVectorFromImage(img: ImageDataLike): QueryVector {
     spatial: signature.spatial,
     colorfulness: quantizedColorfulness(color)
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * 命中时间精修（二阶段）：粗召回命中的是采样帧，显示时间 = 该采样帧的时间，
+ * 误差上限约采样间隔一半。精修在命中点邻域补采候选帧、按同一公式打分选优。
+ * ------------------------------------------------------------------ */
+
+/** 精修补采时命中点每一侧的候选数（含命中点共 2×该值+1 个解码点） */
+export const REFINE_POINTS_PER_SIDE = 4
+
+/**
+ * 命中时间精修的候选时间点（秒，含命中点本身，升序去重）。
+ *
+ * 窗口 = 局部采样间隔（时长/帧数）的一半，夹到 [1, 15] 秒；每侧均匀取
+ * REFINE_POINTS_PER_SIDE 个点。时长/帧数未知时按 10s 间隔兜底。
+ * 候选点夹到 [0, 时长] 内，0.05s 内视为同点去重。
+ */
+export function refineCandidateTimes(
+  durationSeconds: number | null,
+  frameCount: number,
+  hitTimeSeconds: number
+): number[] {
+  const gap = durationSeconds && frameCount > 0 ? durationSeconds / frameCount : 10
+  const window = Math.min(Math.max(gap / 2, 1), 15)
+  const step = window / REFINE_POINTS_PER_SIDE
+  const raw: number[] = [hitTimeSeconds]
+  for (let k = 1; k <= REFINE_POINTS_PER_SIDE; k++) {
+    raw.push(hitTimeSeconds - step * k, hitTimeSeconds + step * k)
+  }
+  const upper = durationSeconds && durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY
+  const out: number[] = []
+  for (const t of raw) {
+    const clamped = Math.min(Math.max(t, 0), upper)
+    if (!out.some((x) => Math.abs(x - clamped) < 0.05)) out.push(clamped)
+  }
+  return out
+}
+
+/** 可与 QueryVector 打分的帧指纹（库内帧与精修候选帧共用同一套段格式） */
+export interface ScorableSignature {
+  struct: Uint8Array
+  color: Uint8Array
+  spatial: Uint8Array
+}
+
+/**
+ * 用与 search() 完全相同的公式给单帧指纹打分（不剪枝）：
+ * score = 结构相似度 × (1-颜色权重) + 颜色分 × 颜色权重。
+ * 只用于精修候选帧的比对 —— 候选是个位数帧，无需 dHash/结构剪枝。
+ */
+export function scoreSignature(query: QueryVector, sig: ScorableSignature): number {
+  const weight =
+    COLOR_WEIGHT_MIN + (COLOR_WEIGHT_MAX - COLOR_WEIGHT_MIN) * Math.min(1, Math.max(0, query.colorfulness))
+  const hashScore = 1 - hammingBytes(query.struct, 0, sig.struct, 0, STRUCT_BYTES) / STRUCT_BITS
+  const histogramScore = quantizedHistogramSimilarity(query.color, sig.color)
+  const spatialScore = spatialSimilarity(query.spatial, sig.spatial)
+  const colorScore = histogramScore * (1 - SPATIAL_WEIGHT) + spatialScore * SPATIAL_WEIGHT
+  return hashScore * (1 - weight) + colorScore * weight
 }
 
 export class FrameSearchIndex {

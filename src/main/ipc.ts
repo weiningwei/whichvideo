@@ -22,18 +22,26 @@ import {
   type SearchMatch,
   type SearchResponse,
   type VideoQuery,
+  type VideoRecord,
   type WatchedFolder,
   type FrameProgress,
   type DuplicatePair
 } from '@shared/types'
-import { ssimSimilarity, type ImageDataLike } from '@shared/hash'
+import { ssimSimilarity, computeSignature, type ImageDataLike } from '@shared/hash'
+import { quantizeColor } from '@shared/framepack'
 import type { ErrorCode } from '@shared/result'
 import type { EmitLibraryEvent } from './interfaces'
 import { log, logError } from './logger'
 import { readClipboardImageBytes } from './clipboard'
 import { describeUrlForLog, fetchImageFromUrl } from './url-image'
 import type { LibraryDatabase } from './db'
-import type { FrameSearchIndex, IndexedHit } from './search'
+import {
+  refineCandidateTimes,
+  scoreSignature,
+  type FrameSearchIndex,
+  type IndexedHit,
+  type QueryVector
+} from './search'
 import type { Indexer } from './indexer'
 import type { FolderWatcher } from './watcher'
 
@@ -200,6 +208,47 @@ export function registerIpc(deps: IpcDeps): void {
     return [...verified, ...tail].sort((a, b) => b.score - a.score)
   }
 
+  /**
+   * 命中时间精修：粗召回命中的是采样帧，显示时间 = 该采样帧的时间，与截图帧
+   * 天然差半个采样间隔以内。围绕命中时间按局部采样密度并行补采候选帧（逐点
+   * seek），用与粗召回相同的打分公式选最优；优于命中点本身才改写 timeSeconds
+   * （候选列表首位就是命中点自身，平局自然保留原值）。解码失败（文件已删/
+   * 时间点越界）静默跳过，保持原时间。
+   */
+  async function refineHitTime(query: QueryVector, video: VideoRecord, hit: IndexedHit): Promise<void> {
+    const candidates = refineCandidateTimes(video.duration, video.frameCount, hit.timeSeconds)
+    if (candidates.length <= 1) return
+    const decoded = await Promise.all(
+      candidates.map((t) => decodeFrameAt(video.path, t, undefined, EXTRACT_WIDTH))
+    )
+    let bestScore = -1
+    let bestTime: number | null = null
+    for (let i = 0; i < candidates.length; i++) {
+      const frame = decoded[i]
+      if (!frame) continue
+      const sig = computeSignature({
+        width: frame.width,
+        height: frame.height,
+        channels: 3,
+        order: 'rgb',
+        data: frame.rgb
+      })
+      const score = scoreSignature(query, {
+        struct: sig.struct,
+        color: quantizeColor(sig.color),
+        spatial: sig.spatial
+      })
+      if (score > bestScore) {
+        bestScore = score
+        bestTime = candidates[i]
+      }
+    }
+    if (bestTime != null && Math.abs(bestTime - hit.timeSeconds) > 0.01) {
+      log(`精修命中时间：${video.name} ${hit.timeSeconds.toFixed(2)}s → ${bestTime.toFixed(2)}s`)
+      hit.timeSeconds = Number(bestTime.toFixed(2))
+    }
+  }
+
   async function performSearch(image: Electron.NativeImage, source: string): Promise<SearchResponse> {
     const settings = db.getSettings()
     const started = Date.now()
@@ -224,6 +273,13 @@ export function registerIpc(deps: IpcDeps): void {
       maxResults: candidateLimit
     })
     const reranked = await rerankMatches(imageData, results)
+    // 命中时间精修：只对最佳命中做（补采 2×4+1 帧逐点 seek，约几百毫秒），
+    // 把显示时间从「最近采样帧」对准到「真实截图帧」
+    if (reranked.length > 0) {
+      const top = reranked[0]
+      const topVideo = db.getVideo(top.videoId)
+      if (topVideo) await refineHitTime(vector, topVideo, top)
+    }
 
     const matches: SearchMatch[] = []
     for (const hit of reranked.slice(0, settings.maxResults)) {
