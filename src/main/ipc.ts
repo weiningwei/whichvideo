@@ -58,14 +58,19 @@ export interface IpcDeps {
 function nativeImageToImageData(image: Electron.NativeImage): ImageDataLike | null {
   const size = image.getSize()
   if (!size.width || !size.height) return null
-  // 宽于抽帧宽度时先缩到 EXTRACT_WIDTH 再取位图：toGray 的 JS 循环像素数
-  // 从 ~200 万（1920 宽截图）降到 ~5.7 万，查询延迟约降一个量级。
-  // 指纹的尺度不变性（test:hash-scale 实测 160~2560 宽距离恒 0）保证结果
-  // 与原分辨率完全一致 —— 缩放只影响耗时，不影响匹配。小图不放大：
-  // 放大插值不增加信息，反而引入与"原尺寸直接计算"的细微差。
+  // 查询图统一归一化到与抽帧完全一致的尺寸规则：`-vf scale=w=320:h=-2`，
+  // 即 320 宽、按比例取最近偶数高。索引侧每一帧都是这么缩出来的，查询侧镜像
+  // 同一套尺寸，消除「小图不缩放 / 奇数高」造成的索引-查询不对称：库里存的永远
+  // 是 320 宽偶数高，查询图若保留原尺寸（尤其 <320 的小图不放大），toGray 盒式
+  // 重采样的边界覆盖、颜色直方图的 step 抽样都会和索引侧错开。放大到 320 不引入
+  // 新信息，但让双方走完全相同的重采样路径；指纹尺度不变性（test:hash-scale
+  // 实测 160~2560 宽结构距离恒 0）保证大图方向缩放只影响耗时、不影响结果。
+  const targetWidth = EXTRACT_WIDTH
+  // 镜像 ffmpeg h=-2：按比例算高，取最近偶数（下限 2）。
+  const targetHeight = Math.max(2, 2 * Math.round((size.height * targetWidth) / (2 * size.width)))
   let effective = image
-  if (size.width > EXTRACT_WIDTH) {
-    effective = image.resize({ width: EXTRACT_WIDTH })
+  if (size.width !== targetWidth || size.height !== targetHeight) {
+    effective = image.resize({ width: targetWidth, height: targetHeight })
   }
   const outSize = effective.getSize()
   if (!outSize.width || !outSize.height) return null
