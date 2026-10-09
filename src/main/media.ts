@@ -442,6 +442,55 @@ export async function isDecodable(filePath: string, tools?: ToolPaths): Promise<
   }
 }
 
+/**
+ * 解码单个时间点的一帧（rgb24 裸像素），用于搜索结果的二阶段验证。
+ * 与 makeThumbnail 同源（`-ss` 前置于 `-i` 的快速定位 + `-frames:v 1`），
+ * 但输出 rawvideo 而非 jpeg。失败（文件已删/时间点越界/解码错误）返回 null。
+ */
+export async function decodeFrameAt(
+  filePath: string,
+  timeSeconds: number,
+  tools?: ToolPaths,
+  width = 320
+): Promise<{ width: number; height: number; rgb: Buffer } | null> {
+  const t = tools ?? requireTools()
+  const args = [
+    '-hide_banner',
+    '-v',
+    'error',
+    '-nostdin',
+    '-ss',
+    Math.max(0, timeSeconds).toFixed(3),
+    '-i',
+    filePath,
+    '-map',
+    '0:v:0',
+    '-frames:v',
+    '1',
+    '-vf',
+    `scale=w=${width}:h=-2`,
+    '-pix_fmt',
+    'rgb24',
+    '-f',
+    'rawvideo',
+    '-an',
+    '-sn',
+    '-dn',
+    'pipe:1'
+  ]
+  try {
+    const { code, stdout } = await run(t.ffmpeg, args, { timeoutMs: 15_000 })
+    if (code !== 0 || stdout.length === 0) return null
+    const rowBytes = width * 3
+    if (stdout.length % rowBytes !== 0) return null
+    const height = stdout.length / rowBytes
+    if (height <= 0) return null
+    return { width, height, rgb: stdout }
+  } catch {
+    return null
+  }
+}
+
 /** 支持"从指定时间点起播"的播放器（用于搜索结果定位播放） */
 export interface SeekablePlayer {
   /** 可执行文件路径 */

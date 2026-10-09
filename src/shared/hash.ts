@@ -272,6 +272,64 @@ export function meanLuma(gray: GrayImage): number {
 }
 
 /* ------------------------------------------------------------------ *
+ * 像素级结构相似度（SSIM）—— 二阶段验证重排用
+ * ------------------------------------------------------------------ */
+
+const SSIM_C1 = (0.01 * 255) ** 2
+const SSIM_C2 = (0.03 * 255) ** 2
+
+/**
+ * 两幅图的像素级相似度（0~1，SSIM）：把双方都重采样成 w×h 灰度后用 8×8 滑窗。
+ * 比哈希精确得多、也更贵 —— 只用于 top-K 命中帧的验证重排，不用于全库扫描。
+ * 双方分辨率/通道序可不同（内部统一走 toGray 的盒式重采样）。
+ */
+export function ssimSimilarity(a: ImageDataLike, b: ImageDataLike, w = 48, h = 48): number {
+  const ga = toGray(a, w, h).g
+  const gb = toGray(b, w, h).g
+  const win = 8
+  let ssimSum = 0
+  let winCount = 0
+  for (let wy = 0; wy + win <= h; wy += win) {
+    for (let wx = 0; wx + win <= w; wx += win) {
+      let ma = 0
+      let mb = 0
+      for (let y = wy; y < wy + win; y++) {
+        const row = y * w
+        for (let x = wx; x < wx + win; x++) {
+          ma += ga[row + x]
+          mb += gb[row + x]
+        }
+      }
+      const n = win * win
+      ma /= n
+      mb /= n
+      let va = 0
+      let vb = 0
+      let cov = 0
+      for (let y = wy; y < wy + win; y++) {
+        const row = y * w
+        for (let x = wx; x < wx + win; x++) {
+          const da = ga[row + x] - ma
+          const db = gb[row + x] - mb
+          va += da * da
+          vb += db * db
+          cov += da * db
+        }
+      }
+      const nm1 = n - 1
+      va /= nm1
+      vb /= nm1
+      cov /= nm1
+      const num = (2 * ma * mb + SSIM_C1) * (2 * cov + SSIM_C2)
+      const den = (ma * ma + mb * mb + SSIM_C1) * (va + vb + SSIM_C2)
+      ssimSum += den > 0 ? num / den : 0
+      winCount++
+    }
+  }
+  return winCount > 0 ? Math.max(0, ssimSum / winCount) : 0
+}
+
+/* ------------------------------------------------------------------ *
  * 对外入口
  * ------------------------------------------------------------------ */
 

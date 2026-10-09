@@ -10,7 +10,7 @@ import type { BrowserWindow } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { findSeekablePlayer, sha256OfFile } from './media'
+import { decodeFrameAt, findSeekablePlayer, sha256OfFile } from './media'
 import { EXTRACT_WIDTH } from './constants'
 import {
   IPC,
@@ -26,14 +26,14 @@ import {
   type FrameProgress,
   type DuplicatePair
 } from '@shared/types'
-import type { ImageDataLike } from '@shared/hash'
+import { ssimSimilarity, type ImageDataLike } from '@shared/hash'
 import type { ErrorCode } from '@shared/result'
 import type { EmitLibraryEvent } from './interfaces'
 import { log, logError } from './logger'
 import { readClipboardImageBytes } from './clipboard'
 import { describeUrlForLog, fetchImageFromUrl } from './url-image'
 import type { LibraryDatabase } from './db'
-import type { FrameSearchIndex } from './search'
+import type { FrameSearchIndex, IndexedHit } from './search'
 import type { Indexer } from './indexer'
 import type { FolderWatcher } from './watcher'
 
@@ -116,6 +116,11 @@ function failResponse(
   return { ...emptyResponse(width, height, started), error: message, errorCode: code }
 }
 
+/** 二阶段验证重排：对粗召回的前 N 个命中做像素级 SSIM 复验 */
+const RERANK_TOP_K = 8
+/** SSIM 与粗打分凸组合时 SSIM 的权重（score = 粗分×(1-w) + SSIM×w） */
+const RERANK_WEIGHT = 0.3
+
 /* ------------------------------------------------------------------ *
  * 注册
  * ------------------------------------------------------------------ */
@@ -161,7 +166,36 @@ export function registerIpc(deps: IpcDeps): void {
     }
   }
 
-  function performSearch(image: Electron.NativeImage, source: string): SearchResponse {
+  /**
+   * 二阶段验证：对粗召回的前 RERANK_TOP_K 个命中解码其命中帧，做像素级 SSIM，
+   * 与粗打分凸组合后重排。解码失败（文件已删/时间点越界）保持原分数不惩罚。
+   * 目的：粗哈希对「相似构图、不同内容」会虚高，SSIM 能把这部分假阳性拉下去，
+   * 把真命中（高 SSIM）提到前面。
+   */
+  async function rerankMatches(query: ImageDataLike, hits: IndexedHit[]): Promise<IndexedHit[]> {
+    if (hits.length <= 1) return hits
+    const head = hits.slice(0, RERANK_TOP_K)
+    const tail = hits.slice(RERANK_TOP_K)
+    const verified = await Promise.all(
+      head.map(async (hit) => {
+        const video = db.getVideo(hit.videoId)
+        if (!video) return hit
+        const frame = await decodeFrameAt(video.path, hit.timeSeconds, undefined, EXTRACT_WIDTH)
+        if (!frame) return hit
+        const ssim = ssimSimilarity(query, {
+          width: frame.width,
+          height: frame.height,
+          channels: 3,
+          order: 'rgb',
+          data: frame.rgb
+        })
+        return { ...hit, score: hit.score * (1 - RERANK_WEIGHT) + ssim * RERANK_WEIGHT }
+      })
+    )
+    return [...verified, ...tail].sort((a, b) => b.score - a.score)
+  }
+
+  async function performSearch(image: Electron.NativeImage, source: string): Promise<SearchResponse> {
     const settings = db.getSettings()
     const started = Date.now()
     const size = image.getSize()
@@ -178,13 +212,16 @@ export function registerIpc(deps: IpcDeps): void {
     }
 
     const vector = queryVectorFromImage(imageData)
+    // 粗召回多取一些候选（至少覆盖 RERANK_TOP_K），二阶段重排后只保留 maxResults 条
+    const candidateLimit = Math.max(settings.maxResults, RERANK_TOP_K)
     const { results, comparedFrames } = searchIndex.search(vector, {
       minHashScore: settings.minHashScore,
-      maxResults: settings.maxResults
+      maxResults: candidateLimit
     })
+    const reranked = await rerankMatches(imageData, results)
 
     const matches: SearchMatch[] = []
-    for (const hit of results) {
+    for (const hit of reranked.slice(0, settings.maxResults)) {
       const video = db.getVideo(hit.videoId)
       if (!video) continue
       matches.push({
@@ -571,24 +608,24 @@ export function registerIpc(deps: IpcDeps): void {
     shell.showItemInFolder(video.path)
   })
 
-  ipcMain.handle(IPC.searchPath, (_e, filePath: string) => {
+  ipcMain.handle(IPC.searchPath, async (_e, filePath: string) => {
     const started = Date.now()
     const image = loadImageFromPath(filePath)
     if (!image) {
       log(`检索(文件)失败：无法读取图片 ${filePath}`)
       return failResponse(started, 'decode-failed', `无法读取图片：${filePath}`)
     }
-    return performSearch(image, '文件')
+    return await performSearch(image, '文件')
   })
 
-  ipcMain.handle(IPC.searchDataUrl, (_e, dataUrl: string) => {
+  ipcMain.handle(IPC.searchDataUrl, async (_e, dataUrl: string) => {
     const started = Date.now()
     const image = loadImageFromDataUrl(dataUrl)
     if (!image) {
       log(`检索(拖入/粘贴)失败：无法解析图片数据`)
       return failResponse(started, 'decode-failed', '无法解析拖入/粘贴的图片数据')
     }
-    return performSearch(image, '拖入/粘贴')
+    return await performSearch(image, '拖入/粘贴')
   })
 
   ipcMain.handle(IPC.searchClipboard, async () => {
@@ -596,7 +633,7 @@ export function registerIpc(deps: IpcDeps): void {
     if (!image) return null
     // 必须把图片一起回传：渲染端左上角那格要显示"刚才是哪张图"，
     // 只回结果的话界面那一格会一直空着（用户以为根本没读到剪贴板）。
-    return { dataUrl: image.toDataURL(), response: performSearch(image, '剪贴板') }
+    return { dataUrl: image.toDataURL(), response: await performSearch(image, '剪贴板') }
   })
 
   // 链接输入：URL → 字节 → NativeImage，之后与其它三条输入完全同一条链路。
@@ -618,7 +655,7 @@ export function registerIpc(deps: IpcDeps): void {
     const size = image.getSize()
     log(`检索(链接)：${describeUrlForLog(result)} → ${size.width}x${size.height}`)
     // 把来源链接写进 queryLabel，界面顶部能显示"正在搜：https://…"
-    const response = performSearch(image, '链接')
+    const response = await performSearch(image, '链接')
     return {
       ...response,
       queryImageUrl: result.finalUrl ?? String(url)
