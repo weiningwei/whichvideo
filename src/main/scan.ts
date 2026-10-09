@@ -14,21 +14,11 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { isVideoFile, pathKeyOf, type AppSettings } from '@shared/types'
 import { computeSignature, type ImageDataLike } from '@shared/hash'
-import { extractFrames, requireTools, run, shouldUseFullScan, type ToolPaths } from './media'
+import { extractFrames, requireTools, run, shouldUseFullScan } from './media'
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
 import { EXTRACT_WIDTH, MAX_SCAN_DEPTH, DEFAULT_SKIP_DIRS } from './constants'
 import { log } from './logger'
-
-let cachedTools: ToolPaths | null = null
-
-export function setTools(tools: ToolPaths): void {
-  cachedTools = tools
-}
-
-function tools(): ToolPaths {
-  return cachedTools ?? requireTools()
-}
 
 /* ------------------------------------------------------------------ *
  * 原始帧 → 指纹
@@ -109,7 +99,7 @@ async function extractAndHashBySeek(
   const targetTimestamps = timestamps.slice(startIndex, endIndex)
   if (targetTimestamps.length === 0) return []
 
-  const t = tools()
+  const t = requireTools()
   const SUB_BATCH = 4 // 子批次大小：每次 ffmpeg 处理这么多帧，平衡性能与进度实时性（4K 视频减小以更快出进度）
 
   const frames: NewFrame[] = []
@@ -205,7 +195,7 @@ async function extractAndHashByFullScan(
   const targetTimestamps = timestamps.slice(startIndex, endIndex)
   if (targetTimestamps.length === 0) return []
 
-  const extracted = await extractFrames(filePath, targetTimestamps, tools(), {
+  const extracted = await extractFrames(filePath, targetTimestamps, requireTools(), {
     maxWidth: EXTRACT_WIDTH,
     durationSeconds: durationSeconds ?? undefined,
     onFrame: options?.onFrame
