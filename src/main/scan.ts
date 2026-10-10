@@ -123,16 +123,17 @@ async function extractAndHashBySeek(
     for (const ts of batchTimestamps) {
       args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
     }
-    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放后 concat 成单流，
-    // 再接 showinfo 获取每帧真实 pts_time（秒）。
+    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放，各自接 showinfo
+    // 获取原始视频时间轴上的真实 pts_time（秒），再 concat 成单流输出。
+    // showinfo 必须在 concat 前，否则拿到的是拼接流从 0 开始的 PTS。
     const count = batchTimestamps.length
     const parts: string[] = []
     const labels: string[] = []
     for (let i = 0; i < count; i++) {
-      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2[s${i}]`)
+      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2,showinfo[s${i}]`)
       labels.push(`[s${i}]`)
     }
-    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0,showinfo[out]`)
+    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0[out]`)
     args.push('-filter_complex', parts.join(';'))
     args.push(
       '-map',
@@ -157,8 +158,9 @@ async function extractAndHashBySeek(
       // 旧版 ffmpeg（< 5.1）没有 -fps_mode：去掉该选项重试。此时在 concat 后接
       // setpts 把输出 pts 重排成按帧号递增的单调网格，默认帧率模式无重复可丢。
       // （setpts 放在回退分支：passthrough 下无需假设帧率，VFR 源也稳。）
+      // 注意：showinfo 已在各分支前，concat 后不再需要 showinfo
       const fallback = [...parts]
-      fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB,showinfo[out]`
+      fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]`
       const retryArgs = args.slice(0, args.indexOf('-filter_complex'))
       retryArgs.push('-filter_complex', fallback.join(';'), '-map', '[out]')
       retryArgs.push('-pix_fmt', 'rgb24', '-f', 'rawvideo', '-an', '-sn', '-dn', 'pipe:1')
