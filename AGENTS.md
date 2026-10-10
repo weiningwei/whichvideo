@@ -38,6 +38,7 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需�
 | **`package.json` 禁 `"type": "module"`** | Electron 会把 CJS 主进程当 ESM 加载，首行抛错 → 无窗口无日志。 | `pnpm test:startup` 场景 0 |
 | **`.gitignore` Python 规则锚定根目录** | 必须以 `/` 开头（如 `/lib/`），否则误伤 `src/renderer/src/lib/`。 | — |
 | **抽帧批区间必须两头都给** | `indexer` 按批落库（每批 32 帧），调用 `extractAndHash` 时必须同时传 `startIndex` **和** `endIndex`。只传前者时逐点 seek 会 `slice(startIndex)` 一路抽到片尾 —— 49 帧的计划被抽成 49+17=66 帧（日志「新增帧」虚高），进度分子出现"涨到 100% → 回退 → 再涨"的假回退（用户实测）。另外**全片解码路径不分批**（单次解码成本与帧数无关，分批 = 整片重复解码 N 遍），由 `usesFullScan` 决定 `batchSize`。 | `pnpm test:core`（批区间 + 单批断言） |
+| **seek 抽帧必须走 concat 单流** | `extractAndHashBySeek` 多个 `-ss/-i` 输入**不能**各配一路输出共写同一 `pipe:1` —— ffmpeg 按各输入解码**完成顺序**写字节（seek 深度不同 → 到达顺序不定），帧与时间戳系统性错位（实测 4 输入返回顺序 [37s, 7s, 22s, 52s]），指纹与 timeMs 全对不上 → 搜索时间错乱。必须 trim 各取一帧后 `concat` 成单输出流（顺序由滤镜图拓扑保证）+ `-fps_mode passthrough`（防默认帧率模式丢"重复 pts"帧）；旧 ffmpeg 无 `-fps_mode` 时回退 concat 后接 `setpts=N/FRAME_RATE/TB`。 | `tmp/check-align.mjs` 口径：库内每帧指纹 vs 声称时间实时解码，距离应≈0 |
 
 ---
 

@@ -25,8 +25,11 @@ export const FRAME_STRIDE = META_OFFSET + 8
  * 帧指纹格式版本。**任何**布局/尺寸变更（增删字段、改字节数）都必须 +1：
  * 库启动时对比 SQLite 的 user_version，落后即清空 frames 并标记全部视频
  * 待重索引（resumePending 会自动重抽）。旧指纹与新布局不兼容，不能留着。
+ *
+ * v4：seek 抽帧路径改用 concat 单流输出（帧序才与时间点对齐），旧数据是
+ * "指纹与 timeMs 错位"的坏数据，无法检测、只能整库作废重抽。
  */
-export const FRAME_FORMAT_VERSION = 3
+export const FRAME_FORMAT_VERSION = 4
 
 /**
  * Float32 颜色直方图（和为 1）→ u8 量化。

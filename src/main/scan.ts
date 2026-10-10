@@ -28,8 +28,10 @@ import { log } from './logger'
  * 把视频按给定时间点抽帧并算成指纹，直接输出 rgb24 裸像素到 stdout（不落临时文件）。
  *
  * 两条路径按帧数自动切换（交叉点见 media.ts::SEEK_VS_FULLSCAN_CROSSOVER）：
- *   · 少量帧走 extractAndHashBySeek：每个时间点拆成一个 `-ss/-i` 输入，再为每个输入
- *     各写一路 `pipe:1` 输出。ffmpeg 按输出顺序把各帧依次写进同一管道，stdout 就是
+ *   · 少量帧走 extractAndHashBySeek：每个时间点拆成一个 `-ss/-i` 输入，各输入取
+ *     一帧后经 concat 滤镜拼成单路 `pipe:1` 输出。顺序由滤镜图拓扑保证（多路
+ *     独立输出共写同一管道时 ffmpeg 按解码完成顺序写字节，帧序会乱，见
+ *     extractAndHashBySeek 注释），stdout 就是
  *     N 段等长的裸像素；各帧同源同 scale 滤镜故尺寸一致，用「总字节数 / 时间点数」
  *     即可还原单帧尺寸，无需解析 ffmpeg 日志。成本约 25 ms/帧，与时长无关。
  *   · 大量帧走 extractAndHashByFullScan：单次全片解码 + fps 采样，成本与帧数无关。
@@ -88,6 +90,13 @@ export async function extractAndHash(
  * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，成本约 25 ms/帧，与时长无关。
  * 帧数较少时优于全片解码（无需从头解一遍）。
  * 为获得实时进度，按子批次（默认 8 帧）分多次调用 ffmpeg。
+ *
+ * ⚠️ 帧序保证：所有输入经 trim 各取一帧后用 concat 滤镜拼成**单输出流**。
+ * 旧实现给每个输入配一路独立输出、全部写进同一个 pipe:1，赌的是"ffmpeg 按输出
+ * 定义顺序写字节"——实测不成立：ffmpeg 按各输入解码**完成顺序**写（seek 深度
+ * 不同 → 到达顺序不定），帧与时间戳系统性错位（4 输入实测返回顺序
+ * [37s, 7s, 22s, 52s]），库内指纹与 timeMs 全部对不上，搜索结果时间错乱。
+ * concat 单流的顺序由滤镜图拓扑决定，与到达顺序无关。
  */
 async function extractAndHashBySeek(
   filePath: string,
@@ -114,29 +123,52 @@ async function extractAndHashBySeek(
     for (const ts of batchTimestamps) {
       args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
     }
-    for (let i = 0; i < batchTimestamps.length; i++) {
-      args.push(
-        '-map',
-        `${i}:v:0`,
-        '-frames:v',
-        '1',
-        '-vf',
-        `scale=w=${EXTRACT_WIDTH}:h=-2`,
-        '-pix_fmt',
-        'rgb24',
-        '-f',
-        'rawvideo',
-        '-an',
-        '-sn',
-        '-dn',
-        'pipe:1'
-      )
+    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放后 concat 成单流。
+    // 同一视频的各段缩放后分辨率一致，满足 concat 的参数一致性要求。
+    const count = batchTimestamps.length
+    const parts: string[] = []
+    const labels: string[] = []
+    for (let i = 0; i < count; i++) {
+      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2[s${i}]`)
+      labels.push(`[s${i}]`)
     }
+    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0[out]`)
+    args.push('-filter_complex', parts.join(';'))
+    args.push(
+      '-map',
+      '[out]',
+      // concat 各段单帧的原始 pts 来自各自的 seek 位置，不再重排；passthrough
+      // 原样写帧，避免默认帧率模式把"重复 pts"当 dup 丢帧（实测丢最后一帧）。
+      '-fps_mode',
+      'passthrough',
+      '-pix_fmt',
+      'rgb24',
+      '-f',
+      'rawvideo',
+      '-an',
+      '-sn',
+      '-dn',
+      'pipe:1'
+    )
 
     log(`[抽帧] seek批次开始: ${filePath}, ${batchStart}-${batchEnd}/${targetTimestamps.length}, timestamps=${batchTimestamps.map(t => t.toFixed(1)).join(',')}`)
-    const { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
-    log(`[抽帧] seek批次完成: ${filePath}, ${batchStart}-${batchEnd}, 耗时=${Date.now() - batchStartTime}ms, 帧数=${batchTimestamps.length}, code=${code}`)
-    const count = batchTimestamps.length
+    let { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
+    if (code !== 0) {
+      // 旧版 ffmpeg（< 5.1）没有 -fps_mode：去掉该选项重试。此时在 concat 后接
+      // setpts 把输出 pts 重排成按帧号递增的单调网格，默认帧率模式无重复可丢。
+      // （setpts 放在回退分支：passthrough 下无需假设帧率，VFR 源也稳。）
+      const fallback = [...parts]
+      fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]`
+      const retryArgs = args.slice(0, args.indexOf('-filter_complex'))
+      retryArgs.push('-filter_complex', fallback.join(';'), '-map', '[out]')
+      retryArgs.push('-pix_fmt', 'rgb24', '-f', 'rawvideo', '-an', '-sn', '-dn', 'pipe:1')
+      const retry = await run(t.ffmpeg, retryArgs, { timeoutMs: 10 * 60_000 })
+      code = retry.code
+      stdout = retry.stdout
+      stderr = retry.stderr
+      log(`[抽帧] seek批次 -fps_mode 回退重试: code=${code}`)
+    }
+    log(`[抽帧] seek批次完成: ${filePath}, ${batchStart}-${batchEnd}, 耗时=${Date.now() - batchStartTime}ms, 帧数=${count}, code=${code}`)
     if (stdout.length === 0) {
       throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
     }
