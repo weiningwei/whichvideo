@@ -748,6 +748,13 @@ export class LibraryDatabase {
     return `data:image/jpeg;base64,${Buffer.from(row.thumbnail).toString('base64')}`
   }
 
+  /** 「查看索引帧」清单：全部索引帧的序号与时间，按帧序号升序 */
+  listFrameManifest(videoId: number): { frameIndex: number; timeMs: number }[] {
+    return this.db
+      .prepare('SELECT frame_index, time_ms FROM frames WHERE video_id = ? ORDER BY frame_index')
+      .all(videoId) as { frameIndex: number; timeMs: number }[]
+  }
+
   /** 更新缩略图并标记为 ready，同时刷新帧数 */
   setReadyWithThumbnail(videoId: number, thumbnail: Buffer | null): void {
     const frameCount = (this.db.prepare('SELECT COUNT(*) AS c FROM frames WHERE video_id = ?').get(videoId) as { c: number }).c

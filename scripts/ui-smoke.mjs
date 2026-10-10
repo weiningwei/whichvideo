@@ -592,8 +592,8 @@ export default mod
       countOf(both, BTN_OPAQUE)
     ]
     check(
-      '单选 1 行 → 竖条 1、淡蓝底 4（4 列各一）、标题染色 1、按钮不透明底 4',
-      single[0] === 1 && single[1] === 4 && single[2] === 1 && single[3] === 4,
+      '单选 1 行 → 竖条 1、淡蓝底 4（4 列各一）、标题染色 1、按钮不透明底 5',
+      single[0] === 1 && single[1] === 4 && single[2] === 1 && single[3] === 5,
       `实际 ${single.join('/')}`
     )
     check(
@@ -605,8 +605,8 @@ export default mod
     // 把按钮连边框染蓝，看着像"按钮被激活了"。
     check(
       '选中行的操作按钮用了不透明底色（阻止行底色透上来染蓝）',
-      single[3] === 4,
-      `实际 ${single[3]} 个（应为每行 4 个按钮）`
+      single[3] === 5,
+      `实际 ${single[3]} 个（应为每行 5 个按钮）`
     )
   }
   // 表格 4 列（视频 / 状态 / 采样 / 操作），元信息合并进视频列第二行。
@@ -768,11 +768,11 @@ export default mod
     (visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length === 1,
     `可见文本中出现 ${(visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length} 次（应为 1）`
   )
-  // ---- 操作列：四个按钮全部平铺，文字精简到 2 字 ----
+  // ---- 操作列：五个按钮全部平铺，文字精简到 2 字 ----
   check(
-    '操作列四个按钮全部平铺显示',
-    ['播放', '定位', '索引', '移除'].every((t) => libraryHtml.includes(`>${t}</button>`)),
-    '播放 / 定位 / 索引 / 移除'
+    '操作列五个按钮全部平铺显示',
+    ['播放', '定位', '帧', '索引', '移除'].every((t) => libraryHtml.includes(`>${t}</button>`)),
+    '播放 / 定位 / 帧 / 索引 / 移除'
   )
   check(
     '不再有「更多」菜单（⋯ 触发器与浮层都已移除）',
@@ -796,31 +796,32 @@ export default mod
         !codeNoComments.includes("addEventListener('mousedown'"),
       '不再有菜单状态与关闭逻辑'
     )
-    // 按钮内边距收到 px-1.5 才有宽度预算容纳四个 2 字按钮（合计约 156px）
+    // 按钮内边距收到 px-1.5 才有宽度预算容纳五个 2 字按钮（合计约 190px）
     const btnCount = (codeNoComments.match(/btn px-1\.5 py-0\.5 text-\[11px\]/g) ?? []).length
     check(
-      '操作按钮内边距收紧到 px-1.5（容纳四个 2 字按钮）',
-      btnCount === 3 && codeNoComments.includes('btn-danger px-1.5 py-0.5 text-[11px]'),
-      `3 个普通按钮 + 1 个危险按钮，均为 px-1.5`
+      '操作按钮内边距收紧到 px-1.5（容纳五个 2 字按钮）',
+      btnCount === 4 && codeNoComments.includes('btn-danger px-1.5 py-0.5 text-[11px]'),
+      `4 个普通按钮 + 1 个危险按钮，均为 px-1.5`
     )
     check(
       '每个操作按钮都有 title 说明完整语义',
       src.includes('在资源管理器中定位该文件') &&
+        src.includes('查看建索引时保留的帧图片') &&
         src.includes('重新抽帧并重建指纹') &&
         src.includes('只从索引库移除记录，不会删除磁盘文件'),
       '精简文字后靠 title 保留完整含义'
     )
     check(
-      '操作列宽度已相应放宽到 180px',
-      src.includes('w-[180px]') && src.includes('min-w-[480px]'),
-      '列宽 180px，表格 min-w 480px'
+      '操作列宽度已相应放宽到 210px',
+      src.includes('w-[210px]') && src.includes('min-w-[480px]'),
+      '列宽 210px，表格 min-w 480px'
     )
 
-    // 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍必须看得见、点得到。
+    // 操作列吸附右侧：窗口窄到表格要横向滚动时，五个按钮仍必须看得见、点得到。
     // 这类问题 ui-smoke 的静态检查容易漏，所以逐条钉住关键前提。
     check(
       '操作列吸附在右侧（横向滚动时按钮不被推出视野）',
-      /<th[^>]*sticky right-0[^>]*w-\[180px\]/.test(libraryHtml) &&
+      /<th[^>]*sticky right-0[^>]*w-\[210px\]/.test(libraryHtml) &&
         /<td[^>]*sticky right-0[^>]*border-l/.test(libraryHtml),
       '表头与数据格都带 sticky right-0'
     )
@@ -892,8 +893,8 @@ export default mod
     check(
       '选中行的操作按钮用不透明底色（否则半透明 btn-bg 会透出行底色）',
       /btn px-1\.5 py-0\.5 text-\[11px\] hover:bg-ink-700\/70 \$\{selected \? 'bg-surface-2 text-white' : ''\}/.test(src) &&
-        (src.match(/bg-surface-2/g) ?? []).length === 4,
-      '四个按钮都加了（播放/定位/索引/移除）'
+        (src.match(/bg-surface-2/g) ?? []).length === 5,
+      '五个按钮都加了（播放/定位/帧/索引/移除）'
     )
     check(
       'rowBg 直接用 selected（没有 singleSelected 之类的中间变量）',

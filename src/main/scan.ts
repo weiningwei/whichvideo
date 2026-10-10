@@ -58,6 +58,17 @@ export interface ExtractOptions {
   height?: number | null
   /** 强制逐点 seek：场景检测采样的时间点是非均匀的，fps 滤镜无法对齐 */
   forceSeek?: boolean
+  /**
+   * 每抽到一帧时回调原始像素（keepFrameImages 开关开启时由 indexer 传入，
+   * 用于把帧图存盘）。在 computeSignature 前后调用，像素是 stdout 的视图，
+   * 回调同步消费；回调内部自行兜错，不应抛出。
+   */
+  saveFrameImage?: (frame: {
+    frameIndex: number
+    rgb: Buffer
+    width: number
+    height: number
+  }) => void
 }
 
 export async function extractAndHash(
@@ -213,6 +224,7 @@ async function extractAndHashBySeek(
         frameIndex,
         timeMs: realTimeMs
       })
+      options?.saveFrameImage?.({ frameIndex, rgb, width: EXTRACT_WIDTH, height })
       options?.onFrame?.(frameIndex + 1, totalTimestamps)
     }
   }
@@ -268,6 +280,7 @@ async function extractAndHashByFullScan(
       frameIndex,
       timeMs: Math.round(time * 1000)
     })
+    options?.saveFrameImage?.({ frameIndex, rgb, width, height })
   }
   return frames
 }

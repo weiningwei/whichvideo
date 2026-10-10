@@ -10,6 +10,7 @@ export function VideoRow({
   onOpen,
   onReveal,
   onRemove,
+  onViewFrames,
   globalSampling,
   onSamplingChange,
   isVideoSelected,
@@ -22,6 +23,8 @@ export function VideoRow({
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
+  /** 打开「查看索引帧」弹层（帧图仅在设置开关开启后建索引时存在） */
+  onViewFrames: (id: number) => void
   /** 全局采样模式（该视频无覆盖时的生效值，用于列显示） */
   globalSampling: 'uniform' | 'scene'
   /**
@@ -320,9 +323,9 @@ export function VideoRow({
         className={`sticky right-0 border-l border-line/70 px-3 py-1.5 align-top transition-colors ${rowBg}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 四个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 索引 / 移除）。
-            按钮内边距收到 px-1.5，四项合计约 156px，比原来的「播放+⋯」73px
-            多占 83px，但省掉了点开菜单这一步，操作列由 w-28 放宽到 w-[180px]。 */}
+        {/* 五个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 帧 / 索引 / 移除）。
+            按钮内边距收到 px-1.5，五项合计约 190px，操作列由 w-[180px] 放宽到
+            w-[210px]；吸并列宽与 LibraryView 表头、分组标题行的空吸附格三处一致。 */}
         <div className="flex items-center justify-end gap-1">
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
@@ -337,6 +340,13 @@ export function VideoRow({
             title="在资源管理器中定位该文件"
           >
             定位
+          </button>
+          <button
+            className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
+            onClick={() => onViewFrames(video.id)}
+            title="查看建索引时保留的帧图片"
+          >
+            帧
           </button>
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}

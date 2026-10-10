@@ -77,6 +77,22 @@ export function SettingsPanel({
       </label>
 
       <label className="flex flex-col gap-1 text-secondary">
+        <span className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={value.keepFrameImages}
+            onChange={(e) => onChange({ keepFrameImages: e.target.checked })}
+          />
+          建索引时保留帧图片（可用行内「帧」按钮查看）
+        </span>
+        <span className="text-[10.5px] leading-snug text-muted">
+          把每个索引帧的缩略图存到数据目录 frames\ 下，供「查看索引帧」浏览；
+          磁盘占用约 4MB/视频（240 帧）。只对之后新建/重建的索引生效；
+          关闭开关会自动清空已保存的帧图。
+        </span>
+      </label>
+
+      <label className="flex flex-col gap-1 text-secondary">
         <span className="text-[11.5px]">抽帧采样模式</span>
         <select
           className="rounded-lg border border-line bg-ink-900/60 px-2 py-1.5 text-[12px] text-primary"

@@ -124,6 +124,14 @@ export interface FrameProgress {
   phase?: 'detecting' | 'extracting'
 }
 
+/** 「查看索引帧」弹层用的帧清单条目 */
+export interface FrameManifestEntry {
+  frameIndex: number
+  timeMs: number
+  /** 帧图文件是否已保存（开关开启前的旧索引没有） */
+  hasFile: boolean
+}
+
 /** 一次搜索中命中的视频 */
 export interface SearchMatch {
   video: VideoRecord
@@ -272,6 +280,12 @@ export interface AppSettings {
   samplingMode: SamplingMode
   /** 启动时检查新版本（查 GitHub Releases，仅一次、失败静默） */
   updateCheck: boolean
+  /**
+   * 建索引时把每个索引帧的图像（320 宽 JPEG）存到数据目录 frames\<videoId>\ 下，
+   * 供「查看索引帧」弹层浏览。默认关闭。关闭时自动清空已存帧文件。
+   * 只对之后新建/重建的索引生效；开关期间磁盘占用约 4MB/视频（240 帧）。
+   */
+  keepFrameImages: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -287,7 +301,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   awaitWriteMs: 1500,
   pruneOnDelete: true,
   samplingMode: 'uniform',
-  updateCheck: true
+  updateCheck: true,
+  keepFrameImages: false
 }
 
 export const VIDEO_EXTENSIONS = [
@@ -364,6 +379,10 @@ export interface WhichVideoApi {
     revealFile(videoId: number): Promise<void>
     thumbnail(videoId: number): Promise<string | null>
     frameProgress(videoId: number): Promise<FrameProgress | null>
+    /** 该视频全部索引帧清单（按帧序号升序）；hasFile 表示帧图文件是否存在 */
+    frameManifest(videoId: number): Promise<FrameManifestEntry[]>
+    /** 单帧图像 dataUrl；未保留帧图时返回 null */
+    frameImage(videoId: number, frameIndex: number): Promise<string | null>
   }
   search: {
     byPath(filePath: string): Promise<SearchResponse>
@@ -408,6 +427,8 @@ export const IPC = {
   videosReveal: 'videos:reveal',
   videosThumbnail: 'videos:thumbnail',
   videosFrameProgress: 'videos:frame-progress',
+  videosFrameManifest: 'videos:frame-manifest',
+  videosFrameImage: 'videos:frame-image',
   searchPath: 'search:path',
   searchDataUrl: 'search:data-url',
   searchClipboard: 'search:clipboard',

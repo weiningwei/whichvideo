@@ -26,6 +26,7 @@ import {
   type ToolPaths
 } from './media'
 import { extractAndHash, scanVideoFiles, statFile } from './scan'
+import { removeVideoFrames, saveFrameImage } from './frames-store'
 import type { EmitLibraryEvent, LibraryFileEvent } from './interfaces'
 import { log, logError } from './logger'
 import type { LibraryDatabase } from './db'
@@ -327,6 +328,7 @@ export class Indexer {
     const video = this.db.findByPath(filePath)
     if (!video) return
     this.db.removeVideo(video.id)
+    removeVideoFrames(video.id)
     this.queued.delete(video.id)
     this.queue = this.queue.filter((id) => id !== video.id)
     this.emit({ type: 'video-removed', videoId: video.id, path: video.path })
@@ -339,6 +341,7 @@ export class Indexer {
     const ids = this.db.removeVideosUnder(dirPath)
     for (const id of ids) {
       this.queued.delete(id)
+      removeVideoFrames(id)
     }
     this.queue = this.queue.filter((id) => !ids.includes(id))
     for (const id of ids) {
@@ -432,6 +435,7 @@ export class Indexer {
     this.queue = this.queue.filter((id) => id !== videoId)
     // 若正在处理，active 计数会在 process 的 finally 里自然递减
     // 这里仅标记数据库状态，process 完成后会检查视频是否仍存在
+    removeVideoFrames(videoId)
     this.broadcastStatus()
     this.broadcastStats()
   }
@@ -571,6 +575,13 @@ export class Indexer {
       return
     }
 
+    // 全新跑（非断点续传）时清掉旧帧图目录：重新索引的采样计划可能变化，
+    // 残留旧帧图会与新的 frameIndex 错位；开关已关时这里也顺带清掉历史残留。
+    // 断点续传（startIndex > 0）绝不能清，否则会把上次已保存的帧图抹掉。
+    if (startIndex === 0) {
+      removeVideoFrames(videoId)
+    }
+
     // 初始化帧进度
     this.frameProgress.set(videoId, { done: startIndex, total: timestamps.length, phase: 'extracting' })
     this.broadcastStatus()
@@ -596,6 +607,12 @@ export class Indexer {
         onFrame: (done, total) => {
           this.frameProgress.set(videoId, { done, total, phase: 'extracting' })
         },
+        // 帧图保存：失败已在 frames-store 内部兜错（仅记日志），不影响索引
+        saveFrameImage: settings.keepFrameImages
+          ? (f) => {
+              saveFrameImage(videoId, f.frameIndex, f.rgb, f.width, f.height)
+            }
+          : undefined,
         width: video.width,
         height: video.height
       })

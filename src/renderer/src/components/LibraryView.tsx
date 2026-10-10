@@ -6,6 +6,7 @@ import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor, PAGE_JUMP } from '../hooks/useVideoCursor'
 import { SidePanel } from './SidePanel'
 import { VideoRow } from './VideoRow'
+import { FrameGallery } from './FrameGallery'
 
 interface Props {
   folders: WatchedFolder[]
@@ -64,6 +65,9 @@ export function LibraryView(props: Props) {
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
+  // 「查看索引帧」弹层的目标视频；null = 关闭。只存 id 对应的行对象，
+  // 行被移除时弹层里的清单查询会自然失败/为空，无僵尸引用。
+  const [framesVideo, setFramesVideo] = useState<VideoRecord | null>(null)
   // 两两 pair 聚合成相似组（连通分量）：AB、BC 相似 → A/B/C 同组，
   // dupeGuru 式交互 —— 组内挑一个保留、其余移除，不逐对处理。
   const duplicateGroups = useMemo(
@@ -76,6 +80,11 @@ export function LibraryView(props: Props) {
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
   /** 快捷键 / 会聚焦到这里 */
   const filterInputRef = useRef<HTMLInputElement>(null)
+
+  /** 打开「查看索引帧」弹层。VideoRow 上来的是 id，按当前列表反查行对象 */
+  const openFramesViewer = (videoId: number): void => {
+    setFramesVideo(videos.find((v) => v.id === videoId) ?? null)
+  }
 
   // 分组视图：按 folderId 聚合，null folderId 归为"未分类"
   const groupedVideos = useMemo(() => {
@@ -406,7 +415,7 @@ export function LibraryView(props: Props) {
                 <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">采样</th>
                 {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
                     左侧那条线标示"这里是浮在内容之上的固定区"。 */}
-                <th className="sticky right-0 w-[180px] border-l border-line/70 bg-ink-900 px-3 py-2 text-right font-medium">
+                <th className="sticky right-0 w-[210px] border-l border-line/70 bg-ink-900 px-3 py-2 text-right font-medium">
                   操作
                 </th>
               </tr>
@@ -482,7 +491,7 @@ export function LibraryView(props: Props) {
                       {/* 空的采样格：与数据行的采样列对齐 */}
                       <td className="bg-row-group" />
                       {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
-                      <td className="sticky right-0 w-[180px] border-l border-line/70 bg-row-group" />
+                      <td className="sticky right-0 w-[210px] border-l border-line/70 bg-row-group" />
                     </tr>
                   )
                   const rows = expanded ? folderVideos.map((video) => (
@@ -494,6 +503,7 @@ export function LibraryView(props: Props) {
                       onOpen={props.onOpen}
                       onReveal={props.onReveal}
                       onRemove={props.onRemoveVideo}
+                      onViewFrames={openFramesViewer}
                       globalSampling={props.globalSampling}
                       onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                       isVideoSelected={isVideoSelected}
@@ -513,6 +523,7 @@ export function LibraryView(props: Props) {
                     onOpen={props.onOpen}
                     onReveal={props.onReveal}
                     onRemove={props.onRemoveVideo}
+                    onViewFrames={openFramesViewer}
                     globalSampling={props.globalSampling}
                     onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                     isVideoSelected={isVideoSelected}
@@ -692,6 +703,12 @@ export function LibraryView(props: Props) {
           </div>
         </div>
       )}
+
+      <FrameGallery
+        video={framesVideo}
+        onClose={() => setFramesVideo(null)}
+        onReindex={(ids) => props.onReindex(ids)}
+      />
     </div>
   )
 }

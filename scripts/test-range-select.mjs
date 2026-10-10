@@ -203,8 +203,8 @@ console.log('=== 实现与 useSelection 的算法保持一致 ===')
   )
   check(
     '选中行的操作按钮用不透明底色（阻止半透明 btn-bg 透出行底色）',
-    (viewSrc.match(/bg-surface-2/g) ?? []).length === 4,
-    '四个按钮：播放 / 定位 / 索引 / 移除'
+    (viewSrc.match(/bg-surface-2/g) ?? []).length === 5,
+    '五个按钮：播放 / 定位 / 帧 / 索引 / 移除'
   )
   check(
     '选中提示单选多选一致：rowBg 直接用 selected',

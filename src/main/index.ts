@@ -10,6 +10,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { IPC, type LibraryEvent } from '@shared/types'
 import { getLogFile, initLogger, installCrashHandlers, log, logError, resetLogger } from './logger'
 import { registerIpc } from './ipc'
+import { initializeFramesStore } from './frames-store'
 import { checkAndNotifyUpdate } from './updater'
 import { createEventBus } from './interfaces'
 
@@ -248,6 +249,7 @@ function relocateLogger(finalDir: string): void {
 
 const dataDir = setupDataDirectory()
 relocateLogger(dataDir.dir)
+initializeFramesStore(dataDir.dir)
 log(`数据目录：${dataDir.dir}（portable=${dataDir.portable} source=${dataDir.source}）`)
 log(`日志文件：${getLogFile()}`)
 

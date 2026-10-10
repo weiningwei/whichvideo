@@ -25,6 +25,7 @@ import {
   type VideoRecord,
   type WatchedFolder,
   type FrameProgress,
+  type FrameManifestEntry,
   type DuplicatePair
 } from '@shared/types'
 import { ssimSimilarity, computeSignature, type ImageDataLike } from '@shared/hash'
@@ -44,6 +45,7 @@ import {
 } from './search'
 import type { Indexer } from './indexer'
 import type { FolderWatcher } from './watcher'
+import { frameImageExists, readFrameImage, removeAllFrames } from './frames-store'
 
 /** bootstrap 在 registerIpc 调用点构造；实例在调用前都已创建完毕 */
 export interface IpcDeps {
@@ -351,6 +353,16 @@ export function registerIpc(deps: IpcDeps): void {
     if (patch.samplingMode && patch.samplingMode !== prev.samplingMode) {
       db.migrateSamplingOnGlobalChange(prev.samplingMode, patch.samplingMode)
     }
+    // 帧图开关开→关：按用户确认的清理策略，异步删掉全部已存帧文件（不阻塞
+    // 设置写入；删除结果经 notice 反馈）。文件监听期间正在索引的视频可能随后
+    // 又写出新帧 —— 残留会在该视频下次全新索引时清掉（indexer.process）。
+    if (patch.keepFrameImages === false && prev.keepFrameImages) {
+      setTimeout(() => {
+        if (removeAllFrames()) {
+          broadcast({ type: 'notice', level: 'info', message: '已清空全部索引帧图片' })
+        }
+      }, 0)
+    }
     void watcher.syncAll()
     broadcast({ type: 'settings-updated', settings: updated })
     return updated
@@ -362,6 +374,7 @@ export function registerIpc(deps: IpcDeps): void {
   })
   ipcMain.handle(IPC.libraryReset, () => {
     db.db.exec('DELETE FROM frames; DELETE FROM videos; DELETE FROM image_folders;')
+    removeAllFrames()
     searchIndex.rebuild()
     broadcast({ type: 'stats', stats: db.stats() })
     broadcast({ type: 'notice', level: 'info', message: '索引库已清空' })
@@ -454,6 +467,18 @@ export function registerIpc(deps: IpcDeps): void {
   )
   ipcMain.handle(IPC.videosThumbnail, (_e, videoId: number) => db.getThumbnail(videoId))
   ipcMain.handle(IPC.videosFrameProgress, (_e, videoId: number): FrameProgress | null => indexer.getFrameProgress(videoId))
+  // 帧清单按 manifest 返回 hasFile（存在性判断在本进程内做），图像逐帧懒取，
+  // 避免一次把几百帧 base64（约 5MB）塞进一次 IPC。
+  ipcMain.handle(IPC.videosFrameManifest, (_e, videoId: number): FrameManifestEntry[] =>
+    db.listFrameManifest(videoId).map((row) => ({
+      frameIndex: row.frameIndex,
+      timeMs: row.timeMs,
+      hasFile: frameImageExists(videoId, row.frameIndex)
+    }))
+  )
+  ipcMain.handle(IPC.videosFrameImage, (_e, videoId: number, frameIndex: number) =>
+    readFrameImage(videoId, frameIndex)
+  )
 
   ipcMain.handle(IPC.videosImport, async () => {
     const picked = await showOpenDialog({
