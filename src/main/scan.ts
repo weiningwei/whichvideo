@@ -119,12 +119,12 @@ async function extractAndHashBySeek(
     const batchTimestamps = targetTimestamps.slice(batchStart, batchEnd)
     const batchStartTime = Date.now()
 
-    const args: string[] = ['-hide_banner', '-v', 'error', '-nostdin']
+    const args: string[] = ['-hide_banner', '-v', 'info', '-nostdin']
     for (const ts of batchTimestamps) {
       args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
     }
-    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放后 concat 成单流。
-    // 同一视频的各段缩放后分辨率一致，满足 concat 的参数一致性要求。
+    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放后 concat 成单流，
+    // 再接 showinfo 获取每帧真实 pts_time（秒）。
     const count = batchTimestamps.length
     const parts: string[] = []
     const labels: string[] = []
@@ -132,7 +132,7 @@ async function extractAndHashBySeek(
       parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2[s${i}]`)
       labels.push(`[s${i}]`)
     }
-    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0[out]`)
+    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0,showinfo[out]`)
     args.push('-filter_complex', parts.join(';'))
     args.push(
       '-map',
@@ -158,7 +158,7 @@ async function extractAndHashBySeek(
       // setpts 把输出 pts 重排成按帧号递增的单调网格，默认帧率模式无重复可丢。
       // （setpts 放在回退分支：passthrough 下无需假设帧率，VFR 源也稳。）
       const fallback = [...parts]
-      fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]`
+      fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB,showinfo[out]`
       const retryArgs = args.slice(0, args.indexOf('-filter_complex'))
       retryArgs.push('-filter_complex', fallback.join(';'), '-map', '[out]')
       retryArgs.push('-pix_fmt', 'rgb24', '-f', 'rawvideo', '-an', '-sn', '-dn', 'pipe:1')
@@ -172,6 +172,15 @@ async function extractAndHashBySeek(
     if (stdout.length === 0) {
       throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
     }
+
+    // 解析 showinfo 输出的真实 pts_time（秒）
+    const showinfoLines = stderr.split('\n').filter((l) => l.includes('pts_time:'))
+    const realTimes = showinfoLines
+      .map((l) => {
+        const m = l.match(/pts_time:(\d+(?:\.\d+)?)/)
+        return m ? Number.parseFloat(m[1]) : null
+      })
+      .filter((t): t is number => t !== null)
 
     const rowBytes = EXTRACT_WIDTH * 3
     if (stdout.length % count !== 0) {
@@ -190,13 +199,17 @@ async function extractAndHashBySeek(
       const image: ImageDataLike = { width: EXTRACT_WIDTH, height, channels: 3, order: 'rgb', data: rgb }
       const sig = computeSignature(image)
       const frameIndex = startIndex + batchStart + i
+      // 优先用真实 pts_time；缺行时退回计划时间点
+      const realTimeMs = realTimes[i] !== undefined
+        ? Math.round(realTimes[i] * 1000)
+        : Math.round(batchTimestamps[i] * 1000)
       frames.push({
         dhash: sig.dhash,
         struct: sig.struct,
         color: quantizeColor(sig.color),
         spatial: sig.spatial,
         frameIndex,
-        timeMs: Math.round(batchTimestamps[i] * 1000)
+        timeMs: realTimeMs
       })
       options?.onFrame?.(frameIndex + 1, totalTimestamps)
     }
