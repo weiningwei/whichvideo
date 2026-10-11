@@ -428,97 +428,113 @@ export function LibraryView(props: Props) {
             </thead>
             <tbody>
               {groupByFolder && groupedVideos ? (
-                Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos]) => {
-                  const folder = folderId === -1 ? null : folders.find((f) => f.id === folderId)
-                  const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
-                  const expanded = expandedFolderIds.has(folderId)
+                (() => {
+                  let cursor = 0
+                  return Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos]) => {
+                    const groupHeaderIndex = cursor
+                    cursor += 1 + folderVideos.length
+                    const folder = folderId === -1 ? null : folders.find((f) => f.id === folderId)
+                    const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
+                    const expanded = expandedFolderIds.has(folderId)
+                    const headerFocused = focusedIndex === groupHeaderIndex
 
-                  const groupSelected = folderVideos.length > 0 && folderVideos.every((v) => isVideoSelected(v.id))
-                  const groupPartial =
-                    !groupSelected && folderVideos.some((v) => isVideoSelected(v.id))
+                    const groupSelected = folderVideos.length > 0 && folderVideos.every((v) => isVideoSelected(v.id))
+                    const groupPartial =
+                      !groupSelected && folderVideos.some((v) => isVideoSelected(v.id))
 
-                  const toggleGroup = () => {
-                    const target = !groupSelected
-                    folderVideos.forEach((v) => {
-                      if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
-                    })
-                  }
+                    const toggleGroup = () => {
+                      const target = !groupSelected
+                      folderVideos.forEach((v) => {
+                        if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
+                      })
+                    }
 
-                  // 分组标题不再有「键盘焦点」态：↑↓ 只在视频行间移动，光标不会停在标题上。
-                  // 之前用 focusedIndex === groupIdx 判断，但那条件在光标与选中合一后
-                  // 永远不成立，留着只会误导后来人以为标题能被键盘选中。
-                  // 标题行拆成两格而不是一个 colSpan=3：跨三列的 td 会把操作列一起盖住，
-                  // 右侧的吸附格与分隔线就断了。第二格留空，只为延续那条竖线。
-                  const header = (
-                    <tr
-                      key={`folder-header-${folderId}`}
-                      onMouseDown={blockModifierTextSelection}
-                      className="border-t border-line/40"
-                    >
-                      <td colSpan={2} className="bg-row-group px-3 py-2">
-                        <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
-                          {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
-                              否则这个 2px 的细条根本点不中。 */}
-                          <span
-                            className="-m-1 flex h-5 w-3 shrink-0 cursor-pointer items-center justify-center"
-                            onClick={toggleGroup}
-                            title={groupSelected ? '取消全选该组' : '全选该组'}
-                            role="checkbox"
-                            aria-checked={groupSelected}
-                            aria-label="全选该组"
-                          >
+                    // 标题行的视觉态：
+                    //   - 选中（groupSelected/groupPartial）：行底色 row-selected
+                    //   - 仅键盘光标（headerFocused）：行底色 row-focus + 左侧 2px 淡灰条，
+                    //     与 VideoRow 同一套语义 —— 不然用户根本看不出"光标停在标题上"
+                    const headerBg = groupSelected
+                      ? 'bg-row-selected'
+                      : headerFocused
+                        ? 'bg-row-focus'
+                        : 'bg-row-group hover:bg-row-hover'
+
+                    const header = (
+                      <tr
+                        key={`folder-header-${folderId}`}
+                        onMouseDown={blockModifierTextSelection}
+                        className="border-t border-line/40"
+                      >
+                        <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
+                          {/* 与 VideoRow 同一套"左侧 2px 竖条"语义：仅光标时给淡灰条。
+                              选中态留给 groupSelected 在 checkbox 里给 accent。 */}
+                          {!groupSelected && headerFocused && (
+                            <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
+                          )}
+                          <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
+                            {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
+                                否则这个 2px 的细条根本点不中。 */}
                             <span
-                              className={`h-3.5 w-[2px] rounded-full transition ${
-                                groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
-                              }`}
-                            />
-                          </span>
-                          {/* 展开/收起：整块（竖条右侧到视频数）都可点。
-                              此前文件夹名字被"全选该组"占用了，只能点小三角 ——
-                              那不符合直觉，名字就该是展开收起的主热区。 */}
-                          <span
-                            className="-my-2 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 hover:text-primary"
-                            onClick={() => toggleFolderExpanded(folderId)}
-                            title={expanded ? '收起该目录' : '展开该目录'}
-                          >
-                            <span
-                              className="select-none transition-transform duration-150"
-                              style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
+                              className="-m-1 flex h-5 w-3 shrink-0 cursor-pointer items-center justify-center"
+                              onClick={toggleGroup}
+                              title={groupSelected ? '取消全选该组' : '全选该组'}
+                              role="checkbox"
+                              aria-checked={groupSelected}
+                              aria-label="全选该组"
                             >
-                              ▼
+                              <span
+                                className={`h-3.5 w-[2px] rounded-full transition ${
+                                  groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
+                                }`}
+                              />
                             </span>
-                            <span className="truncate font-medium">{displayName}</span>
-                            <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
-                              {folderVideos.length} 个视频
+                            {/* 展开/收起：整块（竖条右侧到视频数）都可点。
+                                此前文件夹名字被"全选该组"占用了，只能点小三角 ——
+                                那不符合直觉，名字就该是展开收起的主热区。 */}
+                            <span
+                              className="-my-2 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 hover:text-primary"
+                              onClick={() => toggleFolderExpanded(folderId)}
+                              title={expanded ? '收起该目录' : '展开该目录'}
+                            >
+                              <span
+                                className="select-none transition-transform duration-150"
+                                style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
+                              >
+                                ▼
+                              </span>
+                              <span className="truncate font-medium">{displayName}</span>
+                              <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
+                                {folderVideos.length} 个视频
+                              </span>
                             </span>
-                          </span>
-                        </div>
-                      </td>
-                      {/* 空的采样格：与数据行的采样列对齐 */}
-                      <td className="bg-row-group" />
-                      {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
-                      <td className="sticky right-0 w-[210px] border-l border-line/70 bg-row-group" />
-                    </tr>
-                  )
-                  const rows = expanded ? folderVideos.map((video) => (
-                    <VideoRow
-                      key={video.id}
-                      video={video}
-                      roots={roots}
-                      focused={focusedVideoId === video.id}
-                      onOpen={props.onOpen}
-                      onReveal={props.onReveal}
-                      onRemove={props.onRemoveVideo}
-                      onViewFrames={openFramesViewer}
-                      globalSampling={props.globalSampling}
-                      onSamplingChange={(id, mode) => props.onReindex([id], mode)}
-                      isVideoSelected={isVideoSelected}
-                      onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
-                    />
-                  )) : []
+                          </div>
+                        </td>
+                        {/* 空的采样格：与数据行的采样列对齐 */}
+                        <td className="bg-row-group" />
+                        {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
+                        <td className="sticky right-0 w-[210px] border-l border-line/70 bg-row-group" />
+                      </tr>
+                    )
+                    const rows = expanded ? folderVideos.map((video) => (
+                      <VideoRow
+                        key={video.id}
+                        video={video}
+                        roots={roots}
+                        focused={focusedVideoId === video.id}
+                        onOpen={props.onOpen}
+                        onReveal={props.onReveal}
+                        onRemove={props.onRemoveVideo}
+                        onViewFrames={openFramesViewer}
+                        globalSampling={props.globalSampling}
+                        onSamplingChange={(id, mode) => props.onReindex([id], mode)}
+                        isVideoSelected={isVideoSelected}
+                        onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
+                      />
+                    )) : []
 
-                  return [header, ...rows]
-                })
+                    return [header, ...rows]
+                  })
+                })()
               ) : (
                 videos.map((video) => (
                   <VideoRow
