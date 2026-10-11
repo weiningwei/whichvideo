@@ -78,5 +78,30 @@ const inRange = (ts, D) => ts.every((t) => t >= 0 && t <= D)
   check('负值与超界点合并为有效的夹值', ts.includes(0.05) || ts.includes(600) || ts.includes(599.95))
 }
 
+// —— 7. 开口补帧：scenes 从 240s 开始，[0, 240) 不能空 ——
+{
+  // 600s 预算 36（实测策略值）→ idealGap=600/36≈16.67, minGap=max(33.3, 8)=33.3
+  // 现实场景：开头 4 分钟静态（片头、字幕、单镜头对话铺垫）→ detectScenes
+  // 第一个切点出在 240s。如果不补开头段，[0, 240) 一帧都没有 —— 用户截图
+  // 在片头时根本命中不了这个视频（已被用户实测）。
+  const ts = planSceneTimestamps([240], 600, 36)
+  const inOpening = ts.filter((t) => t < 240)
+  check(
+    '首帧不在 scenes[0] 之前（开口段被覆盖）',
+    ts[0] < 240,
+    `首帧 = ${ts[0]?.toFixed(2)}s；开口段帧数 = ${inOpening.length}`
+  )
+  check(
+    '开口段 [0, 240) 至少有一帧（中点帧兜底）',
+    inOpening.length >= 1,
+    `${inOpening.length} 帧`
+  )
+  check(
+    '开口段中点帧在 [120 ±minGap/2] 附近',
+    inOpening.some((t) => Math.abs(t - 120) < 20),
+    `开口帧：${inOpening.map((t) => t.toFixed(1)).join(', ')}`
+  )
+}
+
 console.log(fail ? `\n${fail} 项失败` : '\n全部通过')
 process.exit(fail ? 1 : 0)

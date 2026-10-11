@@ -74,6 +74,9 @@ export function planTimestamps(duration: number | null, frameBudget: number): nu
  *   奇数个时已含正中点，不重复加
  * - 相邻间隔超过 max(2×理想间隔, 8s) 的段视为长镜头，段内均匀补帧
  *   （idealGap = 时长/预算；8s 下限避免超长预算时无意义密采）
+ * - **开口段 [0, scenes[0])** 也按长镜头逻辑补帧（detectScenes 的首个切点常
+ *   在 200~300s 才出现 —— 片头/字幕/铺垫这些静态段没切点；不补开头的话
+ *   [0, firstScene) 一帧都没有，片头截图根本命中不了这个视频）
  * - 补充点总数超预算时均匀丢弃补充点（不动场景点）；预算有富余则不再增补
  * - 无场景切换（纯色/渐变视频）时退回均匀计划
  */
@@ -97,9 +100,15 @@ export function planSceneTimestamps(
 
   // 长镜头内部补充点 + 每镜头中点帧
   const fills: number[] = []
-  for (let i = 0; i < scenes.length; i++) {
-    const cur = scenes[i]
-    const next = i + 1 < scenes.length ? scenes[i + 1] : Math.max(D, cur + 1)
+
+  // 开口段 [0, scenes[0])：跟"两场景点之间"的逻辑同款 —— 片头/字幕/单镜头
+  // 铺垫这些静态段常常没有切点，detectScenes 第一个命中出在 200~300s，
+  // 不显式补开头段的话，[0, firstScene) 一帧没有，用户截图在片头根本命中不了
+  // 这个视频（已被实测）。把 0 当作虚拟"前一个切点"喂进同一段循环：
+  const headBoundaries = scenes.length > 0 ? [0, ...scenes] : scenes
+  for (let i = 0; i < headBoundaries.length; i++) {
+    const cur = headBoundaries[i]
+    const next = i + 1 < headBoundaries.length ? headBoundaries[i + 1] : Math.max(D, cur + 1)
     const gap = next - cur
     const extra = Math.floor(gap / minGap) - 1
     for (let k = 1; k <= extra; k++) fills.push(cur + (gap * k) / (extra + 1))
