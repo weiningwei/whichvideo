@@ -175,6 +175,13 @@ interface RunOptions {
    * = 已完成帧数 —— 比 ffmpeg 自带进度刷新快 50×+。
    */
   onStdoutChunk?: (totalBytes: number) => void
+  /**
+   * stderr 原始增量回调（与 onStdoutChunk 对称）。当前唯一调用方是
+   * `detectScenes`：ffmpeg `-progress` 节流下场景检测的"已解码秒数"
+   * 同样会"突然完成"，改成解析 `[p]` 路 showinfo 的 pts_time 行（一帧一行，
+   * pts_time 单调递增）做实时进度，不依赖 ffmpeg 节流。
+   */
+  onStderrChunk?: (chunk: string) => void
 }
 
 export function run(bin: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -208,6 +215,7 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
       // 上限可调：启用 -progress 时进度行与业务行共用 stderr，默认 64KB
       // 会被进度挤满导致业务行（showinfo）丢失
       if (stderr.length < (options.maxStderrBytes ?? 64 * 1024)) stderr += text
+      options.onStderrChunk?.(text)
       if (options.onProgress) {
         progressBuf += text
         const lines = progressBuf.split('\n')
@@ -783,13 +791,19 @@ export async function detectScenes(
   tools?: ToolPaths,
   timeoutMs = 10 * 60_000,
   /**
-   * 检测进度回调（秒）：全片解码一趟，用 -progress 的 out_time_ms 折算
-   * 已解码时长 —— 长视频检测期间界面不再是\"卡住\"的静默态。
+   * 检测进度回调（秒）：已解码到的视频时间位置。
+   *
+   * 实现：走 ffmpeg `-progress` 的 `out_time_ms` 是节流（~500ms/次），对
+   * 4K hwaccel 类秒级完成的任务一样会"突然完成"。所以 `[p]` 路额外接
+   * `showinfo`，每帧一行 `pts_time:` 到 stderr —— 按该行的最新 pts_time
+   * 调 onProgress（**逐帧精度**，等价于"已解码位置 → X 秒"）。`[d]` 路
+   * select 命中才出 showinfo，不能用于进度；`[p]` 路是全帧通过所以稳定。
+   * 失败兜底：解析失败时回退 `-progress` 节流（旧行为）。
    */
   onProgress?: (decodedSeconds: number) => void
 ): Promise<number[]> {
   const t = tools ?? requireTools()
-  const args = [
+  const args: string[] = [
     '-hide_banner',
     '-v',
     'info',
@@ -799,12 +813,12 @@ export async function detectScenes(
     '-i',
     filePath
   ]
-  // 进度输出到 stderr，复用 run() 的 onProgress 解析
+  // 进度输出到 stderr，复用 run() 的 onProgress 解析（兜底）
   if (onProgress) args.push('-progress', 'pipe:2')
   // 关键结构：split 两路 + nullsink
   //
   //   [d] select+showinfo → nullsink   ← 场景点（pts_time 打到 stderr）
-  //   [p] 全帧 → map 到 null muxer      ← 进度（frame/out_time_ms 才有效）
+  //   [p] 全帧 + showinfo → null muxer  ← 进度（每帧 pts_time 逐行打到 stderr）
   //
   // 为什么不能直接 `-vf select=...,showinfo -f null -`：-progress 报的是
   // **muxer 收到的帧**，select 在 muxer 之前把绝大多数帧丢掉 → frame=0、
@@ -812,7 +826,7 @@ export async function detectScenes(
   // 进度才反映真实解码位置。nullsink 让场景那路无需 -map 就能终止。
   args.push(
     '-filter_complex',
-    `[0:v]split=2[d][p];[d]scale=w=160:h=-2,select='gt(scene,${threshold})',showinfo,nullsink;[p]scale=w=160:h=-2[prog]`,
+    `[0:v]split=2[d][p];[d]scale=w=160:h=-2,select='gt(scene,${threshold})',showinfo,nullsink;[p]scale=w=160:h=-2,showinfo[prog]`,
     '-map',
     '[prog]',
     '-an',
@@ -822,6 +836,10 @@ export async function detectScenes(
     'null',
     '-'
   )
+  // 实时跟踪 [p] 路 showinfo 最新 pts_time（progressBuf 在 chunk 边界补回
+  // 上一行尾部，避免 `pts_time:...` 跨 chunk 拆开时漏解析）。
+  let progressBuf = ''
+  let lastDecoded = 0
   const { code, stderr } = await run(t.ffmpeg, args, {
     timeoutMs,
     // 进度行与 showinfo 行共用 stderr：64KB 默认上限会被进度挤满，
@@ -829,7 +847,31 @@ export async function detectScenes(
     maxStderrBytes: 8 * 1024 * 1024,
     onProgress: onProgress
       ? (info) => {
-          if (info.out_time_ms > 0) onProgress(info.out_time_ms / 1000)
+          if (info.out_time_ms > 0 && lastDecoded === 0) onProgress(info.out_time_ms / 1000)
+        }
+      : undefined,
+    onStderrChunk: onProgress
+      ? (chunk) => {
+          progressBuf += chunk
+          const ls = progressBuf.split('\n')
+          progressBuf = ls.pop() || ''
+          for (const line of ls) {
+            // [Parsed_showinfo_N @ ...] 标识 showinfo 实例，**只有 [p] 路每帧都报**，
+            // [d] 路仅在 select 命中时才报。先抓 N，再从这条 line 上读 pts_time
+            // （showinfo 把所有字段压成一行，行内同时包含 n: pts: pts_time:）。
+            const m1 = line.match(/\[Parsed_showinfo_\d+ @/)
+            if (m1) {
+              const m2 = line.match(/pts_time:(\d+(?:\.\d+)?)/)
+              if (m2) {
+                const decoded = Number.parseFloat(m2[1])
+                if (decoded > lastDecoded) {
+                  lastDecoded = decoded
+                  onProgress!(decoded)
+                }
+              }
+              continue
+            }
+          }
         }
       : undefined
   })
