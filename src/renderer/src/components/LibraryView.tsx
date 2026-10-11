@@ -104,7 +104,7 @@ export function LibraryView(props: Props) {
     navigableItems, focusedIndex, focusedVideoId,
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick,
     expandFocusedFolder, collapseFocusedFolder, scrollRef
-  } = useVideoCursor({ videos, groupByFolder, groupedVideos, expandedFolderIds, toggleVideoSelection, toggleFolderExpanded })
+  } = useVideoCursor({ videos, groupByFolder, groupedVideos, expandedFolderIds, toggleVideoSelection, toggleFolderExpanded, clearSelection })
 
   /**
    * 拿到"该被操作的那个视频"：有选中就用第一个选中的，否则用焦点处的。
@@ -538,7 +538,13 @@ export function LibraryView(props: Props) {
                                     : `✓ ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length}`}
                                 </span>
                               )}
-                              <span className="truncate font-medium">{displayName}</span>
+                              <span
+                                className={`truncate font-medium ${
+                                  groupSelected || groupPartial ? 'text-accent' : ''
+                                }`}
+                              >
+                                {displayName}
+                              </span>
                               <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
                                 {folderVideos.length} 个视频
                               </span>

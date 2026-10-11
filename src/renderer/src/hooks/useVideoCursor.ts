@@ -26,6 +26,12 @@ export interface UseVideoCursorArgs {
   expandedFolderIds: Set<number>
   toggleVideoSelection: (videoId: number, shiftKey: boolean, ctrlKey: boolean) => void
   toggleFolderExpanded: (folderId: number) => void
+  /**
+   * 清空视频选中集合。**单选跟随光标**：光标移到非视频项（folder 标题）时
+   * 调用 —— 否则 a1 选中状态下按 ↑ 跳到 folder A 标题，a1 仍亮着蓝，
+   * 用户体验是"两个东西都被选中"，分不清焦点。Esc 也会走这里。
+   */
+  clearSelection: () => void
 }
 
 export function useVideoCursor({
@@ -34,7 +40,8 @@ export function useVideoCursor({
   groupedVideos,
   expandedFolderIds,
   toggleVideoSelection,
-  toggleFolderExpanded
+  toggleFolderExpanded,
+  clearSelection
 }: UseVideoCursorArgs) {
   const navigableItems = useMemo<NavigableItem[]>(() => {
     if (!groupByFolder || !groupedVideos) {
@@ -106,6 +113,13 @@ export function useVideoCursor({
     if (ctrlKey) return
     if (nextItem.type === 'video' && nextItem.video) {
       toggleVideoSelection(nextItem.video.id, rangeKey, false)
+    } else if (!rangeKey) {
+      // **单选跟随光标**：光标落到 folder 标题（非视频项）时清空旧选中。
+      // 此前不清会让 a1 选中状态下按 ↑ 跳到 folder A 标题，a1 仍亮蓝，
+      // 用户看着像两个东西都被选中，分不清焦点现在在哪。
+      // Shift+↑ 不清：保留连选语义（不过 folder 不可作为连选终点 —— 函数里
+      // 没改 setSelectedVideoIds，仅清，让旧连选带不上去而已）。
+      clearSelection()
     }
   }
 
@@ -121,6 +135,9 @@ export function useVideoCursor({
     if (rangeKey) return
     if (nextItem.type === 'video' && nextItem.video) {
       toggleVideoSelection(nextItem.video.id, false, false)
+    } else {
+      // 同 moveCursor：单选跟随，跳到 folder 标题时清空
+      clearSelection()
     }
   }
 
