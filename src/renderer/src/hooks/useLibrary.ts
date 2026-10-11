@@ -141,16 +141,10 @@ export function useLibrary() {
       },
       async reindex(videoIds?: number[], mode?: SamplingMode): Promise<void> {
         await withBusy('正在重建索引…', async () => {
-          // 判定在主进程（db 是权威数据）—— 渲染端列表可能因过滤/事件时序
-          // 而不新鲜，放这里判定过"无需重建"永不触发。
+          // 重建永远是 force —— 即便采样方式未变也照样重建（AGENTS.md 注释
+          // 的设计意图）。代价是用户多按一次会重抽，但采样计划稳定时重建代价低，
+          // 不该用"采样方式未变"的警告挡用户。
           const res = await window.whichvideo.videos.reindex(videoIds, mode)
-          if (res.skipped) {
-            notices.pushNotice(
-              'warn',
-              `「${res.skipped.name}」的采样方式已经是${res.skipped.mode === 'scene' ? '场景检测' : '均匀采样'}，无需重建`
-            )
-            return
-          }
           notices.pushNotice(
             'info',
             mode === 'scene'

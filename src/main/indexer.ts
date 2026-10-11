@@ -390,21 +390,15 @@ export class Indexer {
   async reindex(
     videoIds?: number[],
     mode?: SamplingMode
-  ): Promise<{ count: number; skipped: { name: string; mode: SamplingMode } | null }> {
+  ): Promise<{ count: number }> {
     const targets = videoIds?.length
       ? videoIds.map((id) => this.db.getVideo(id)).filter((v): v is VideoRecord => !!v)
       : this.db.listVideos({ limit: 2000 }).items
 
-    // 主进程权威判定：单视频 + 请求模式与已固化值一致 → 重抽无意义，跳过
-    if (targets.length === 1) {
-      const only = targets[0]
-      const requested = mode ?? only.samplingOverride ?? this.getSettings().samplingMode
-      if (only.samplingOverride != null && only.samplingOverride === requested) {
-        log(`重建跳过（采样方式未变）：${only.path} [${requested}]`)
-        return { count: 0, skipped: { name: only.name, mode: requested } }
-      }
-    }
-
+    // 不再跳过同模式重建：用户点了「索引」就是要重建，不要用"采样方式未变"挡住。
+    // 历史 AGENTS.md 注释里写的"工具条重建按钮不传 mode —— 只重建、不动覆盖"
+    // 正是这个语义 —— reindex 永远是 force。代价是用户多按一次会重抽，但采样
+    // 计划稳定时重建的代价低（forceSeek + 时长/帧数），不该用警告挡用户。
     const targetIds = targets.map((v) => v.id)
     if (mode && targetIds.length > 0) {
       this.db.setSamplingOverride(targetIds, mode)
@@ -425,7 +419,7 @@ export class Indexer {
       this.enqueue(video.id, video.path, true)
       count++
     }
-    return { count, skipped: null }
+    return { count }
   }
 
   /** 手动/文件监听移除视频时同步清理 Indexer 内部状态 */

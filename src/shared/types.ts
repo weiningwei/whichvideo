@@ -369,7 +369,7 @@ export interface WhichVideoApi {
     reindex(
       videoIds?: number[],
       mode?: SamplingMode
-    ): Promise<{ count: number; skipped: { name: string; mode: SamplingMode } | null }>
+    ): Promise<{ count: number }>
     findDuplicates(minScore?: number): Promise<DuplicatePair[]>
     importFiles(): Promise<ImportResult>
     importImages(): Promise<string[]>
