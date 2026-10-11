@@ -14,11 +14,43 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { isVideoFile, pathKeyOf, type AppSettings } from '@shared/types'
 import { computeSignature, type ImageDataLike } from '@shared/hash'
-import { extractFrames, requireTools, run, shouldUseFullScan } from './media'
+import { extractFrames, detectHardwareScale, requireTools, run, shouldUseFullScan } from './media'
 import { quantizeColor } from '@shared/framepack'
 import type { NewFrame } from './db'
 import { EXTRACT_WIDTH, MAX_SCAN_DEPTH, DEFAULT_SKIP_DIRS } from './constants'
 import { log } from './logger'
+
+/* ------------------------------------------------------------------ *
+ * 硬件缩放滤镜构造
+ * ------------------------------------------------------------------ */
+
+type HwKind = 'cuda' | 'qsv' | 'd3d11' | 'vaapi' | 'vulkan'
+
+/**
+ * ffmpeg 启动参数：初始化硬件 device，让后续 scale_* 滤镜能用 GPU。
+ * 必须在 -i 之前。CUDA 不需要（NVDEC 自动上传）；QSV / D3D11 / VAAPI 需要。
+ */
+function hwInitArgs(kind: HwKind): string[] {
+  if (kind === 'qsv') return ['-init_hw_device', 'qsv=qsv:hw']
+  if (kind === 'd3d11') return ['-init_hw_device', 'd3d11vaapi=d3d11:hw']
+  if (kind === 'vaapi') return ['-vaapi_device', '/dev/dri/renderD128']
+  // cuda / vulkan 不需要显式 init
+  return []
+}
+
+/**
+ * 构造单帧的缩放滤镜片段（含 GPU 上传 / 下载 + 格式转换）。
+ * 输出始终是 rgb24（CPU 侧统一格式，与非硬件路径一致）。
+ */
+function hwScaleChain(kind: HwKind): string {
+  const w = EXTRACT_WIDTH
+  if (kind === 'cuda') return `format=cuda,scale_cuda=w=${w}:h=-2,format=rgb24`
+  if (kind === 'qsv') return `format=qsv,scale_qsv=w=${w}:h=-2,format=rgb24`
+  if (kind === 'd3d11') return `format=d3d11,scale_d3d11=w=${w}:h=-2,format=rgb24`
+  if (kind === 'vaapi') return `format=vaapi,scale_vaapi=w=${w}:h=-2,format=rgb24`
+  // vulkan
+  return `format=vulkan,scale_vulkan=w=${w}:h=-2,format=rgb24`
+}
 
 /* ------------------------------------------------------------------ *
  * 原始帧 → 指纹
@@ -142,50 +174,84 @@ async function extractAndHashBySeek(
     const batchTimestamps = targetTimestamps.slice(batchStart, batchEnd)
     const batchStartTime = Date.now()
 
-    const args: string[] = ['-hide_banner', '-v', 'info', '-nostdin']
-    for (const ts of batchTimestamps) {
-      args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
-    }
     // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放，再 concat 成单流。
     // 不再用 showinfo 拼真实 pts：trim 后的时间轴从 0 重启，showinfo 拿到的
     // pts_time 永远是 ≈0；trim 前拼 showinfo 在 fast seek + B 帧重排的输入下
     // 也并不可靠（实测首帧 pts 与 -ss 目标差 1 帧到一个 GOP）。timeMs 直接写
     // 计划时间点（-ss 目标），由命中时间精修在邻域补采选最优。
-    const count = batchTimestamps.length
-    const parts: string[] = []
-    const labels: string[] = []
-    for (let i = 0; i < count; i++) {
-      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2[s${i}]`)
-      labels.push(`[s${i}]`)
-    }
-    parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0[out]`)
-    args.push('-filter_complex', parts.join(';'))
-    args.push(
-      '-map',
-      '[out]',
-      // concat 各段单帧的原始 pts 来自各自的 seek 位置，不再重排；passthrough
-      // 原样写帧，避免默认帧率模式把"重复 pts"当 dup 丢帧（实测丢最后一帧）。
-      '-fps_mode',
-      'passthrough',
-      '-pix_fmt',
-      'rgb24',
-      '-f',
-      'rawvideo',
-      '-an',
-      '-sn',
-      '-dn',
-      'pipe:1'
-    )
+    //
+    // 缩放策略：4K + 有硬件缩放 → scale_cuda/qsv/d3d11 走 GPU；
+    // 其他场景 CPU scale，flags=fast_bilinear 比默认 bilinear 快约 2×，
+    // 输出 320 宽的视觉差肉眼难辨。
+    const hwScale = await detectHardwareScale()
+    const useHwScale = is4K && hwScale !== null
 
-    log(`[抽帧] seek批次开始: ${filePath}, ${batchStart}-${batchEnd}/${targetTimestamps.length}, timestamps=${batchTimestamps.map(t => t.toFixed(1)).join(',')}`)
+    const count = batchTimestamps.length
+    /**
+     * 构建 filter_complex。预生成两条链：硬件缩放（4K 走）+ CPU 兜底
+     * （无 hwscale 时同源、hwscale 跑挂时回退）。两条只在每分支的
+     * `[i:v]trim=end_frame=1,<scale>[s_i]` 不同，concat 部分共用。
+     */
+    const cpuScale = `scale=w=${EXTRACT_WIDTH}:h=-2:flags=fast_bilinear`
+    const hwScaleFilter = useHwScale && hwScale ? hwScaleChain(hwScale.kind) : cpuScale
+    const mkParts = (scaleOne: string): string[] => {
+      const p: string[] = []
+      const l: string[] = []
+      for (let i = 0; i < count; i++) {
+        p.push(`[${i}:v]trim=end_frame=1,${scaleOne}[s${i}]`)
+        l.push(`[s${i}]`)
+      }
+      p.push(`${l.join('')}concat=n=${count}:v=1:a=0[out]`)
+      return p
+    }
+    const parts = mkParts(hwScaleFilter)
+    const partsCpu = useHwScale ? mkParts(cpuScale) : parts
+    const labels = (() => {
+      const l: string[] = []
+      for (let i = 0; i < count; i++) l.push(`[s${i}]`)
+      return l
+    })()
+
+    // 硬件缩放需要先在 args 头部 -init_hw_device <kind>（QSV / D3D11 / VAAPI
+    // 上传前 device context 必须存在）。CUDA / Vulkan 自动 init 不需要显式参数。
+    const mkArgs = (filterParts: string[], initHw: boolean): string[] => {
+      const a: string[] = ['-hide_banner', '-v', 'info', '-nostdin']
+      for (const ts of batchTimestamps) {
+        a.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
+      }
+      if (initHw && hwScale) a.push(...hwInitArgs(hwScale.kind))
+      a.push(
+        '-filter_complex', filterParts.join(';'),
+        '-map', '[out]',
+        '-fps_mode', 'passthrough',
+        '-pix_fmt', 'rgb24', '-f', 'rawvideo',
+        '-an', '-sn', '-dn', 'pipe:1'
+      )
+      return a
+    }
+    const args = mkArgs(parts, useHwScale)
+    const argsCpu = useHwScale ? mkArgs(partsCpu, false) : null
+
+    log(`[抽帧] seek批次开始: ${filePath}, ${batchStart}-${batchEnd}/${targetTimestamps.length}, timestamps=${batchTimestamps.map(t => t.toFixed(1)).join(',')}${useHwScale ? ` [hwscale=${hwScale!.filter}]` : ''}`)
     let { code, stdout, stderr } = await run(t.ffmpeg, args, { timeoutMs: 10 * 60_000 })
+    // 硬件缩放链失败 → 回退 CPU 重试：探测说有但实际跑不起来（无 GPU 驱动、
+    // 跨用户/跨进程 GPU 上下文不可用等）。CPU fallback 才能保住非坏机器的索引。
+    if (code !== 0 && argsCpu) {
+      log(`[抽帧] 硬件缩放失败，回退 CPU scale: ${stderr.split('\n')[0].slice(0, 200)}`)
+      const cpuRetry = await run(t.ffmpeg, argsCpu, { timeoutMs: 10 * 60_000 })
+      code = cpuRetry.code
+      stdout = cpuRetry.stdout
+      stderr = cpuRetry.stderr
+    }
     if (code !== 0) {
       // 旧版 ffmpeg（< 5.1）没有 -fps_mode：去掉该选项重试。此时在 concat 后接
       // setpts 把输出 pts 重排成按帧号递增的单调网格，默认帧率模式无重复可丢。
       // （setpts 放在回退分支：passthrough 下无需假设帧率，VFR 源也稳。）
-      const fallback = [...parts]
+      const fallback = [...partsCpu]
       fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]`
-      const retryArgs = args.slice(0, args.indexOf('-filter_complex'))
+      const retryArgs = argsCpu
+        ? argsCpu.slice(0, argsCpu.indexOf('-filter_complex'))
+        : args.slice(0, args.indexOf('-filter_complex'))
       retryArgs.push('-filter_complex', fallback.join(';'), '-map', '[out]')
       retryArgs.push('-pix_fmt', 'rgb24', '-f', 'rawvideo', '-an', '-sn', '-dn', 'pipe:1')
       const retry = await run(t.ffmpeg, retryArgs, { timeoutMs: 10 * 60_000 })

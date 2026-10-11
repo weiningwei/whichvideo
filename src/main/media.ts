@@ -13,6 +13,7 @@ import { accessSync, constants, createReadStream, existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { VideoProbeInfo } from '@shared/types'
 import { PROBE_MAX_WIDTH } from './constants'
+import { log } from './logger'
 // 抽帧采样策略已拆到 sampling.ts；media 仍作为对外门面转出，调用方（scan/indexer/自检）无需改
 export {
   DEFAULT_FRAME_BUDGET,
@@ -103,6 +104,47 @@ export function requireTools(resourceBinDir?: string): ToolPaths {
     )
   }
   return tools
+}
+
+/**
+ * 硬件缩放滤镜探测：app 启动时跑一次，按 NVIDIA → Intel → Windows → VAAPI
+ * → Vulkan 优先级找第一个可用的 `scale_*` 滤镜，缓存给后续抽帧用。
+ * 返回 filter 名 + 配套的输入/输出 fmt 转换名 —— 链构造在调用点。
+ * 没硬件缩放 → null，调用点退回 CPU scale。
+ */
+type HwScaleKind = 'cuda' | 'qsv' | 'd3d11' | 'vaapi' | 'vulkan'
+let cachedHwScale: { kind: HwScaleKind; filter: string } | null | undefined
+export async function detectHardwareScale(): Promise<{ kind: HwScaleKind; filter: string } | null> {
+  if (cachedHwScale !== undefined) return cachedHwScale
+  const t = requireTools()
+  // 优先级：NVIDIA（最普及）→ Intel QSV → Windows D3D11 → VAAPI → Vulkan
+  const candidates: { kind: HwScaleKind; filter: string }[] = [
+    { kind: 'cuda', filter: 'scale_cuda' },
+    { kind: 'qsv', filter: 'scale_qsv' },
+    { kind: 'd3d11', filter: 'scale_d3d11' },
+    { kind: 'vaapi', filter: 'scale_vaapi' },
+    { kind: 'vulkan', filter: 'scale_vulkan' }
+  ]
+  for (const c of candidates) {
+    const { code, stdout } = await run(t.ffmpeg, ['-hide_banner', '-h', `filter=${c.filter}`], {
+      timeoutMs: 5_000
+    })
+    // 输出形如 "Filter scale_cuda\n ... " 或 help 找不到时 stderr/stdout 都为空
+    const text = stdout.toString()
+    if (code === 0 && text.includes(`Filter ${c.filter}`)) {
+      cachedHwScale = c
+      log(`硬件缩放：${c.filter} 可用`)
+      return c
+    }
+  }
+  cachedHwScale = null
+  log('硬件缩放：无可用滤镜，CPU scale 兜底')
+  return null
+}
+
+/** 测试用：清缓存（让 detectHardwareScale 重跑）。 */
+export function _resetHwScaleCache(): void {
+  cachedHwScale = undefined
 }
 
 export interface RunResult {
