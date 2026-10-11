@@ -707,10 +707,7 @@ export function LibraryView(props: Props) {
       <FrameGallery
         video={framesVideo}
         onClose={() => setFramesVideo(null)}
-        onReindex={(ids) => props.onReindex(ids)}
         onOpenFrame={(id, atSeconds) => {
-          // 弹层选中后先关弹层再唤起播放器 —— onClose 在 onOpenFrame 之前调用，
-          // 避免弹层遮罩挡住唤起的播放器窗口。
           props.onOpen(id, atSeconds)
         }}
       />

@@ -23,7 +23,7 @@ export function VideoRow({
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
-  /** 打开「查看索引帧」弹层（帧图仅在设置开关开启后建索引时存在） */
+  /** 打开「查看索引帧」弹层 */
   onViewFrames: (id: number) => void
   /** 全局采样模式（该视频无覆盖时的生效值，用于列显示） */
   globalSampling: 'uniform' | 'scene'
@@ -344,7 +344,7 @@ export function VideoRow({
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
             onClick={() => onViewFrames(video.id)}
-            title="查看建索引时保留的帧图片"
+            title="查看索引时间点（点击单帧动态解码）"
           >
             帧
           </button>

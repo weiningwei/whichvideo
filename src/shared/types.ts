@@ -128,8 +128,6 @@ export interface FrameProgress {
 export interface FrameManifestEntry {
   frameIndex: number
   timeMs: number
-  /** 帧图文件是否已保存（开关开启前的旧索引没有） */
-  hasFile: boolean
 }
 
 /** 一次搜索中命中的视频 */
@@ -379,10 +377,8 @@ export interface WhichVideoApi {
     revealFile(videoId: number): Promise<void>
     thumbnail(videoId: number): Promise<string | null>
     frameProgress(videoId: number): Promise<FrameProgress | null>
-    /** 该视频全部索引帧清单（按帧序号升序）；hasFile 表示帧图文件是否存在 */
+    /** 该视频全部索引帧清单（按帧序号升序） */
     frameManifest(videoId: number): Promise<FrameManifestEntry[]>
-    /** 单帧图像 dataUrl；按 timeMs 定位（与磁盘文件名 `<timeMs>.jpg` 对齐） */
-    frameImage(videoId: number, timeMs: number): Promise<string | null>
     /**
      * 命中时间点预览（JPEG dataUrl）：现场解码 hit.timeMs 附近的帧。
      * 失败（文件已删/解码超时）时返回 null，调用方应回退到 thumbnail。
@@ -433,11 +429,11 @@ export const IPC = {
   videosThumbnail: 'videos:thumbnail',
   videosFrameProgress: 'videos:frame-progress',
   videosFrameManifest: 'videos:frame-manifest',
-  videosFrameImage: 'videos:frame-image',
   /**
    * 命中预览：按 (videoId, timeMs) 现场解码一帧 JPEG dataUrl 返回。
    * 与 videos:thumbnail 的区别——后者取视频 0.12×duration 处固定缩略图，
    * 命中预览取用户截图对应的真实时间点。解码失败/文件已删时返回 null。
+   * FrameGallery 也走这个：弹层每帧默认只显示标题，点击才触发解码。
    */
   videosMatchFrame: 'videos:match-frame',
   searchPath: 'search:path',

@@ -45,7 +45,7 @@ import {
 } from './search'
 import type { Indexer } from './indexer'
 import type { FolderWatcher } from './watcher'
-import { frameImageExists, readFrameImage, removeAllFrames, rgb24ToJpegDataUrl } from './frames-store'
+import { removeAllFrames, rgb24ToJpegDataUrl } from './frames-store'
 
 /** bootstrap 在 registerIpc 调用点构造；实例在调用前都已创建完毕 */
 export interface IpcDeps {
@@ -467,19 +467,12 @@ export function registerIpc(deps: IpcDeps): void {
   )
   ipcMain.handle(IPC.videosThumbnail, (_e, videoId: number) => db.getThumbnail(videoId))
   ipcMain.handle(IPC.videosFrameProgress, (_e, videoId: number): FrameProgress | null => indexer.getFrameProgress(videoId))
-  // 帧清单按 manifest 返回 hasFile（存在性判断在本进程内做），图像逐帧懒取，
-  // 避免一次把几百帧 base64（约 5MB）塞进一次 IPC。
+  // 帧清单只返回元信息，图像按需 matchFrame 解码（不再落帧图到磁盘）。
   ipcMain.handle(IPC.videosFrameManifest, (_e, videoId: number): FrameManifestEntry[] =>
     db.listFrameManifest(videoId).map((row) => ({
       frameIndex: row.frameIndex,
-      timeMs: row.timeMs,
-      hasFile: frameImageExists(videoId, row.timeMs)
+      timeMs: row.timeMs
     }))
-  )
-  // 帧图路径按 timeMs 定位：与磁盘文件名 `<timeMs>.jpg` 对齐，与 SQLite
-  // frames.time_ms 一一对应。FrameGallery 点击"跳到该时间播放"也走 timeMs。
-  ipcMain.handle(IPC.videosFrameImage, (_e, videoId: number, timeMs: number) =>
-    readFrameImage(videoId, timeMs)
   )
   /**
    * 命中时间点预览：按 timeMs 现场解码一帧（不走精修、不计 SSIM；纯视觉预览，
