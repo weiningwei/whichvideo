@@ -449,13 +449,16 @@ export function LibraryView(props: Props) {
                       })
                     }
 
-                    // 标题行的视觉态：
-                    //   - 选中（groupSelected 全选 / groupPartial 部分）：行底色 row-selected；
-                    //     **只要组内有任一视频被选中，文件夹名就染 text-accent** —— 单选 1 个
-                    //     视频也立刻可见（用户反馈：之前 groupSelected 要求全部才染色，多数
-                    //     时候压根触发不到，文件夹选中的视觉等同于不存在）
-                    //   - 仅键盘光标（headerFocused）：行底色 row-focus + 左侧 2px 淡灰条，
-                    //     与 VideoRow 同一套语义 —— 不然用户根本看不出"光标停在标题上"
+                    // 标题行的视觉态。**关键原则：folder 标题绝不上 accent 色** —— 否则与选中视频
+                    // 行的 text-accent 文件名视觉雷同，用户分不清"这一组被选中"还是"组内某个
+                    // 视频被选中"。folder 用作"容器指示器"：左侧竖条 + 行底色 + 右侧徽标
+                    // 三处传达选中状态，名字本身保持 secondary。
+                    //   - 全选 / 部分：行底色 row-selected（两者一致）+ 左侧 accent 竖条
+                    //     （全选满色 / 部分淡色）+ 右侧 accent 徽标（全选实底 / 部分淡底）。
+                    //     全选与部分只看竖条与徽标文案区分，行底色与标题文字色保持一致 —— 用户
+                    //     反馈"第一个和第二个效果不一样"就是这里造成的视觉跳动。
+                    //   - 仅键盘光标：行底色 row-focus + 左侧 2px 淡灰条
+                    //   - 默认：bg-row-group
                     const headerBg = groupSelected || groupPartial
                       ? 'bg-row-selected'
                       : headerFocused
@@ -469,14 +472,19 @@ export function LibraryView(props: Props) {
                         className="border-t border-line/40"
                       >
                         <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
-                          {/* 与 VideoRow 同一套"左侧 2px 竖条"语义：仅光标时给淡灰条。
-                              选中态由 `bg-row-selected`（行底）+ 文件名 text-accent 共同表达 ——
-                              区分全选 vs 部分由左边小竖条的全/淡 accent 表示。
-                              groupSelected/groupPartial 都不再加左侧 accent 竖条：行底+文字已够清晰，
-                              再加竖条反而让"是这一组被选中"与"组内某行被选中"视觉雷同。 */}
-                          {!groupSelected && !groupPartial && headerFocused && (
+                          {/* 左侧 2px 竖条：
+                              - 全选：accent 满色
+                              - 部分：accent/45（淡）
+                              - 仅光标：bg-disabled/60（灰）
+                              区分全/部分仅靠竖条与右侧徽标，其他元素（行底色 / 标题文字色）
+                              全选与部分保持一致 —— 否则视觉上像两种不同的"选中"。 */}
+                          {groupSelected ? (
+                            <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
+                          ) : groupPartial ? (
+                            <span className="absolute inset-y-0 left-0 w-[2px] bg-accent/45" />
+                          ) : headerFocused ? (
                             <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
-                          )}
+                          ) : null}
                           <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
                             {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
                                 否则这个 2px 的细条根本点不中。 */}
@@ -495,58 +503,58 @@ export function LibraryView(props: Props) {
                               />
                             </span>
                             {/* 展开/收起：整块（竖条右侧到视频数）都可点。
-                                此前文件夹名字被"全选该组"占用了，只能点小三角 ——
-                                那不符合直觉，名字就该是展开收起的主热区。 */}
+                                文件夾名维持 secondary —— 故意与选中视频行的 text-accent 文件名
+                                区分，避免视觉上被误读成"这个 folder 本身被选中"。选中状态
+                                由左侧竖条 + 行底色 + 右侧徽标三处表达。 */}
                             <span
                               className="-my-2 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 hover:text-primary"
                               onClick={() => toggleFolderExpanded(folderId)}
                               title={expanded ? '收起该目录' : '展开该目录'}
                             >
                               <span
-                                className={`select-none transition-transform duration-150 ${
-                                  groupSelected
-                                    ? 'text-accent'
-                                    : groupPartial
-                                      ? 'text-accent/70'
-                                      : ''
-                                }`}
+                                className="select-none transition-transform duration-150"
                                 style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
                               >
                                 ▼
                               </span>
-                              <span
-                                className={`truncate font-medium ${
-                                  groupSelected
-                                    ? 'text-accent'
-                                    : groupPartial
-                                      ? 'text-accent/75'
-                                      : ''
-                                }`}
-                              >
-                                {displayName}
-                              </span>
-                              <span
-                                className={`ml-auto shrink-0 text-[11px] font-normal ${
-                                  groupSelected || groupPartial ? 'text-secondary' : 'text-muted'
-                                }`}
-                              >
-                                {folderVideos.length} 个视频
-                                {groupSelected && (
-                                  <span className="ml-1.5 text-accent">· 已全选</span>
-                                )}
-                                {groupPartial && (
-                                  <span className="ml-1.5 text-accent/75">
-                                    · {folderVideos.filter((v) => isVideoSelected(v.id)).length}/{folderVideos.length} 已选
+                              <span className="truncate font-medium">{displayName}</span>
+                              <span className="ml-auto flex shrink-0 items-center gap-2">
+                                <span className="text-[11px] font-normal text-muted">
+                                  {folderVideos.length} 个视频
+                                </span>
+                                {/* 选中徽标。**这是 folder 与 video 选中视觉的关键区分**：
+                                    video 行选中 = 文件名变 accent 蓝；folder 选中 = 文件名不动、
+                                    右侧出现 accent 徽标。两者一眼可分。
+                                    全选与部分用同一徽标位置 + 同一尺寸，只换底色/文案/数字，
+                                    行底色与标题文字色保持一致 —— 用户反馈"第一个和第二个不一样"
+                                    即来自此前把徽标做得不一致。 */}
+                                {(groupSelected || groupPartial) && (
+                                  <span
+                                    className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-medium ${
+                                      groupSelected
+                                        ? 'bg-accent text-ink-950'
+                                        : 'bg-accent/15 text-accent border border-accent/40'
+                                    }`}
+                                    title={
+                                      groupSelected
+                                        ? '该目录下所有视频已选中'
+                                        : `该目录下有 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length} 个视频被选中`
+                                    }
+                                  >
+                                    {groupSelected
+                                      ? `已全选 ${folderVideos.length}/${folderVideos.length}`
+                                      : `已选 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length}`}
                                   </span>
                                 )}
                               </span>
                             </span>
                           </div>
                         </td>
-                        {/* 空的采样格：与数据行的采样列对齐 */}
-                        <td className="bg-row-group" />
-                        {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 */}
-                        <td className="sticky right-0 w-[210px] border-l border-line/70 bg-row-group" />
+                        {/* 空的采样格：与数据行的采样列对齐 —— 跟随 headerBg 让整行底色一致 */}
+                        <td className={headerBg} />
+                        {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 —— 跟随 headerBg
+                            让整行底色一致；sticky right-0 与右吸列吸附语义保持 */}
+                        <td className={`sticky right-0 w-[210px] border-l border-line/70 ${headerBg}`} />
                       </tr>
                     )
                     const rows = expanded ? folderVideos.map((video) => (
