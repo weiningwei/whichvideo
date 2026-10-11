@@ -59,24 +59,6 @@ export function useVideoCursor({
   const [focusedIndex, setFocusedIndex] = useState(0)
 
   /**
-   * 只有视频行的下标（跳过分组标题）。
-   *
-   * 方向键在这份列表上移动，因此 ↑↓ 永远不会停在分组标题上——标题不是视频，
-   * 「选中」无从谈起。分组标题的展开/收起靠 ←→ 与点击标题。
-   */
-  const videoRowIndexes = useMemo(
-    () =>
-      navigableItems.reduce<number[]>((acc, item, i) => {
-        if (item.type === 'video') acc.push(i)
-        return acc
-      }, []),
-    [navigableItems]
-  )
-
-  /** 当前光标在 videoRowIndexes 里的位置（-1 = 尚未落在任何视频行上） */
-  const focusedRowPos = videoRowIndexes.indexOf(focusedIndex)
-
-  /**
    * 焦点所在行的 videoId。
    *
    * 之前焦点只存下标，渲染时再 `focusedIndex === idx` 反查，分组视图下要写
@@ -89,42 +71,56 @@ export function useVideoCursor({
   }, [navigableItems, focusedIndex])
 
   /**
-   * 移动光标，并按修饰键决定要不要动选中区。
+   * 若 nextItem 是 video 且所属 folder 未展开则展开 —— 移到未展开分组的视频
+   * 时让用户能看见。与"用户主动 ← 收起"是不同的语义：导航是"我要看"，← 是
+   * "我要折叠"。folder 标题项不动（用户可能正想"扫过"未展开组）。
    *
-   * - 无修饰：单选跟随（清掉旧选中，选中新的一行）
-   * - Shift：从上一次选中的位置连选一段
-   * - Ctrl：只移动光标，已选中的视频保持不动（用于「先框选一批再逐个看过」）
+   * 调用方通常刚 setFocusedIndex(nextPos)。focusedFolderId 是从 focusedIndex
+   * 派生的 memo，要等下一轮渲染才更新。直接读 nextItem 不依赖 state。
+   */
+  const expandFolderIfVideo = (nextItem: NavigableItem | undefined) => {
+    if (!nextItem || nextItem.type !== 'video') return
+    if (nextItem.folderId === null || nextItem.folderId === undefined) return
+    if (!expandedFolderIds.has(nextItem.folderId)) toggleFolderExpanded(nextItem.folderId)
+  }
+
+  /**
+   * 移动光标（↑↓ / PageUp / PageDown / Home / End 入口），在 **navigableItems
+   * 全表** 上移动 —— folder 标题也是合法可停靠点，与 macOS Finder 一致：
+   *
+   *   - 在视频上按 ↓/End → 跨过所在组的标题，跳到下一组的第一项
+   *     （视频若所属组未折叠则 auto-expand 让用户能看见）
+   *   - 在 folder 标题上按 ↑↓ → 移向邻接的标题或视频
+   *   - 在某组最后一个视频上按 ↓ → 跳到下一组的标题（不是直接跳到第一个
+   *     视频 —— 跨过标题这条线让用户能用 Enter 决定是否进入该组）
    */
   const moveCursor = (delta: number, rangeKey: boolean, ctrlKey: boolean) => {
-    if (videoRowIndexes.length === 0) return
-    // 光标未落在视频行上时（首次进入时可能是 index 0 的分组标题），
-    // 按向下从首行起步、按向上从末行起步——from 取 -1 / length，
-    // 加上 delta 后正好落在两端。
-    const from = focusedRowPos === -1 ? (delta > 0 ? -1 : videoRowIndexes.length) : focusedRowPos
-    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, from + delta))
-    const nextIndex = videoRowIndexes[nextPos]
-    if (nextIndex === undefined) return
-    setFocusedIndex(nextIndex)
-    expandFolderOfFocused()
+    if (navigableItems.length === 0) return
+    const from = focusedIndex === -1 ? (delta > 0 ? -1 : navigableItems.length) : focusedIndex
+    const nextPos = Math.max(0, Math.min(navigableItems.length - 1, from + delta))
+    if (nextPos === from) return
+    const nextItem = navigableItems[nextPos]
+    if (!nextItem) return
+    setFocusedIndex(nextPos)
+    expandFolderIfVideo(nextItem)
     if (ctrlKey) return
-    const item = navigableItems[nextIndex]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, rangeKey, false)
+    if (nextItem.type === 'video' && nextItem.video) {
+      toggleVideoSelection(nextItem.video.id, rangeKey, false)
     }
   }
 
-  /** 跳到 videoRowIndexes 的指定位置（Home / End / PageUp / PageDown 用）；同样同步单选 */
+  /** 跳到 navigableItems 的指定位置（Home / End / PageUp / PageDown 用）；同样同步单选 */
   const jumpCursor = (pos: number, rangeKey = false) => {
-    if (videoRowIndexes.length === 0) return
-    const nextPos = Math.max(0, Math.min(videoRowIndexes.length - 1, pos))
-    const nextIndex = videoRowIndexes[nextPos]
-    if (nextIndex === undefined) return
-    setFocusedIndex(nextIndex)
-    expandFolderOfFocused()
+    if (navigableItems.length === 0) return
+    const nextPos = Math.max(0, Math.min(navigableItems.length - 1, pos))
+    if (nextPos === focusedIndex) return
+    const nextItem = navigableItems[nextPos]
+    if (!nextItem) return
+    setFocusedIndex(nextPos)
+    expandFolderIfVideo(nextItem)
     if (rangeKey) return
-    const item = navigableItems[nextIndex]
-    if (item?.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, false, false)
+    if (nextItem.type === 'video' && nextItem.video) {
+      toggleVideoSelection(nextItem.video.id, false, false)
     }
   }
 
@@ -137,7 +133,7 @@ export function useVideoCursor({
    */
   const focusRow = (index: number) => {
     setFocusedIndex(index)
-    expandFolderOfFocused()
+    expandFolderIfVideo(navigableItems[index])
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, false, false)
@@ -147,7 +143,7 @@ export function useVideoCursor({
   /** Shift+点击：与上次选中的位置之间连选，光标跟着走到目标行 */
   const selectRowRange = (index: number) => {
     setFocusedIndex(index)
-    expandFolderOfFocused()
+    expandFolderIfVideo(navigableItems[index])
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, true, false)
@@ -157,7 +153,7 @@ export function useVideoCursor({
   /** Ctrl+点击：只切换这一行的选中，其余不动，光标也走到该行 */
   const toggleRowSelection = (index: number) => {
     setFocusedIndex(index)
-    expandFolderOfFocused()
+    expandFolderIfVideo(navigableItems[index])
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, false, true)
@@ -182,11 +178,13 @@ export function useVideoCursor({
   }
 
   /**
-   * ←→ 作用于**光标所在视频所属的分组**。
+   * ←→ 作用于**光标所在分组**。
    *
-   * ↑↓ 只在视频行间移动（跳过分组标题），光标因此永远不会停在标题上——←→ 若还在
-   * 等「光标位于 folder 项」就永远触发不了。改为从光标视频反查其分组：
-   * → 展开该分组，← 收起。与文件管理器一致（光标在文件上，← 收起所在目录）。
+   * ↑↓ 在 navigableItems 全表上移动 —— folder 标题是合法可停靠点。
+   * ←→ 仍以光标所在 folder 为操作目标：
+   *   - → 展开该分组（无论光标在标题还是视频上 —— 在视频上时所属组已展开，no-op）
+   *   - ← 在视频上：收起 + 跳回该组标题（Finder/Explorer 风格）
+   *   - ← 在标题上：单纯切换展开状态
    *
    * 平铺视图的项不带 folderId（没有分组概念），此时 ←→ 无从谈起。
    */
@@ -195,21 +193,6 @@ export function useVideoCursor({
     if (!item) return null
     return item.folderId ?? null
   }, [navigableItems, focusedIndex])
-
-  /**
-   * 若光标所在 folder 未展开则展开 —— 移到未展开分组的视频时让用户能看见。
-   * 与"用户主动 ← 收起"是不同的语义：导航是"我要看"，← 是"我要折叠"。
-   *
-   * 注意：调用方通常刚 setFocusedIndex(nextIndex)。focusedFolderId 是从
-   * focusedIndex 派生的 memo，要等下一轮渲染才更新。直接读 navigableItems
-   * 当前位置拿 folderId，避免读到旧值。
-   */
-  const expandFolderOfFocused = () => {
-    const item = navigableItems[focusedIndex]
-    const fid = item?.folderId ?? null
-    if (fid === null) return
-    if (!expandedFolderIds.has(fid)) toggleFolderExpanded(fid)
-  }
 
   /**
    * → 在 folder 标题上：展开该分组；在 video 上：展开所属分组（一般已经展开，
@@ -255,14 +238,13 @@ export function useVideoCursor({
     }
   }
 
-  // 列表变化（切分组模式、增删、筛选、折叠）后把光标收回第一个**视频行**。
-  // 不能简单写 0：分组视图里 index 0 是分组标题，光标停在那既没有灰条提示，
-  // 方向键也只能「从旁边起步」，手感上像是坏的。
+  // 列表变化（切分组模式、增删、筛选、折叠）后把光标收回第一个可见项。
+  // 不写 0 是因为某些极端情况下 navigableItems 可能为空（还没渲染好）。
   useEffect(() => {
-    setFocusedIndex(videoRowIndexes[0] ?? 0)
-    // 只在列表结构变化时重置；videoRowIndexes 每次重算都是新数组，不能进依赖
+    setFocusedIndex((cur) => Math.min(cur, Math.max(0, navigableItems.length - 1)))
+    // 只在结构变化时跑。navigableItems 每次重算都是新数组，不能进依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupByFolder, videos, expandedFolderIds])
+  }, [groupByFolder, videos])
 
   // 滚动容器：↑/↓ 移动焦点时要把焦点行滚进可视区，否则焦点移出屏幕就看不见了
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -285,9 +267,7 @@ export function useVideoCursor({
 
   return {
     navigableItems,
-    videoRowIndexes,
     focusedIndex,
-    focusedRowPos,
     focusedVideoId,
     moveCursor,
     jumpCursor,

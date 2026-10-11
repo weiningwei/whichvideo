@@ -101,7 +101,7 @@ export function LibraryView(props: Props) {
 
   // 键盘导航与快捷操作（光标状态与导航原语在 useVideoCursor 里）
   const {
-    navigableItems, videoRowIndexes, focusedIndex, focusedRowPos, focusedVideoId,
+    navigableItems, focusedIndex, focusedVideoId,
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick,
     expandFocusedFolder, collapseFocusedFolder, scrollRef
   } = useVideoCursor({ videos, groupByFolder, groupedVideos, expandedFolderIds, toggleVideoSelection, toggleFolderExpanded })
@@ -143,11 +143,11 @@ export function LibraryView(props: Props) {
           break
         case 'PageDown':
           e.preventDefault()
-          jumpCursor(focusedRowPos + PAGE_JUMP, e.shiftKey)
+          jumpCursor(focusedIndex + PAGE_JUMP, e.shiftKey)
           break
         case 'PageUp':
           e.preventDefault()
-          jumpCursor(focusedRowPos - PAGE_JUMP, e.shiftKey)
+          jumpCursor(focusedIndex - PAGE_JUMP, e.shiftKey)
           break
         case 'Home':
           if (!mod) {
@@ -158,7 +158,7 @@ export function LibraryView(props: Props) {
         case 'End':
           if (!mod) {
             e.preventDefault()
-            jumpCursor(videoRowIndexes.length - 1, e.shiftKey)
+            jumpCursor(navigableItems.length - 1, e.shiftKey)
           }
           break
         case 'ArrowRight':
@@ -177,6 +177,12 @@ export function LibraryView(props: Props) {
         case 'Enter': {
           if (onButton) return
           e.preventDefault()
+          // 光标在 folder 标题上：切换展开/收起（与 ↑↓ 跨组标题设计一致）
+          const focusedItem = navigableItems[focusedIndex]
+          if (groupByFolder && focusedItem && focusedItem.type === 'folder') {
+            toggleFolderExpanded(focusedItem.folderId)
+            break
+          }
           const target = getTargetVideo()
           if (target) props.onOpen(target.id)
           break
@@ -269,7 +275,7 @@ export function LibraryView(props: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, focusedRowPos, navigableItems, videoRowIndexes, focusedVideoId, onToggleGroupByFolder, props.onRemoveVideo, props.onRemoveVideos, props.onReindex, props.onImportFiles, props.onAddFolder, props.onRescan, clearSelection, selectAll, toggleVideoSelection])
+  }, [groupByFolder, videos, groupedVideos, folders, expandedFolderIds, selectedVideoIds, focusedIndex, navigableItems, focusedVideoId, onToggleGroupByFolder, props.onRemoveVideo, props.onRemoveVideos, props.onReindex, props.onImportFiles, props.onAddFolder, props.onRescan, clearSelection, selectAll, toggleVideoSelection, toggleFolderExpanded])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
