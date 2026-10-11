@@ -35,7 +35,9 @@ const api: WhichVideoApi = {
     frameProgress: (videoId: number) => ipcRenderer.invoke(IPC.videosFrameProgress, videoId),
     frameManifest: (videoId: number) => ipcRenderer.invoke(IPC.videosFrameManifest, videoId),
     frameImage: (videoId: number, frameIndex: number) =>
-      ipcRenderer.invoke(IPC.videosFrameImage, videoId, frameIndex)
+      ipcRenderer.invoke(IPC.videosFrameImage, videoId, frameIndex),
+    matchFrame: (videoId: number, timeMs: number) =>
+      ipcRenderer.invoke(IPC.videosMatchFrame, videoId, timeMs)
   },
   search: {
     byPath: (filePath: string) => ipcRenderer.invoke(IPC.searchPath, filePath),

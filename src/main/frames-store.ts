@@ -43,6 +43,29 @@ function rgb24ToBgra(rgb: Buffer, width: number, height: number): Buffer {
 }
 
 /**
+ * raw rgb24 → JPEG dataUrl。供 saveFrameImage 落盘与 ipc 按需解码共用：
+ * 两者只是去/留（saveFrameImage 写文件，matchFrame 直接给渲染端）。
+ * 失败时返回 null + 记日志，不抛错。
+ */
+export function rgb24ToJpegDataUrl(rgb: Buffer, width: number, height: number, quality = 85): string | null {
+  if (rgb.length !== width * height * 3) {
+    logError(
+      `rgb24→JPEG 失败：rgb 长度 ${rgb.length} != ${width}x${height}x3`,
+      new Error('像素长度与声明尺寸不符')
+    )
+    return null
+  }
+  try {
+    const bitmap = rgb24ToBgra(rgb, width, height)
+    const image = nativeImage.createFromBitmap(bitmap, { width, height, scaleFactor: 1 })
+    return `data:image/jpeg;base64,${image.toJPEG(quality).toString('base64')}`
+  } catch (err) {
+    logError(`rgb24→JPEG 失败：${width}x${height}`, err)
+    return null
+  }
+}
+
+/**
  * 保存单帧图像。失败返回 false 并记日志（不抛错，不阻断索引）。
  * rgb 必须恰为 width*height*3 字节（scan.ts 两条路径都满足）。
  */

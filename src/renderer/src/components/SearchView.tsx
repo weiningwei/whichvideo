@@ -302,16 +302,25 @@ function ResultCard({
 }) {
   const video: VideoRecord = match.video
   const [thumb, setThumb] = useState<string | null>(null)
-
+  /**
+   * 命中预览按 timeMs 现场解码：拿到用户截图附近的真实画面，验证"这张图
+   * 是不是这个视频"。matchFrame 失败（文件已删/解码超时）时静默回退到
+   * 视频级缩略图——后者只是兜底，不应该出现在正常命中里。
+   * 切换命中时重拉（依赖 match.timeSeconds + match.videoId）。
+   */
   useEffect(() => {
     let alive = true
-    void window.whichvideo.videos.thumbnail(video.id).then((data) => {
-      if (alive) setThumb(data)
-    })
+    const timeMs = Math.round(match.timeSeconds * 1000)
+    void window.whichvideo.videos
+      .matchFrame(video.id, timeMs)
+      .then((data) => (data ? data : window.whichvideo.videos.thumbnail(video.id)))
+      .then((data) => {
+        if (alive) setThumb(data)
+      })
     return () => {
       alive = false
     }
-  }, [video.id, video.indexedAt])
+  }, [video.id, match.timeSeconds])
 
   const meta = useMemo(() => {
     const bits: string[] = []

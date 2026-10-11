@@ -45,7 +45,7 @@ import {
 } from './search'
 import type { Indexer } from './indexer'
 import type { FolderWatcher } from './watcher'
-import { frameImageExists, readFrameImage, removeAllFrames } from './frames-store'
+import { frameImageExists, readFrameImage, removeAllFrames, rgb24ToJpegDataUrl } from './frames-store'
 
 /** bootstrap 在 registerIpc 调用点构造；实例在调用前都已创建完毕 */
 export interface IpcDeps {
@@ -479,6 +479,20 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.videosFrameImage, (_e, videoId: number, frameIndex: number) =>
     readFrameImage(videoId, frameIndex)
   )
+  /**
+   * 命中时间点预览：按 timeMs 现场解码一帧（不走精修、不计 SSIM；纯视觉预览，
+   * 拿"截图时间附近的一帧画面"给用户判断是不是这个视频）。成本 ~25ms（单点 seek
+   * 走 decodeFrameAt），失败（文件已删/解码超时）返回 null，渲染端再回退到
+   * thumbnail。timeoutMs 保持 decodeFrameAt 的 15s 上限。
+   */
+  ipcMain.handle(IPC.videosMatchFrame, async (_e, videoId: number, timeMs: number): Promise<string | null> => {
+    const video = db.getVideo(videoId)
+    if (!video) return null
+    if (!Number.isFinite(timeMs) || timeMs < 0) return null
+    const frame = await decodeFrameAt(video.path, timeMs / 1000, undefined, EXTRACT_WIDTH)
+    if (!frame) return null
+    return rgb24ToJpegDataUrl(frame.rgb, frame.width, frame.height)
+  })
 
   ipcMain.handle(IPC.videosImport, async () => {
     const picked = await showOpenDialog({
