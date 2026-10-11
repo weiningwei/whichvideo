@@ -453,12 +453,12 @@ export function LibraryView(props: Props) {
                     // 行的 text-accent 文件名视觉雷同，用户分不清"这一组被选中"还是"组内某个
                     // 视频被选中"。folder 用作"容器指示器"：左侧竖条 + 行底色 + 右侧徽标
                     // 三处传达选中状态，名字本身保持 secondary。
-                    //   - 全选 / 部分：行底色 row-selected（两者一致）+ 左侧 accent 竖条
-                    //     （全选满色 / 部分淡色）+ 右侧 accent 徽标（全选实底 / 部分淡底）。
-                    //     全选与部分只看竖条与徽标文案区分，行底色与标题文字色保持一致 —— 用户
-                    //     反馈"第一个和第二个效果不一样"就是这里造成的视觉跳动。
-                    //   - 仅键盘光标：行底色 row-focus + 左侧 2px 淡灰条
-                    //   - 默认：bg-row-group
+                    //
+                    // **全选 / 部分视觉等强**（用户反馈"第一个和第二个不一样"+"A 选中不明显"）：
+                    // 用户的心智模型是"这个 folder 有选中内容"，而不是"全选 vs 部分是两种
+                    // 不同的状态"。所以行底、竖条、徽标底色全部走一样的实色 accent，只在
+                    // 徽标文字内容区分 K/N vs N/N（要细分时读字即可）。partial 用 accent/45
+                    // 那种'半选视觉'在 a1 行那种满 accent 文字旁边根本看不见。
                     const headerBg = groupSelected || groupPartial
                       ? 'bg-row-selected'
                       : headerFocused
@@ -472,16 +472,11 @@ export function LibraryView(props: Props) {
                         className="border-t border-line/40"
                       >
                         <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
-                          {/* 左侧 2px 竖条：
-                              - 全选：accent 满色
-                              - 部分：accent/45（淡）
-                              - 仅光标：bg-disabled/60（灰）
-                              区分全/部分仅靠竖条与右侧徽标，其他元素（行底色 / 标题文字色）
-                              全选与部分保持一致 —— 否则视觉上像两种不同的"选中"。 */}
-                          {groupSelected ? (
+                          {/* 左侧 2px 竖条：选中态（全选 + 部分）一律走 accent 满色 —— 让 folder
+                              的"有选中"信号强度与 a1 行左侧 accent 竖条对齐。仅光标无选中时
+                              走 disabled 灰条。 */}
+                          {groupSelected || groupPartial ? (
                             <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
-                          ) : groupPartial ? (
-                            <span className="absolute inset-y-0 left-0 w-[2px] bg-accent/45" />
                           ) : headerFocused ? (
                             <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
                           ) : null}
@@ -498,7 +493,7 @@ export function LibraryView(props: Props) {
                             >
                               <span
                                 className={`h-3.5 w-[2px] rounded-full transition ${
-                                  groupSelected ? 'bg-accent' : groupPartial ? 'bg-accent/45' : 'bg-transparent'
+                                  groupSelected || groupPartial ? 'bg-accent' : 'bg-transparent'
                                 }`}
                               />
                             </span>
@@ -524,17 +519,15 @@ export function LibraryView(props: Props) {
                                 </span>
                                 {/* 选中徽标。**这是 folder 与 video 选中视觉的关键区分**：
                                     video 行选中 = 文件名变 accent 蓝；folder 选中 = 文件名不动、
-                                    右侧出现 accent 徽标。两者一眼可分。
-                                    全选与部分用同一徽标位置 + 同一尺寸，只换底色/文案/数字，
-                                    行底色与标题文字色保持一致 —— 用户反馈"第一个和第二个不一样"
-                                    即来自此前把徽标做得不一致。 */}
+                                    右侧出现 accent 实底徽标。两者一眼可分。
+                                    **全选 / 部分走同一实底徽标**（背景 + 文字色 + 尺寸一致），
+                                    只在文案区分 K/N vs N/N —— 让"这个 folder 有选中"信号强度
+                                    与 a1 行左侧 accent 竖条 / text-accent 文件名对等，
+                                    不再因 accent/45、bg-accent/15 那种"半选视觉"被旁边
+                                    a1 行的满 accent 文字压过去。 */}
                                 {(groupSelected || groupPartial) && (
                                   <span
-                                    className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-medium ${
-                                      groupSelected
-                                        ? 'bg-accent text-ink-950'
-                                        : 'bg-accent/15 text-accent border border-accent/40'
-                                    }`}
+                                    className="rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-ink-950"
                                     title={
                                       groupSelected
                                         ? '该目录下所有视频已选中'
