@@ -539,8 +539,12 @@ export function LibraryView(props: Props) {
                                 </span>
                               )}
                               <span
-                                className={`truncate font-medium ${
-                                  groupSelected || groupPartial ? 'text-accent' : ''
+                                className={`truncate ${
+                                  groupSelected
+                                    ? 'font-bold text-accent-strong'
+                                    : groupPartial
+                                      ? 'font-medium text-accent'
+                                      : 'font-medium'
                                 }`}
                               >
                                 {displayName}
