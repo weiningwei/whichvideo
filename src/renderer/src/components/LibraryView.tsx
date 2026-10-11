@@ -449,29 +449,34 @@ export function LibraryView(props: Props) {
                       })
                     }
 
-                    // 标题行的视觉态。**关键原则：folder 标题绝不上 accent 色** —— 否则与选中视频
-                    // 行的 text-accent 文件名视觉雷同，用户分不清"这一组被选中"还是"组内某个
-                    // 视频被选中"。folder 用作"容器指示器"。
+                                        // 标题行的视觉态。**关键原则：folder 选中是"容器状态"，与 video
+                    // 选中（行内文件名染 accent）属于不同维度，不能让 folder 名也染 accent
+                    // —— 否则与视频选中视觉雷同，分不清'folder 被选中'还是'folder 内某行被选中'。
                     //
-                    // **徽标位置是症结**（用户连续 4 个 commit 反馈"不明显"）：
-                    // 之前徽标在行最右侧（小角落），用户视线落在左侧文件夹名上 —— 视觉
-                    // 重心错位，徽标再亮也压不过左边 a1 行的 text-accent 文件名。现在
-                    // 徽标紧贴文件夹名右侧、放大字号加粗，与 folder 名共占视觉重心。
+                    // 之前 4 个 commit 反馈'A 选中不明显'的真正根因：folder 的'选中'信号
+                    // 都放在了边角（左侧 2px 竖条、行末小徽标、淡淡的 bg-row-selected），
+                    // 与 a1 行那种'整行视觉中心都被 accent 染色'的视频选中无法对等。
                     //
-                    // **全选 / 部分视觉等强**：用户的心智模型是"这个 folder 有选中内容"，
-                    // 而不是"全选 vs 部分是两种不同的状态"。行底色 + 竖条 + 徽标实底
-                    // accent 全选/部分一致，只在徽标文字区分 K/N vs N/N。
+                    // 现在用**四个独立维度**叠加视觉权重：
+                    //   1. 整行底色 bg-accent/12（accent 12% 叠 surface-1，明显的青色染色）
+                    //   2. 顶部 2px 实色 accent 横条（folder 独有的视觉通道，视频行无）
+                    //   3. 左侧 accent 竖条
+                    //   4. 文件夾名前的 ✓ K/N 实底徽标
+                    // 同时 folder 名保持 secondary，与 video 行 text-accent 文件名区分。
+                    // 加在一起 '这个 folder 有选中内容' 的视觉权重与视频选中对等甚至更重。
                     const headerBg = groupSelected || groupPartial
-                      ? 'bg-row-selected'
+                      ? 'bg-accent/12'
                       : headerFocused
                         ? 'bg-row-focus'
                         : 'bg-row-group hover:bg-row-hover'
+                    const headerBorder =
+                      groupSelected || groupPartial ? 'border-t-2 border-accent' : ''
 
                     const header = (
                       <tr
                         key={`folder-header-${folderId}`}
                         onMouseDown={blockModifierTextSelection}
-                        className="border-t border-line/40"
+                        className={`border-t border-line/40 ${headerBorder}`}
                       >
                         <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
                           {/* 左侧 2px 竖条：选中态（全选 + 部分）一律走 accent 满色 —— 让 folder
