@@ -232,8 +232,19 @@ export function SearchView(props: Props) {
 
         {search && search.matchCount > 0 && (
           <div className="rounded-xl border border-ok/35 bg-ok/10 px-4 py-2.5 text-[13px] text-ok">
-            ✅ 已在本地库中找到这张图对应的视频：{top?.video.name}
-            {top && top.timeSeconds > 0 ? `（约 ${formatDuration(top.timeSeconds)} 处）` : ''}
+            {/* 单匹配直接说"对应的视频"；多匹配改"对应的视频（X 个匹配）"，让用户知道
+                列表里还有其他候选 —— maxResults 默认 ≥ 1 但 ≥2 也常见（截图通用化 / 多个视频
+                含同一帧）。top 一行始终给最佳（最高分）的位置，决策锚点。 */}
+            ✅ 已在本地库中找到这张图对应的视频{search.matchCount > 1 ? `（${search.matchCount} 个匹配）` : ''}
+            ：{top?.video.name}
+            {top && top.timeSeconds > 0 ? (
+              <>
+                {'（'}
+                {top.video.frameCount > 0 ? `${top.frameIndex + 1}/${top.video.frameCount} · ` : ''}
+                约 {formatDuration(top.timeSeconds)} 处
+                {'）'}
+              </>
+            ) : ''}
           </div>
         )}
 
