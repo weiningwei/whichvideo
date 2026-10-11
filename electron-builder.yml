@@ -3,7 +3,7 @@ productName: WhichVideo
 copyright: Copyright © 2026 weiningwei
 
 directories:
-  output: release
+  output: dist
   buildResources: build
 
 # 关闭打包前的原生模块重建。
@@ -67,7 +67,7 @@ win:
     - target: nsis
       arch:
         - x64
-    # 免安装目录版：产出 release/win-unpacked，exe 就地运行，
+    # 免安装目录版：产出 dist/win-unpacked，exe 就地运行，
     # 数据写在 <exe 同级>\data —— 这就是绿色/便携形态（见 scripts/build-portable-folder.mjs）
     - target: dir
       arch:

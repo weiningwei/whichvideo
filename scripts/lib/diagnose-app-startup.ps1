@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-if (-not $PortableDir) { $PortableDir = Join-Path $root 'release\WhichVideo-portable' }
+if (-not $PortableDir) { $PortableDir = Join-Path $root 'dist\WhichVideo-portable' }
 $exe = Join-Path $PortableDir 'WhichVideo.exe'
 
 function Section($title) { Write-Output ''; Write-Output "===== $title =====" }

@@ -1,12 +1,12 @@
 /**
  * 把 electron-builder 的免安装目录版整理成可直接拷走的绿色版：
  *
- *   release\win-unpacked  →  release\WhichVideo-portable\
+ *   dist\win-unpacked  →  dist\WhichVideo-portable\
  *
  * 目录版没有解压环节，WhichVideo.exe 就地运行；主进程检测到 exe 所在目录可写时
  * 会把索引库与缓存写到同级的 data\ 里（见 src/main/datadir.ts）。
  *
- *   release\WhichVideo-portable  →  <仓库上一级目录>\WhichVideo-portable\
+ *   dist\WhichVideo-portable  →  <仓库上一级目录>\WhichVideo-portable\
  *
  * 第二份放在仓库外面，是为了让"运行/验证"这件事彻底离开本项目目录：
  * 编辑器索引、杀软扫描、资源管理器停留都可能锁住仓库里的目录（见下面 EPERM 说明），
@@ -41,7 +41,7 @@ const argv = process.argv.slice(2)
 // WHICHVIDEO_RELEASE_DIR 主要给自检用（scripts/test-portable-builder.mjs），正常打包不需要设置
 const releaseDir = process.env.WHICHVIDEO_RELEASE_DIR
   ? resolve(process.env.WHICHVIDEO_RELEASE_DIR)
-  : join(root, 'release')
+  : join(root, 'dist')
 const unpackedDir = join(releaseDir, 'win-unpacked')
 const preferredTargetDir = join(releaseDir, 'WhichVideo-portable')
 // 首选目录被占用时，会自动退到这个带时间的目录继续打包（见 clearTargetDirectory）
@@ -90,7 +90,7 @@ function moveAside(dir) {
  * 递归统计文件数。
  *
  * excludeDirName：跳过这一层里叫这个名字的子目录。用于比对产物时排除
- * data\ —— 那是保留下来的用户索引库，源目录（release 里那份）本来就没有，
+ * data\ —— 那是保留下来的用户索引库，源目录（dist 里那份）本来就没有，
  * 算进去必然不一致。
  */
 function countFiles(dir, excludeDirName) {
@@ -162,7 +162,7 @@ function describeHolders(dir) {
 
 /**
  * 诊断当前占有目录的进程（供手动排查）：
- *   node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
+ *   node scripts/build-portable-folder.mjs --who-locks dist\WhichVideo-portable
  */
 function runWhoLocks(dir) {
   const script = join(root, 'scripts', 'lib', 'who-locks-dir.ps1')
@@ -266,11 +266,11 @@ function hashFile(path) {
  * 杀软扫描、资源管理器停留锁住（就是本文件顶部 EPERM 那段说的情况）。
  * 拷到仓库外再运行，"占用"和"验证"就跟项目目录彻底解耦。
  *
- * 占用处理与 release 里的目标目录完全一致：直接删 → 重试删 → 改名挪开 → 换带时间戳的目录。
+ * 占用处理与 dist 里的目标目录完全一致：直接删 → 重试删 → 改名挪开 → 换带时间戳的目录。
  *
  * data\ 目录会被**保留**：里面是索引库（whichvideo.db）与用户自己的配置，
  * 重新建索引要重跑一遍抽帧，开发时反复打包很浪费时间。做法是先把 data\
- * 挪到临时位置，替换完产物再挪回去。若源目录（release 里那份）没有 data\
+ * 挪到临时位置，替换完产物再挪回去。若源目录（dist 里那份）没有 data\
  * 则视为"要干净产物"，不保留。
  */
 function copyOutsideRepository(sourceDir) {
@@ -278,7 +278,7 @@ function copyOutsideRepository(sourceDir) {
     return { skipped: true, dir: null }
   }
 
-  // 沿用源目录名：release 里退到带时间戳的目录时，外面那份也带时间戳，两边不会认错
+  // 沿用源目录名：dist 里退到带时间戳的目录时，外面那份也带时间戳，两边不会认错
   const name = basename(sourceDir) || 'WhichVideo-portable'
   const preferred = join(outsideRoot, name)
   let dest = preferred
@@ -529,7 +529,7 @@ function runElectronBuilder() {
       `  out/main/index.js      ${new Date(outMtime).toLocaleString('zh-CN')}\n` +
         `  resources/app.asar     ${existsSync(packedAsar) ? new Date(statSync(packedAsar).mtimeMs).toLocaleString('zh-CN') : '不存在'}`
     )
-    console.error('处理：删掉 release\\win-unpacked 后重跑，或查看上面的 electron-builder 报错。')
+    console.error('处理：删掉 dist\\win-unpacked 后重跑，或查看上面的 electron-builder 报错。')
     writeTestReport({ ok: false, reason: 'stale-package', exitCode: r.status })
     process.exit(1)
   }
@@ -635,7 +635,7 @@ function assertPackageFreshness() {
     console.error('\n包内主进程产物与 out/ 不一致，说明这次没有真正重新打包：')
     console.error(`  包内 sha256 ${packedHash}（${mainInAsar.length} 字节）`)
     console.error(`  本地 sha256 ${localHash}（${localMain.length} 字节）`)
-    console.error('\n处理：删掉 release\\win-unpacked 与 release\\WhichVideo-portable 后重跑。')
+    console.error('\n处理：删掉 dist\\win-unpacked 与 dist\\WhichVideo-portable 后重跑。')
     writeTestReport({ ok: false, reason: 'stale-package', packedHash, localHash })
     process.exit(1)
   }
@@ -721,12 +721,12 @@ function main() {
   if (outside.skipped) {
     console.log('  （已通过 WHICHVIDEO_SKIP_OUTSIDE_COPY 跳过）')
   } else if (outside.error) {
-    // 不让这一份的失败把整次打包判死：release 里的产物已经是好的。
+    // 不让这一份的失败把整次打包判死：dist 里的产物已经是好的。
     // 但必须显眼地报出来，并给出下一步该做什么。
-    console.error('\n⚠ 拷贝到仓库外失败（release 里的绿色版仍然可用）：')
+    console.error('\n⚠ 拷贝到仓库外失败（dist 里的绿色版仍然可用）：')
     console.error(`  原因：${outside.error}`)
     console.error(`  目标位置：${outside.dir ?? join(outsideRoot, 'WhichVideo-portable')}`)
-    console.error('  处理：手动拷走 release\\WhichVideo-portable 即可；或先关掉正在运行的绿色版再重试。')
+    console.error('  处理：手动拷走 dist\\WhichVideo-portable 即可；或先关掉正在运行的绿色版再重试。')
   } else {
     console.log(`  ✓ 仓库外副本已就绪：${outside.dir}`)
     console.log(`    文件数量：${outside.fileCount}（${(outside.bytes / 1024 / 1024).toFixed(1)} MB，与源一致）`)
@@ -765,7 +765,7 @@ if (isDirectRun) {
       const hints = describeHolders(targetDir)
       const lines = [
         '',
-        '打包失败：release 目录里的文件被占用（EPERM）。',
+        '打包失败：dist 目录里的文件被占用（EPERM）。',
         ...hints.map((hint) => `  · ${hint}`),
         '',
         '处理完占用后重新运行： pnpm build:portable'

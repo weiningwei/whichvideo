@@ -10,8 +10,8 @@
          （可加 -ExePath / -AsarPath 指定别的产物）
 #>
 param(
-  [string]$ExePath = 'release\WhichVideo-portable\WhichVideo.exe',
-  [string]$AsarPath = 'release\WhichVideo-portable\resources\app.asar'
+  [string]$ExePath = 'dist\WhichVideo-portable\WhichVideo.exe',
+  [string]$AsarPath = 'dist\WhichVideo-portable\resources\app.asar'
 )
 
 $ErrorActionPreference = 'Continue'

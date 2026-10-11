@@ -4,7 +4,7 @@
   做法：把同一个可执行文件分别放到几个位置，各启动一次并记录退出码与日志：
     A. 仓库内的一个新目录（如 <仓库>\tmp\probe-a\...）  ← 与出问题的位置同属一棵树
     B. 仓库外的一个新目录（默认用户临时目录，见 $OutsideDir）← 与能正常启动的位置同属一棵树
-    C. 原地（$Source，默认 release\WhichVideo-portable，可选）
+    C. 原地（$Source，默认 dist\WhichVideo-portable，可选）
 
   位置一律由参数推导或取临时目录，不写死具体盘符 —— 仓库路径每台机器都不同。
 
@@ -16,7 +16,7 @@
   用法： pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/lib/probe-portable-location.ps1
 #>
 param(
-  [string]$Source = 'release\WhichVideo-portable',
+  [string]$Source = 'dist\WhichVideo-portable',
   [int]$WaitSeconds = 12,
   # 管控区外的对照位置；默认用用户临时目录（一定有写权限），也可自定义
   [string]$OutsideDir = ''
@@ -152,7 +152,7 @@ if ($a -and $b) {
     Write-Output '      解决办法：把项目或产物移到 DSH 管控目录之外（例如 E:\work\whichvideo）。'
   } elseif ($a.生成data) {
     Write-Output '结论：管控区内也能启动 —— 问题与位置无关，是原来那个目录的残留状态，'
-    Write-Output '      删掉 release 重新打包即可。'
+    Write-Output '      删掉 dist 重新打包即可。'
   } else {
     Write-Output '结论：两个新位置都无法启动 —— 与位置无关，需要另查（安全软件、进程创建策略）。'
   }

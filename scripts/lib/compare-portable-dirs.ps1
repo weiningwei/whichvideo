@@ -10,7 +10,7 @@
   用法： pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/lib/compare-portable-dirs.ps1
 #>
 param(
-  [string]$Bad = 'release\WhichVideo-portable',
+  [string]$Bad = 'dist\WhichVideo-portable',
   [string]$Good = 'E:\code\2026-09\WhichVideo-portable'
 )
 

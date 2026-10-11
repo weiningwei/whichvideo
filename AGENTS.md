@@ -18,7 +18,7 @@ pnpm dev              # electron-vite dev（渲染端热更新）
 pnpm typecheck        # node + web 两套 tsc，无产物
 pnpm test             # 21 套自检按序跑（见下「测试」）
 pnpm build            # typecheck + electron-vite build + icon → out/
-pnpm build:portable   # build + scripts/build-portable-folder.mjs → release/WhichVideo-portable/
+pnpm build:portable   # build + scripts/build-portable-folder.mjs → dist/WhichVideo-portable/
 pnpm build:win        # build + electron-builder --win → NSIS 安装包 + win-unpacked/
 pnpm build:unpack     # build + electron-builder --win dir
 pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需要；缺失可跑、不建索引）
@@ -54,7 +54,7 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin（建索引需�
 
 ## 🏗️ 打包实现约束（仅仓库侧）
 
-- `build:portable` 产出两份：仓库内 `release\WhichVideo-portable\` + **仓库上一级**同名文件夹（用户双击版）。外层失败不判死整体打包，仅报错提示手动拷走。
+- `build:portable` 产出两份：仓库内 `dist\WhichVideo-portable\` + **仓库上一级**同名文件夹（用户双击版）。外层失败不判死整体打包，仅报错提示手动拷走。
 
 ### 产物体积优化（勿回退，test:pack 场景 5d 守着）
 
@@ -83,7 +83,7 @@ win-unpacked 约 **535MB**，构成与可优化空间：
 
 `test:pack` 场景 5c 断言：说明文件/文档无泄漏，终端输出**保留**绝对路径。
 
-> `.vscode/settings.json` **故意入库**（排除 `release`/`out*`/`tmp` 文件监视），**不要删或还原**。
+> `.vscode/settings.json` **故意入库**（排除 `dist`/`out*`/`tmp` 文件监视），**不要删或还原**。
 
 ---
 

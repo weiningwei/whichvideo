@@ -102,7 +102,7 @@ node scripts/probe-electron-startup.mjs
 node scripts/test-asar-check.mjs   # 校验 asar 解析逻辑（10 项）
 pnpm rebuild:native                # 需要时手动重建原生模块
 npx electron-builder --win dir     # 或绕过脚本直接打包，观察完整报错
-rm -rf release                     # 实在拿不准就整个删掉重来
+rm -rf dist                        # 实在拿不准就整个删掉重来
 ```
 
 ### 启动链路自检
@@ -115,7 +115,7 @@ Node + Electron 桩上，覆盖"打包前提（type 字段 / 入口 / preload �
 
 ## `pnpm build:portable` 报 EPERM / Permission denied？
 
-说明 `release\WhichVideo-portable`（或仓库上一级目录里那份同名文件夹）里的文件正被占用，
+说明 `dist\WhichVideo-portable`（或仓库上一级目录里那份同名文件夹）里的文件正被占用，
 Windows 上删不掉也改不了名。常见占用者：
 
 1. **绿色版还在运行**（最常见）：先退出 `WhichVideo.exe`，任务管理器确认进程没了
@@ -123,24 +123,24 @@ Windows 上删不掉也改不了名。常见占用者：
 3. **资源管理器停在那个目录**、或杀毒软件正在扫描刚生成的 exe
 
 > 注意：占用跟进程 exe 在哪**没有关系**。编辑器装在哪都行，但它的索引/插件进程
-> 只要把项目目录当作当前工作目录（CWD）或扫描了 `release`，就会锁住这里。
+> 只要把项目目录当作当前工作目录（CWD）或扫描了 `dist`，就会锁住这里。
 
 **想知道到底是谁占着？** 仓库带了一个诊断脚本，会读每个进程的真实工作目录并点名占用者：
 
 ```bash
-node scripts/build-portable-folder.mjs --who-locks release\WhichVideo-portable
-# 或直接： pwsh -File scripts/lib/who-locks-dir.ps1 -Path release\WhichVideo-portable -All
+node scripts/build-portable-folder.mjs --who-locks dist\WhichVideo-portable
+# 或直接： pwsh -File scripts/lib/who-locks-dir.ps1 -Path dist\WhichVideo-portable -All
 ```
 
 脚本的处理顺序是：**重试删除 → 改名成 `WhichVideo-portable.old-<时间戳>` 挪开 → 仍然不行就自动输出到 `WhichVideo-portable-<日期>-<时间>` 并继续打包**。
 也就是说占用不会让打包失败，只会换个目录名；你的旧 `data\` 会完整留在原处或 `.old-*` 里，不会被静默删掉。
 
 拷到仓库上一级目录的那份用的是同一套处理顺序，并在拷贝后核对文件数、总字节数和 `app.asar` 的 sha256。
-只有这一份失败时不会让整次打包失败——`release\WhichVideo-portable` 仍然是可用的，输出里会提示手动拷走。
+只有这一份失败时不会让整次打包失败——`dist\WhichVideo-portable` 仍然是可用的，输出里会提示手动拷走。
 
 想让它一直用首选目录名，就把占用源关掉（或退出编辑器）再跑一次。
-本仓库内置了 `.vscode/settings.json`，已经把 `release`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。
-用 Sublime 的话，把排除规则加进项目文件即可（`folder_exclude_patterns` 里加上 `release`、`out*`、`tmp`）。
+本仓库内置了 `.vscode/settings.json`，已经把 `dist`、`out*`、`tmp` 排除在文件监视与搜索之外，可避免编辑器索引产物导致的占用。
+用 Sublime 的话，把排除规则加进项目文件即可（`folder_exclude_patterns` 里加上 `dist`、`out*`、`tmp`）。
 
 ---
 

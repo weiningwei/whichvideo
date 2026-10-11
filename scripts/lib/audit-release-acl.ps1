@@ -2,7 +2,7 @@
   审计打包产物的 ACL：找出 Deny 条目、未知 SID、以及实际不可读的文件。
 
   背景与结论（避免重复踩坑）：
-  release 目录树会带上 DSH 工作区的能力 ACL，包括
+  dist 目录树会带上 DSH 工作区的能力 ACL，包括
     · 形如 S-1-4-x-y 的「能力 SID」——按工作区路径确定性派生，一个工作区一个
     · Everyone 的 DeleteSubdirectoriesAndFiles 拒绝项
   据 DSH 自身文档，这两者是**预期设计**，不是损坏或残留；而且**不构成程序打不开的原因**
@@ -12,7 +12,7 @@
   用法： pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/lib/audit-release-acl.ps1
 #>
 param(
-  [string]$Root = 'release\WhichVideo-portable'
+  [string]$Root = 'dist\WhichVideo-portable'
 )
 
 $ErrorActionPreference = 'Continue'

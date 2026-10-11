@@ -187,7 +187,7 @@ console.log('=== 5. 版本检查是轻量实现（无 electron-updater）===')
   // 现行方案是 updater.ts 的轻量检查（查 GitHub Releases + 弹窗给下载入口）。
   check('electron-builder.yml 里没有 publish 配置', !/^publish:/m.test(yml), '所以不会生成 app-update.yml')
   const updaterConfigs = ['out/app-update.yml', 'out/dev-app-update.yml',
-    'release/win-unpacked/resources/app-update.yml', 'release/WhichVideo-portable/resources/app-update.yml']
+    'dist/win-unpacked/resources/app-update.yml', 'dist/WhichVideo-portable/resources/app-update.yml']
   const present = updaterConfigs.filter((p) => existsSync(join(root, p)))
   check('产物里没有更新源配置文件', present.length === 0, present.join(', ') || '4 个位置都没有')
   check('没有 electron-updater 依赖（含可选依赖）', !pkg.dependencies?.['electron-updater'] && !pkg.optionalDependencies?.['electron-updater'], '')

@@ -9,7 +9,7 @@
 # 再用"改名试探"确认当前是否真的无法改名（B 类占用也会让改名失败）。
 #
 # 用法：
-#   pwsh -NoProfile -File scripts/lib/who-locks-dir.ps1 -Path E:\code\...\release
+#   pwsh -NoProfile -File scripts/lib/who-locks-dir.ps1 -Path E:\code\...\dist
 param(
   [Parameter(Mandatory = $true)][string]$Path,
   [switch]$All,

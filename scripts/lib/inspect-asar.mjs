@@ -30,7 +30,7 @@ function loadAsar() {
 
 const asar = loadAsar()
 
-const path = resolve(process.argv[2] ?? 'release/WhichVideo-portable/resources/app.asar')
+const path = resolve(process.argv[2] ?? 'dist/WhichVideo-portable/resources/app.asar')
 if (!existsSync(path)) {
   console.log(`asar 不存在：${path}`)
   process.exit(0)

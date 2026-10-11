@@ -6,7 +6,7 @@
 #
 # 为什么需要它：Windows 上"目录既删不掉也改不了名"最常见的原因，是某个进程把该目录
 # 当作当前工作目录（CWD）。而 CWD 和进程 exe 的位置毫无关系 —— 例如绿色版 Sublime 的
-# plugin_host-3.3.exe 位于 D:\SublimeText，却停在项目的 release 目录上。
+# plugin_host-3.3.exe 位于 D:\SublimeText，却停在项目的 dist 目录上。
 
 if ('PebReader' -as [type]) { return }
 

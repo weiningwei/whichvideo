@@ -227,7 +227,7 @@ pnpm build:win                 # NSIS 安装包
 
 ## 便携（绿色）模式
 
-`build:portable` 产出两份目录：`release\WhichVideo-portable\`（仓库内）与
+`build:portable` 产出两份目录：`dist\WhichVideo-portable\`（仓库内）与
 **仓库上一级目录**下的同名文件夹。外面那份是给用户直接双击运行的。
 
 重新打包时，仓库外那份**会保留已有的 `data\`**，索引库不用重建。

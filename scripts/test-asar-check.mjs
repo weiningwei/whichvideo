@@ -108,7 +108,7 @@ async function main() {
   check('第三个层级也能解析', rendererEntry?.toString('utf8') === '<!doctype html>')
 
   // 官方库路径（优先使用）：拿仓库里真实的 asar 验证（人工构造的头部不保证符合官方 pickle 规范）
-  const realAsar = join(root, 'release', 'win-unpacked', 'resources', 'app.asar')
+  const realAsar = join(root, 'dist', 'win-unpacked', 'resources', 'app.asar')
   if (existsSync(realAsar)) {
     const viaLib = mod.readAsarEntry(realAsar, 'out/main/index.js')
     const localMain = existsSync(join(root, 'out', 'main', 'index.js'))
@@ -121,7 +121,7 @@ async function main() {
       check('真实包内产物与本地编译产物 sha256 一致', libHash === localHash, libHash.slice(0, 12) + '…')
     }
   } else {
-    check('（跳过真实 asar 校验：release/win-unpacked 不存在）', true)
+    check('（跳过真实 asar 校验：dist/win-unpacked 不存在）', true)
   }
 
   rmSync(work, { recursive: true, force: true })

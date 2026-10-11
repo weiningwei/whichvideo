@@ -2,7 +2,7 @@
  * 绿色版打包脚本的自检。
  *
  * 起因：pnpm build:portable 报
- *   EPERM, Permission denied: ...\release\WhichVideo-portable
+ *   EPERM, Permission denied: ...\dist\WhichVideo-portable
  * 也就是目标目录被占用（绿色版正在运行 / 资源管理器停在目录里 / 杀软在扫），
  * 而旧脚本直接 rmSync，只抛裸 EPERM，用户不知道该怎么办。
  *
@@ -170,7 +170,7 @@ function main() {
     )
     check('仓库外那份里有 exe', !!outsideDir && existsSync(join(outsideDir, 'WhichVideo.exe')))
     check(
-      '仓库外那份的 app.asar 与 release 里一致',
+      '仓库外那份的 app.asar 与 dist 里一致',
       !!outsideDir && readFileSync(join(outsideDir, 'resources', 'app.asar'), 'utf8') === 'fake asar v2'
     )
     check('仓库外那份也带便携版说明', !!outsideDir && existsSync(join(outsideDir, '便携版说明.txt')))
@@ -441,7 +441,7 @@ function main() {
     )
   }
 
-  console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 release 里的产物 ===')
+  console.log('\n=== 场景 6：仓库外拷贝可以关掉，且失败不影响 dist 里的产物 ===')
   {
     // 6a) 显式跳过
     const skipDir = join(work, 'skip')
@@ -464,7 +464,7 @@ function main() {
         : 0) === countBefore
     )
 
-    // 6b) 落点创建不出来时不能把整次打包判死（release 里的产物仍然是好的）。
+    // 6b) 落点创建不出来时不能把整次打包判死（dist 里的产物仍然是好的）。
     // 用"父路径是普通文件"来制造创建失败 —— 这是 Windows 上真实会遇到的形态。
     const blocker = join(work, 'not-a-dir')
     writeFileSync(blocker, 'not a directory')
@@ -478,7 +478,7 @@ function main() {
       String(missing.report?.outsideError)
     )
     check(
-      'release 里的产物仍然完整',
+      'dist 里的产物仍然完整',
       readFileSync(join(missingDir, 'WhichVideo-portable', 'resources', 'app.asar'), 'utf8') ===
         'fake asar v2'
     )
