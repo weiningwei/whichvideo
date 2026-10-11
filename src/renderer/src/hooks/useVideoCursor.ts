@@ -42,16 +42,19 @@ export function useVideoCursor({
     }
     const items: NavigableItem[] = []
     let idx = 0
+    // **所有视频都进 navigableItems**，不再判 expandedFolderIds —— 快捷键
+    // （↑↓/Home/End/PageUp/PageDown/Enter/Space/Ctrl+A/X/R/Delete/右键菜单）
+    // 必须能跨过任何未展开分组跳到任一视频。落到未展开分组的视频时由
+    // `expandFolderOfFocused` 自动展开，避免视觉丢失（用户既然用快捷键
+    // 显式导航到那里就说明要看）。
     for (const [folderId, folderVideos] of groupedVideos) {
       items.push({ type: 'folder', folderId, index: idx++ })
       for (const v of folderVideos) {
-        if (expandedFolderIds.has(folderId)) {
-          items.push({ type: 'video', folderId, video: v, index: idx++ })
-        }
+        items.push({ type: 'video', folderId, video: v, index: idx++ })
       }
     }
     return items
-  }, [groupByFolder, groupedVideos, expandedFolderIds])
+  }, [groupByFolder, groupedVideos])
 
   const [focusedIndex, setFocusedIndex] = useState(0)
 
@@ -102,6 +105,7 @@ export function useVideoCursor({
     const nextIndex = videoRowIndexes[nextPos]
     if (nextIndex === undefined) return
     setFocusedIndex(nextIndex)
+    expandFolderOfFocused()
     if (ctrlKey) return
     const item = navigableItems[nextIndex]
     if (item?.type === 'video' && item.video) {
@@ -116,6 +120,7 @@ export function useVideoCursor({
     const nextIndex = videoRowIndexes[nextPos]
     if (nextIndex === undefined) return
     setFocusedIndex(nextIndex)
+    expandFolderOfFocused()
     if (rangeKey) return
     const item = navigableItems[nextIndex]
     if (item?.type === 'video' && item.video) {
@@ -132,6 +137,7 @@ export function useVideoCursor({
    */
   const focusRow = (index: number) => {
     setFocusedIndex(index)
+    expandFolderOfFocused()
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, false, false)
@@ -141,6 +147,7 @@ export function useVideoCursor({
   /** Shift+点击：与上次选中的位置之间连选，光标跟着走到目标行 */
   const selectRowRange = (index: number) => {
     setFocusedIndex(index)
+    expandFolderOfFocused()
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, true, false)
@@ -150,6 +157,7 @@ export function useVideoCursor({
   /** Ctrl+点击：只切换这一行的选中，其余不动，光标也走到该行 */
   const toggleRowSelection = (index: number) => {
     setFocusedIndex(index)
+    expandFolderOfFocused()
     const item = navigableItems[index]
     if (item?.type === 'video' && item.video) {
       toggleVideoSelection(item.video.id, false, true)
@@ -184,18 +192,53 @@ export function useVideoCursor({
    */
   const focusedFolderId = useMemo(() => {
     const item = navigableItems[focusedIndex]
-    if (!item || item.type !== 'video') return null
+    if (!item) return null
     return item.folderId ?? null
   }, [navigableItems, focusedIndex])
 
+  /**
+   * 若光标所在 folder 未展开则展开 —— 移到未展开分组的视频时让用户能看见。
+   * 与"用户主动 ← 收起"是不同的语义：导航是"我要看"，← 是"我要折叠"。
+   *
+   * 注意：调用方通常刚 setFocusedIndex(nextIndex)。focusedFolderId 是从
+   * focusedIndex 派生的 memo，要等下一轮渲染才更新。直接读 navigableItems
+   * 当前位置拿 folderId，避免读到旧值。
+   */
+  const expandFolderOfFocused = () => {
+    const item = navigableItems[focusedIndex]
+    const fid = item?.folderId ?? null
+    if (fid === null) return
+    if (!expandedFolderIds.has(fid)) toggleFolderExpanded(fid)
+  }
+
+  /**
+   * → 在 folder 标题上：展开该分组；在 video 上：展开所属分组（一般已经展开，
+   * 调用此 API 是无操作；保留对称）。
+   */
   const expandFocusedFolder = () => {
     if (focusedFolderId === null) return
     if (!expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
   }
 
+  /**
+   * ← 在 folder 标题上：收起该分组（若已展开）；在 video 上：收起所属分组，
+   * 然后光标跳回该 folder 标题（与 Finder/Explorer 一致——光标在文件上按 ←
+   * 收起所在目录）。平铺视图（folderId 全为 null）无视 ←。
+   */
   const collapseFocusedFolder = () => {
     if (focusedFolderId === null) return
-    if (expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
+    const item = navigableItems[focusedIndex]
+    if (item?.type === 'video') {
+      // 收起 + 跳到 folder 标题
+      if (expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
+      const titleIndex = navigableItems.findIndex(
+        (it) => it.type === 'folder' && it.folderId === focusedFolderId
+      )
+      if (titleIndex !== -1) setFocusedIndex(titleIndex)
+    } else {
+      // 已经在 folder 标题上：单纯切换收起状态
+      if (expandedFolderIds.has(focusedFolderId)) toggleFolderExpanded(focusedFolderId)
+    }
   }
 
   /**
