@@ -49,6 +49,8 @@ export interface VideoRecord {
   samplingOverride: SamplingMode | null
   /** 累计已处理毫秒数（断点续传跨会话累计） */
   processedMs: number
+  /** 全文件 SHA-256 hex（bit 级内容指纹，用于变化检测与副本查重） */
+  fileHash: string | null
 }
 
 /** 文件夹监听状态 */

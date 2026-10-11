@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { accessSync, constants, createReadStream, existsSync } from 'node:fs'
+import { accessSync, constants, createReadStream, existsSync, statSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { VideoProbeInfo } from '@shared/types'
 import { PROBE_MAX_WIDTH } from './constants'
@@ -760,13 +760,43 @@ export function findSeekablePlayer(videoPath: string): SeekablePlayer | null {
  * 查重第一级用：size + duration 一致只是副本的**候选**信号（不充分 ——
  * 不同视频可能同大小同时长），哈希一致才是 bit 级相同的充分证明。
  * 结果缓存进 videos.file_hash，只算一次。
+ *
+ * 取消：signal.cancelled=true 时立刻断流抛出 AbortError；调用方应当
+ * 把错误上抛以停止扫描进度。进度回调：每 N MB（约 16MB）触发一次，
+ * 频率与文件大小成正比但 N 大小是恒定的 —— 1GB 文件约 64 次，足够细。
  */
-export async function sha256OfFile(filePath: string): Promise<string> {
+export async function sha256OfFile(
+  filePath: string,
+  options: { signal?: { cancelled: boolean }; onProgress?: (bytes: number, total: number) => void } = {}
+): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     const hash = createHash('sha256')
-    const stream = createReadStream(filePath)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('end', () => resolvePromise(hash.digest('hex')))
+    const stream = createReadStream(filePath, { highWaterMark: 4 * 1024 * 1024 })
+    let bytes = 0
+    let total = 0
+    let lastReport = 0
+    const reportInterval = 16 * 1024 * 1024
+    try {
+      total = statSync(filePath).size
+    } catch {
+      total = 0
+    }
+    stream.on('data', (chunk) => {
+      if (options.signal?.cancelled) {
+        stream.destroy(new Error('aborted'))
+        return
+      }
+      hash.update(chunk as Buffer)
+      bytes += (chunk as Buffer).length
+      if (options.onProgress && bytes - lastReport >= reportInterval) {
+        lastReport = bytes
+        options.onProgress(bytes, total)
+      }
+    })
+    stream.on('end', () => {
+      if (options.onProgress && bytes !== lastReport) options.onProgress(bytes, total)
+      resolvePromise(hash.digest('hex'))
+    })
     stream.on('error', reject)
   })
 }

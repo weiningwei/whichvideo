@@ -22,6 +22,7 @@ import {
   planTimestamps,
   probeVideo,
   requireTools,
+  sha256OfFile,
   shouldUseFullScan,
   type ToolPaths
 } from './media'
@@ -117,13 +118,14 @@ export class Indexer {
 
   /* ------------------------------ 登记 ------------------------------ */
 
-  private registerFile(
+  private async registerFile(
     filePath: string,
     folderId: number | null,
     probe: { duration: number | null; width: number | null; height: number | null; videoCodec: string | null }
-  ): { video: VideoRecord; changed: boolean; created: boolean } {
+  ): Promise<{ video: VideoRecord; changed: boolean; created: boolean }> {
     const st = statFile(filePath)
     if (!st) throw new Error(`文件不可读：${filePath}`)
+    const fileHash = await sha256OfFile(filePath)
     return this.db.upsertVideo({
       path: filePath,
       size: st.size,
@@ -132,7 +134,8 @@ export class Indexer {
       width: probe.width,
       height: probe.height,
       videoCodec: probe.videoCodec,
-      folderId
+      folderId,
+      fileHash
     })
   }
 
@@ -186,7 +189,7 @@ export class Indexer {
           continue
         }
       }
-      const { video, changed, created } = this.registerFile(filePath, folderId, probe)
+      const { video, changed, created } = await this.registerFile(filePath, folderId, probe)
       if (created) result.added++
       else if (changed) result.added++
       else if (existing?.status === 'ready' && !options.force) {
@@ -259,7 +262,7 @@ export class Indexer {
           return
         }
       }
-      const { video, changed, created } = this.registerFile(filePath, folder.id, probe)
+      const { video, changed, created } = await this.registerFile(filePath, folder.id, probe)
       if (created || changed) result.added++
       this.emit({ type: 'video-updated', video })
       this.enqueue(video.id, video.path, options.force || changed)
@@ -290,20 +293,28 @@ export class Indexer {
     }
   }
 
-  private onFileUpsert(filePath: string, folderId: number | null): void {
+  private async onFileUpsert(filePath: string, folderId: number | null): Promise<void> {
     try {
       const normalized = normalizePath(filePath)
       const existing = this.db.findByPath(normalized)
       const st = statFile(normalized)
       if (!st) return
+      // 快路径：existing 已有 fileHash 且 size/mtime 完全一致 → 信任旧 hash，
+      // 不再读全文 SHA-256。覆盖两个常见情形：chokidar 重复推送 / 文件未改
+      // 却被文件系统触碰。极端情况（size+mtime 不变但内容真变了）用户可手动
+      // 触发 force 重建索引——本来就需要的能力。
       if (
         existing &&
         existing.status === 'ready' &&
+        existing.fileHash &&
         existing.size === st.size &&
         Math.abs(existing.mtimeMs - st.mtimeMs) < 1
       ) {
         return
       }
+      // 慢路径：算全文 SHA-256 → upsertVideo 用 hash 判定 changed。
+      // 1GB 文件约 10s，但只触发"看起来可能变了"的视频，避免批量扫描慢。
+      const fileHash = await sha256OfFile(normalized)
       const { video, changed, created } = this.db.upsertVideo({
         path: normalized,
         size: st.size,
@@ -312,7 +323,8 @@ export class Indexer {
         width: existing?.width ?? null,
         height: existing?.height ?? null,
         videoCodec: existing?.videoCodec ?? null,
-        folderId: folderId ?? existing?.folderId ?? null
+        folderId: folderId ?? existing?.folderId ?? null,
+        fileHash
       })
       if (created || changed) {
         this.emit({ type: 'video-updated', video })

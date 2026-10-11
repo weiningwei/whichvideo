@@ -54,6 +54,8 @@ export interface NewVideo {
   height: number | null
   videoCodec: string | null
   folderId: number | null
+  /** 全文件 SHA-256 hex；首次入库可省略（索引时后台算） */
+  fileHash?: string | null
 }
 
 interface VideoRow {
@@ -78,6 +80,8 @@ interface VideoRow {
   processed_timestamps: string
   processed_ms: number
   sampling_override: string | null
+  /** 全文件 SHA-256 hex（bit 级内容指纹，用于变化检测与副本查重） */
+  file_hash: string | null
 }
 
 interface FolderRow {
@@ -122,7 +126,8 @@ function rowToVideo(r: VideoRow): VideoRecord {
     folderId: r.folder_id,
     processedTimestamps,
     processedMs: r.processed_ms,
-    samplingOverride: (r.sampling_override as SamplingMode | null) ?? null
+    samplingOverride: (r.sampling_override as SamplingMode | null) ?? null,
+    fileHash: r.file_hash
   }
 }
 
@@ -475,8 +480,8 @@ export class LibraryDatabase {
       const info = this.db
         .prepare(
           `INSERT INTO videos (path, path_key, name, dir, ext, size, mtime_ms, duration, width, height,
-                               video_codec, status, added_at, folder_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+                               video_codec, status, added_at, folder_id, file_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
         )
         .run(
           normalized,
@@ -491,12 +496,31 @@ export class LibraryDatabase {
           input.height,
           input.videoCodec,
           now,
-          input.folderId
+          input.folderId,
+          input.fileHash ?? null
         )
       return { video: this.getVideo(Number(info.lastInsertRowid))!, changed: true, created: true }
     }
 
-    const changed = existing.size !== input.size || existing.mtime_ms !== input.mtimeMs
+    // 变化判定：优先 file_hash bit 级内容指纹，回退到 size/mtime。
+    //
+    // - 双方都有 fileHash 且不等 → 变了（剪辑软件重写 / 内容修改都能捕获）
+    // - existing 无 fileHash（旧库迁移）但新有 → 保守按变了处理（重抽一次
+    //   后下次扫描就能用 hash 判定）
+    // - 双方都没 fileHash → 退回 size/mtime 旧判定（兼容未算 hash 的视频）
+    let changed: boolean
+    if (input.fileHash && existing.file_hash) {
+      changed = input.fileHash !== existing.file_hash
+    } else if (input.fileHash && !existing.file_hash) {
+      changed = true
+    } else if (!input.fileHash && existing.file_hash) {
+      changed = false
+    } else {
+      changed = existing.size !== input.size || existing.mtime_ms !== input.mtimeMs
+    }
+    // file_hash 入库：用新值覆盖 existing（已有则保留旧值以保留历史；新值更准则更新）
+    // 简化：每次都覆盖新值（库用途上 fileHash 反映"现在的内容"）
+    const fileHash = input.fileHash ?? existing.file_hash
     this.db
       .prepare(
         `UPDATE videos SET path = ?, name = ?, dir = ?, ext = ?, size = ?, mtime_ms = ?,
@@ -504,7 +528,8 @@ export class LibraryDatabase {
                            height = COALESCE(?, height), video_codec = COALESCE(?, video_codec),
                            folder_id = COALESCE(?, folder_id),
                            status = CASE WHEN ? = 1 THEN 'pending' ELSE status END,
-                           frame_count = CASE WHEN ? = 1 THEN 0 ELSE frame_count END
+                           frame_count = CASE WHEN ? = 1 THEN 0 ELSE frame_count END,
+                           file_hash = ?
          WHERE id = ?`
       )
       .run(
@@ -521,6 +546,7 @@ export class LibraryDatabase {
         input.folderId,
         changed ? 1 : 0,
         changed ? 1 : 0,
+        fileHash,
         existing.id
       )
     if (changed) this.db.prepare('DELETE FROM frames WHERE video_id = ?').run(existing.id)
