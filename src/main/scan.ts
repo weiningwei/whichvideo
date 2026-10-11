@@ -62,9 +62,11 @@ export interface ExtractOptions {
    * 每抽到一帧时回调原始像素（keepFrameImages 开关开启时由 indexer 传入，
    * 用于把帧图存盘）。在 computeSignature 前后调用，像素是 stdout 的视图，
    * 回调同步消费；回调内部自行兜错，不应抛出。
+   * timeMs 是该帧在视频中的位置（毫秒）—— 帧图文件名即用此做 key。
    */
   saveFrameImage?: (frame: {
     frameIndex: number
+    timeMs: number
     rgb: Buffer
     width: number
     height: number
@@ -215,7 +217,7 @@ async function extractAndHashBySeek(
         frameIndex,
         timeMs: realTimeMs
       })
-      options?.saveFrameImage?.({ frameIndex, rgb, width: EXTRACT_WIDTH, height })
+      options?.saveFrameImage?.({ frameIndex, timeMs: realTimeMs, rgb, width: EXTRACT_WIDTH, height })
       options?.onFrame?.(frameIndex + 1, totalTimestamps)
     }
   }
@@ -271,7 +273,7 @@ async function extractAndHashByFullScan(
       frameIndex,
       timeMs: Math.round(time * 1000)
     })
-    options?.saveFrameImage?.({ frameIndex, rgb, width, height })
+    options?.saveFrameImage?.({ frameIndex, timeMs: Math.round(time * 1000), rgb, width, height })
   }
   return frames
 }

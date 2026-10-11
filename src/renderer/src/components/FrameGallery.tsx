@@ -14,6 +14,11 @@ interface Props {
   onClose: () => void
   /** 请求重建该视频索引（帧文件缺失时的引导动作） */
   onReindex: (videoIds: number[]) => void
+  /**
+   * 点击单帧：跳到视频该时间播放（atSeconds 单位：秒）。
+   * 由 LibraryView 从 onOpen 派生：弹层选帧 → 关闭弹层 → 唤起播放器。
+   */
+  onOpenFrame: (videoId: number, atSeconds: number) => void
 }
 
 /** 帧时间标签：m:ss.d —— 一行放得下，还能区分间隔很近的两帧 */
@@ -27,41 +32,65 @@ function frameTimeLabel(timeMs: number): string {
 
 function FrameImage({
   videoId,
-  frameIndex,
-  hasFile
+  timeMs,
+  hasFile,
+  onClick
 }: {
   videoId: number
-  frameIndex: number
+  timeMs: number
   hasFile: boolean
+  onClick: () => void
 }) {
   const [src, setSrc] = useState<string | null>(null)
   useEffect(() => {
     if (!hasFile) return
     let alive = true
-    void window.whichvideo.videos.frameImage(videoId, frameIndex).then((d) => {
+    void window.whichvideo.videos.frameImage(videoId, timeMs).then((d) => {
       if (alive) setSrc(d)
     })
     return () => {
       alive = false
     }
-  }, [videoId, frameIndex, hasFile])
+  }, [videoId, timeMs, hasFile])
 
-  if (!hasFile) {
-    return (
-      <div className="flex aspect-video w-full items-center justify-center rounded border border-dashed border-line bg-surface-inset text-[10.5px] text-muted">
-        未保留
-      </div>
-    )
+  // 即使文件缺失，"点击跳到该时间"仍是有意义的 —— 至少能跳过去看一眼
+  const clickable = hasFile || true
+  const handleClick = () => {
+    if (!clickable) return
+    onClick()
   }
-  if (!src) {
-    return (
-      <div className="aspect-video w-full animate-pulse rounded bg-surface-inset" aria-label="加载中" />
-    )
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick()
+    }
   }
-  return <img src={src} alt={`帧 ${frameIndex}`} className="w-full rounded" loading="lazy" />
+
+  const inner = !hasFile ? (
+    <div className="flex aspect-video w-full items-center justify-center rounded border border-dashed border-line bg-surface-inset text-[10.5px] text-muted">
+      未保留
+    </div>
+  ) : !src ? (
+    <div className="aspect-video w-full animate-pulse rounded bg-surface-inset" aria-label="加载中" />
+  ) : (
+    <img src={src} alt={`帧 ${frameTimeLabel(timeMs)}`} className="w-full rounded" loading="lazy" />
+  )
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={handleKey}
+      className="cursor-pointer transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent/60"
+      title={`跳到 ${frameTimeLabel(timeMs)} 处播放`}
+    >
+      {inner}
+    </div>
+  )
 }
 
-export function FrameGallery({ video, onClose, onReindex }: Props) {
+export function FrameGallery({ video, onClose, onReindex, onOpenFrame }: Props) {
   const [manifest, setManifest] = useState<FrameManifestEntry[] | null>(null)
 
   useEffect(() => {
@@ -152,11 +181,15 @@ export function FrameGallery({ video, onClose, onReindex }: Props) {
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
               {entries.map((entry) => (
-                <figure key={entry.frameIndex} className="m-0">
+                <figure key={`${entry.frameIndex}-${entry.timeMs}`} className="m-0">
                   <FrameImage
                     videoId={video.id}
-                    frameIndex={entry.frameIndex}
+                    timeMs={entry.timeMs}
                     hasFile={entry.hasFile}
+                    onClick={() => {
+                      onClose()
+                      onOpenFrame(video.id, entry.timeMs / 1000)
+                    }}
                   />
                   <figcaption className="mt-0.5 text-center font-mono text-[10px] text-tertiary">
                     {frameTimeLabel(entry.timeMs)}

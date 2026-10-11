@@ -381,8 +381,8 @@ export interface WhichVideoApi {
     frameProgress(videoId: number): Promise<FrameProgress | null>
     /** 该视频全部索引帧清单（按帧序号升序）；hasFile 表示帧图文件是否存在 */
     frameManifest(videoId: number): Promise<FrameManifestEntry[]>
-    /** 单帧图像 dataUrl；未保留帧图时返回 null */
-    frameImage(videoId: number, frameIndex: number): Promise<string | null>
+    /** 单帧图像 dataUrl；按 timeMs 定位（与磁盘文件名 `<timeMs>.jpg` 对齐） */
+    frameImage(videoId: number, timeMs: number): Promise<string | null>
     /**
      * 命中时间点预览（JPEG dataUrl）：现场解码 hit.timeMs 附近的帧。
      * 失败（文件已删/解码超时）时返回 null，调用方应回退到 thumbnail。

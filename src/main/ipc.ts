@@ -473,11 +473,13 @@ export function registerIpc(deps: IpcDeps): void {
     db.listFrameManifest(videoId).map((row) => ({
       frameIndex: row.frameIndex,
       timeMs: row.timeMs,
-      hasFile: frameImageExists(videoId, row.frameIndex)
+      hasFile: frameImageExists(videoId, row.timeMs)
     }))
   )
-  ipcMain.handle(IPC.videosFrameImage, (_e, videoId: number, frameIndex: number) =>
-    readFrameImage(videoId, frameIndex)
+  // 帧图路径按 timeMs 定位：与磁盘文件名 `<timeMs>.jpg` 对齐，与 SQLite
+  // frames.time_ms 一一对应。FrameGallery 点击"跳到该时间播放"也走 timeMs。
+  ipcMain.handle(IPC.videosFrameImage, (_e, videoId: number, timeMs: number) =>
+    readFrameImage(videoId, timeMs)
   )
   /**
    * 命中时间点预览：按 timeMs 现场解码一帧（不走精修、不计 SSIM；纯视觉预览，

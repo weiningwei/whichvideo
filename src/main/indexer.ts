@@ -610,7 +610,7 @@ export class Indexer {
         // 帧图保存：失败已在 frames-store 内部兜错（仅记日志），不影响索引
         saveFrameImage: settings.keepFrameImages
           ? (f) => {
-              saveFrameImage(videoId, f.frameIndex, f.rgb, f.width, f.height)
+              saveFrameImage(videoId, f.timeMs, f.rgb, f.width, f.height)
             }
           : undefined,
         width: video.width,
