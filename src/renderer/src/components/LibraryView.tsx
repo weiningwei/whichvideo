@@ -450,7 +450,9 @@ export function LibraryView(props: Props) {
                     }
 
                     // 标题行的视觉态：
-                    //   - 选中（groupSelected/groupPartial）：行底色 row-selected
+                    //   - 选中（groupSelected/groupPartial）：行底色 row-selected；
+                    //     **文件夹名也染 text-accent**，与 VideoRow 文件名选中一致 —— 单看
+                    //     行底蓝底很容易被忽略（与分隔表头色接近），名字染色是更强的信号
                     //   - 仅键盘光标（headerFocused）：行底色 row-focus + 左侧 2px 淡灰条，
                     //     与 VideoRow 同一套语义 —— 不然用户根本看不出"光标停在标题上"
                     const headerBg = groupSelected
@@ -467,7 +469,10 @@ export function LibraryView(props: Props) {
                       >
                         <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
                           {/* 与 VideoRow 同一套"左侧 2px 竖条"语义：仅光标时给淡灰条。
-                              选中态留给 groupSelected 在 checkbox 里给 accent。 */}
+                              选中态由 `bg-row-selected`（行底）+ 文件名 text-accent 共同表达 ——
+                              两层叠加比单靠蓝色底更容易注意到选中。
+                              groupSelected 不再加左侧 accent 竖条：行底+文字已够清晰，再加竖条反而
+                              让"是这一组被选中"与"组内某行被选中"视觉雷同。 */}
                           {!groupSelected && headerFocused && (
                             <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
                           )}
@@ -502,7 +507,11 @@ export function LibraryView(props: Props) {
                               >
                                 ▼
                               </span>
-                              <span className="truncate font-medium">{displayName}</span>
+                              <span
+                                className={`truncate font-medium ${groupSelected ? 'text-accent' : ''}`}
+                              >
+                                {displayName}
+                              </span>
                               <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
                                 {folderVideos.length} 个视频
                               </span>
