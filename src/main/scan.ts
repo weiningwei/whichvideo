@@ -327,6 +327,11 @@ async function extractAndHashByFullScan(
   const extracted = await extractFrames(filePath, targetTimestamps, requireTools(), {
     maxWidth: EXTRACT_WIDTH,
     durationSeconds: durationSeconds ?? undefined,
+    // 透传视频尺寸：extractFrames 按 stdout 字节算 frameBytes 驱动**逐帧**
+    // 进度 —— ffmpeg `-progress` 500ms 节流对 4K hwaccel 等秒级完成的任务
+    // 等于死（2.4s 任务实测只 emit 5 次进度，UI 看到 0 → 62）。
+    videoWidth: options?.width,
+    videoHeight: options?.height,
     onFrame: options?.onFrame
       ? (done) => options.onFrame!(startIndex + done, timestamps.length)
       : undefined

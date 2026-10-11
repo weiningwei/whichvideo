@@ -166,6 +166,15 @@ interface RunOptions {
   timeoutMs?: number
   /** ffmpeg -progress 回调；out_time_ms 已归一化为**真毫秒**（见解析处注释） */
   onProgress?: (info: { frame: number; fps: number; out_time_ms: number; progress: string }) => void
+  /**
+   * stdout 累计字节变化回调。每次 stdout 流收到新 chunk 时同步触发，参数为
+   * 截至当前的累计字节数。`extractFrames` 路径用这个驱动**逐帧进度**：
+   * ffmpeg `-progress` 默认 500ms~1s 才 emit 一次进度块（实测 2.4s 任务只
+   * emit 5 次），对 4K hwaccel 这类秒级完成的任务等于"看不到中间进度，
+   * 突然 100%"。stdout rawvideo 是按帧顺序写出的，count 字节 / frameBytes
+   * = 已完成帧数 —— 比 ffmpeg 自带进度刷新快 50×+。
+   */
+  onStdoutChunk?: (totalBytes: number) => void
 }
 
 export function run(bin: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -189,6 +198,10 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
       if (size >= maxStdout) return
       chunks.push(chunk)
       size += chunk.length
+      // stdout 累计字节变化回调：用于驱动逐帧进度。rawvideo 流是按帧顺序
+      // 连续写出的，每收到新 chunk 就触发 —— 比 ffmpeg `-progress` 的 500ms
+      // 节流快 50×+。调用方按 `totalBytes / frameBytes` 算已完成帧数。
+      options.onStdoutChunk?.(size)
     })
     child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
@@ -317,7 +330,15 @@ export async function extractFrames(
   filePath: string,
   timestamps: number[],
   tools?: ToolPaths,
-  options: { maxWidth?: number; timeoutMs?: number; durationSeconds?: number; onFrame?: (done: number, total: number) => void } = {}
+  options: {
+    maxWidth?: number
+    timeoutMs?: number
+    durationSeconds?: number
+    /** 视频源宽高（用于按 stdout 字节算 frameBytes —— 算不准进度会爆 100%） */
+    videoWidth?: number | null
+    videoHeight?: number | null
+    onFrame?: (done: number, total: number) => void
+  } = {}
 ): Promise<ExtractedFrame[]> {
   if (timestamps.length === 0) return []
   const t = tools ?? requireTools()
@@ -350,14 +371,33 @@ export async function extractFrames(
     'pipe:1'
   )
 
-  // 进度回调：用 ffmpeg -progress 解析帧号
+  // 按 stdout 字节流驱动**逐帧**进度。frameBytes 必须与 ffmpeg 实际输出
+  // 帧字节一致，否则进度会爆 100% 或卡在 0% —— 算法：scale=w=min(maxWidth,iw)
+  // 决定输出宽；h=-2 让 ffmpeg 向下偶数对齐算高度，公式：
+  //   outputH = even(floor(h * outputW / w))
+  // 输入视频尺寸缺参时跳过逐帧进度（退化到 ffmpeg -progress 节流，旧行为）。
+  let frameBytes = 0
+  if (options.videoWidth && options.videoHeight && options.onFrame) {
+    const outputW = Math.min(maxWidth, options.videoWidth)
+    const outputH =
+      Math.max(2, Math.floor((options.videoHeight * outputW) / options.videoWidth)) & ~1
+    frameBytes = outputW * 3 * outputH
+  }
   let lastFrame = 0
   const { code, stdout, stderr } = await run(t.ffmpeg, args, {
     timeoutMs: options.timeoutMs ?? 10 * 60_000,
-    onProgress: options.onFrame ? (info) => {
+    onProgress: options.onFrame && frameBytes === 0 ? (info) => {
+      // 字节驱动不可用时退到 ffmpeg -progress 节流（旧行为，4K 短任务下等于死）
       if (info.frame && info.frame > lastFrame) {
         lastFrame = info.frame
         options.onFrame!(Math.min(lastFrame, timestamps.length), timestamps.length)
+      }
+    } : undefined,
+    onStdoutChunk: options.onFrame && frameBytes > 0 ? (totalBytes) => {
+      const done = Math.min(timestamps.length, Math.floor(totalBytes / frameBytes))
+      if (done > lastFrame) {
+        lastFrame = done
+        options.onFrame!(done, timestamps.length)
       }
     } : undefined
   })
