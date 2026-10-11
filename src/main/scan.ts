@@ -100,16 +100,22 @@ export async function extractAndHash(
 }
 
 /**
- * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，成本约 25 ms/帧，与时长无关。
- * 帧数较少时优于全片解码（无需从头解一遍）。
- * 为获得实时进度，按子批次（默认 8 帧）分多次调用 ffmpeg。
+ * 路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入。
  *
- * ⚠️ 帧序保证：所有输入经 trim 各取一帧后用 concat 滤镜拼成**单输出流**。
- * 旧实现给每个输入配一路独立输出、全部写进同一个 pipe:1，赌的是"ffmpeg 按输出
- * 定义顺序写字节"——实测不成立：ffmpeg 按各输入解码**完成顺序**写（seek 深度
- * 不同 → 到达顺序不定），帧与时间戳系统性错位（4 输入实测返回顺序
- * [37s, 7s, 22s, 52s]），库内指纹与 timeMs 全部对不上，搜索结果时间错乱。
- * concat 单流的顺序由滤镜图拓扑决定，与到达顺序无关。
+ * **单次 ffmpeg 调用**（filter_complex 接所有输入，ffmpeg 内部并行解码）：
+ *   · 旧实现按 SUB_BATCH=4 分批：36 帧视频起 9 次 ffmpeg 进程，~30~50ms 启动
+ *     开销 × 9 = 300~450ms 纯浪费（1080p/720p 等非 4K 视频体感明显）
+ *   · filter_complex 完全支持 N 路并行解码，N 个 -ss/-i 输入一次性塞进去，
+ *     ffmpeg 内部线程池并发解码、concat 后帧序由滤镜图拓扑保证（与到达
+ *     顺序无关 —— 这是旧实现"按解码完成顺序写字节导致 [37s, 7s, 22s, 52s]
+ *     错位"的根因，concat 永远修掉）
+ *
+ * **4K 视频仍走分批**：4K 多路并行解码吃 GPU / 显存，4 路就够把低端显卡
+ * 撑爆。非 4K 才单调用。
+ *
+ * timeMs 直接写计划时间点（-ss 目标），由命中时间精修在邻域补采选最优。
+ * （trim 后的时间轴从 0 重启，showinfo 拿到的 pts_time 永远是 ≈0 —— 之前
+ * v4 代码用错这个把每帧 timeMs 都写成 0）
  */
 async function extractAndHashBySeek(
   filePath: string,
@@ -122,13 +128,17 @@ async function extractAndHashBySeek(
   if (targetTimestamps.length === 0) return []
 
   const t = requireTools()
-  const SUB_BATCH = 4 // 子批次大小：每次 ffmpeg 处理这么多帧，平衡性能与进度实时性（4K 视频减小以更快出进度）
+  const is4K = (options?.width ?? 0) >= 3840 || (options?.height ?? 0) >= 2160
+  // 4K 多路并行解码吃 GPU：分批走，SUB_BATCH=4 平衡 GPU 占用和启动开销。
+  const SUB_BATCH = 4
+  // 非 4K：步长 = 整批（单调用）；4K：步长 = SUB_BATCH
+  const step = is4K ? SUB_BATCH : targetTimestamps.length
 
   const frames: NewFrame[] = []
   const totalTimestamps = timestamps.length
 
-  for (let batchStart = 0; batchStart < targetTimestamps.length; batchStart += SUB_BATCH) {
-    const batchEnd = Math.min(batchStart + SUB_BATCH, targetTimestamps.length)
+  for (let batchStart = 0; batchStart < targetTimestamps.length; batchStart += step) {
+    const batchEnd = Math.min(batchStart + step, targetTimestamps.length)
     const batchTimestamps = targetTimestamps.slice(batchStart, batchEnd)
     const batchStartTime = Date.now()
 
