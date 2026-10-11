@@ -375,6 +375,17 @@ function ResultCard({
           <span>
             结构 {(match.hashScore * 100).toFixed(0)}% · 颜色 {(match.colorScore * 100).toFixed(0)}%
           </span>
+          {/*
+           * 命中点位置：`index/total · m:ss.d` —— 帧序号（1-based）+ 总帧数 +
+           * 视频内时间点。一眼看清"采到了第几帧、对应视频几分几秒"。
+           * 与 FrameGallery 弹层标题同源格式（5/38-0:01.50）。
+           * frameCount=0（未索引完 / 索引失败）就不显示序号部分。
+           */}
+          <span className="font-mono tabular-nums">
+            {video.frameCount > 0 ? `${match.frameIndex + 1}/${video.frameCount}` : '?'}
+            {' · '}
+            {formatDuration(match.timeSeconds)}
+          </span>
         </div>
 
         <div className="mt-2 flex items-center gap-2">
