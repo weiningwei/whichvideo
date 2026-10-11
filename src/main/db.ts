@@ -750,9 +750,13 @@ export class LibraryDatabase {
 
   /** 「查看索引帧」清单：全部索引帧的序号与时间，按帧序号升序 */
   listFrameManifest(videoId: number): { frameIndex: number; timeMs: number }[] {
-    return this.db
+    // better-sqlite3 按列名原样返回（蛇形），不能直接当驼峰用 —— 之前 as cast
+    // 是错的，IPC 拿到的是 { frame_index, time_ms }，前端拿到的是 undefined，
+    // 显示成 NaN。这里显式 map 成接口约定的驼峰。
+    const rows = this.db
       .prepare('SELECT frame_index, time_ms FROM frames WHERE video_id = ? ORDER BY frame_index')
-      .all(videoId) as { frameIndex: number; timeMs: number }[]
+      .all(videoId) as { frame_index: number; time_ms: number }[]
+    return rows.map((r) => ({ frameIndex: r.frame_index, timeMs: r.time_ms }))
   }
 
   /** 更新缩略图并标记为 ready，同时刷新帧数 */
