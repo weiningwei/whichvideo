@@ -451,14 +451,16 @@ export function LibraryView(props: Props) {
 
                     // 标题行的视觉态。**关键原则：folder 标题绝不上 accent 色** —— 否则与选中视频
                     // 行的 text-accent 文件名视觉雷同，用户分不清"这一组被选中"还是"组内某个
-                    // 视频被选中"。folder 用作"容器指示器"：左侧竖条 + 行底色 + 右侧徽标
-                    // 三处传达选中状态，名字本身保持 secondary。
+                    // 视频被选中"。folder 用作"容器指示器"。
                     //
-                    // **全选 / 部分视觉等强**（用户反馈"第一个和第二个不一样"+"A 选中不明显"）：
-                    // 用户的心智模型是"这个 folder 有选中内容"，而不是"全选 vs 部分是两种
-                    // 不同的状态"。所以行底、竖条、徽标底色全部走一样的实色 accent，只在
-                    // 徽标文字内容区分 K/N vs N/N（要细分时读字即可）。partial 用 accent/45
-                    // 那种'半选视觉'在 a1 行那种满 accent 文字旁边根本看不见。
+                    // **徽标位置是症结**（用户连续 4 个 commit 反馈"不明显"）：
+                    // 之前徽标在行最右侧（小角落），用户视线落在左侧文件夹名上 —— 视觉
+                    // 重心错位，徽标再亮也压不过左边 a1 行的 text-accent 文件名。现在
+                    // 徽标紧贴文件夹名右侧、放大字号加粗，与 folder 名共占视觉重心。
+                    //
+                    // **全选 / 部分视觉等强**：用户的心智模型是"这个 folder 有选中内容"，
+                    // 而不是"全选 vs 部分是两种不同的状态"。行底色 + 竖条 + 徽标实底
+                    // accent 全选/部分一致，只在徽标文字区分 K/N vs N/N。
                     const headerBg = groupSelected || groupPartial
                       ? 'bg-row-selected'
                       : headerFocused
@@ -512,33 +514,28 @@ export function LibraryView(props: Props) {
                               >
                                 ▼
                               </span>
-                              <span className="truncate font-medium">{displayName}</span>
-                              <span className="ml-auto flex shrink-0 items-center gap-2">
-                                <span className="text-[11px] font-normal text-muted">
-                                  {folderVideos.length} 个视频
+                              {/* 选中徽标 —— **紧贴文件夹名右侧**，不挤到行末。
+                                  之前的症结：徽标小且在右侧，folder 名无色，整行视觉重心
+                                  是次要信息（"N 个视频"）。现在徽标加粗加大、贴名放置，
+                                  视觉重心 = folder 名 + 徽标，共占 a1 行 text-accent 文件名
+                                  的视觉权重。folder 名仍是 secondary（与 video 选中区分）。 */}
+                              {(groupSelected || groupPartial) && (
+                                <span
+                                  className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[12px] font-bold leading-none tabular-nums text-ink-950"
+                                  title={
+                                    groupSelected
+                                      ? '该目录下所有视频已选中'
+                                      : `该目录下有 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length} 个视频被选中`
+                                  }
+                                >
+                                  {groupSelected
+                                    ? `✓ ${folderVideos.length}`
+                                    : `✓ ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length}`}
                                 </span>
-                                {/* 选中徽标。**这是 folder 与 video 选中视觉的关键区分**：
-                                    video 行选中 = 文件名变 accent 蓝；folder 选中 = 文件名不动、
-                                    右侧出现 accent 实底徽标。两者一眼可分。
-                                    **全选 / 部分走同一实底徽标**（背景 + 文字色 + 尺寸一致），
-                                    只在文案区分 K/N vs N/N —— 让"这个 folder 有选中"信号强度
-                                    与 a1 行左侧 accent 竖条 / text-accent 文件名对等，
-                                    不再因 accent/45、bg-accent/15 那种"半选视觉"被旁边
-                                    a1 行的满 accent 文字压过去。 */}
-                                {(groupSelected || groupPartial) && (
-                                  <span
-                                    className="rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-ink-950"
-                                    title={
-                                      groupSelected
-                                        ? '该目录下所有视频已选中'
-                                        : `该目录下有 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length} 个视频被选中`
-                                    }
-                                  >
-                                    {groupSelected
-                                      ? `已全选 ${folderVideos.length}/${folderVideos.length}`
-                                      : `已选 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length}`}
-                                  </span>
-                                )}
+                              )}
+                              <span className="truncate font-medium">{displayName}</span>
+                              <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
+                                {folderVideos.length} 个视频
                               </span>
                             </span>
                           </div>
