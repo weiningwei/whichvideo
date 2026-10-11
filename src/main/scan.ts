@@ -134,14 +134,16 @@ async function extractAndHashBySeek(
     for (const ts of batchTimestamps) {
       args.push('-hwaccel', 'auto', '-ss', ts.toFixed(3), '-i', filePath)
     }
-    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放，各自接 showinfo
-    // 获取原始视频时间轴上的真实 pts_time（秒），再 concat 成单流输出。
-    // showinfo 必须在 concat 前，否则拿到的是拼接流从 0 开始的 PTS。
+    // 每个输入取 seek 后的第一帧（trim=end_frame=1），统一缩放，再 concat 成单流。
+    // 不再用 showinfo 拼真实 pts：trim 后的时间轴从 0 重启，showinfo 拿到的
+    // pts_time 永远是 ≈0；trim 前拼 showinfo 在 fast seek + B 帧重排的输入下
+    // 也并不可靠（实测首帧 pts 与 -ss 目标差 1 帧到一个 GOP）。timeMs 直接写
+    // 计划时间点（-ss 目标），由命中时间精修在邻域补采选最优。
     const count = batchTimestamps.length
     const parts: string[] = []
     const labels: string[] = []
     for (let i = 0; i < count; i++) {
-      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2,showinfo[s${i}]`)
+      parts.push(`[${i}:v]trim=end_frame=1,scale=w=${EXTRACT_WIDTH}:h=-2[s${i}]`)
       labels.push(`[s${i}]`)
     }
     parts.push(`${labels.join('')}concat=n=${count}:v=1:a=0[out]`)
@@ -169,7 +171,6 @@ async function extractAndHashBySeek(
       // 旧版 ffmpeg（< 5.1）没有 -fps_mode：去掉该选项重试。此时在 concat 后接
       // setpts 把输出 pts 重排成按帧号递增的单调网格，默认帧率模式无重复可丢。
       // （setpts 放在回退分支：passthrough 下无需假设帧率，VFR 源也稳。）
-      // 注意：showinfo 已在各分支前，concat 后不再需要 showinfo
       const fallback = [...parts]
       fallback[fallback.length - 1] = `${labels.join('')}concat=n=${count}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]`
       const retryArgs = args.slice(0, args.indexOf('-filter_complex'))
@@ -185,15 +186,6 @@ async function extractAndHashBySeek(
     if (stdout.length === 0) {
       throw new Error(`抽帧失败：${stderr.trim() || `ffmpeg 退出码 ${code}`}`)
     }
-
-    // 解析 showinfo 输出的真实 pts_time（秒）
-    const showinfoLines = stderr.split('\n').filter((l) => l.includes('pts_time:'))
-    const realTimes = showinfoLines
-      .map((l) => {
-        const m = l.match(/pts_time:(\d+(?:\.\d+)?)/)
-        return m ? Number.parseFloat(m[1]) : null
-      })
-      .filter((t): t is number => t !== null)
 
     const rowBytes = EXTRACT_WIDTH * 3
     if (stdout.length % count !== 0) {
@@ -212,10 +204,9 @@ async function extractAndHashBySeek(
       const image: ImageDataLike = { width: EXTRACT_WIDTH, height, channels: 3, order: 'rgb', data: rgb }
       const sig = computeSignature(image)
       const frameIndex = startIndex + batchStart + i
-      // 优先用真实 pts_time；缺行时退回计划时间点
-      const realTimeMs = realTimes[i] !== undefined
-        ? Math.round(realTimes[i] * 1000)
-        : Math.round(batchTimestamps[i] * 1000)
+      // timeMs 直接写计划时间点（fast seek 实际落点可能差几帧，由
+      // src/main/search.ts::refineCandidateTimes 在命中点邻域补采选最优帧）。
+      const realTimeMs = Math.round(batchTimestamps[i] * 1000)
       frames.push({
         dhash: sig.dhash,
         struct: sig.struct,

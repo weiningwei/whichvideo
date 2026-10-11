@@ -28,8 +28,13 @@ export const FRAME_STRIDE = META_OFFSET + 8
  *
  * v4：seek 抽帧路径改用 concat 单流输出（帧序才与时间点对齐），旧数据是
  * "指纹与 timeMs 错位"的坏数据，无法检测、只能整库作废重抽。
+ *
+ * v5：seek 抽帧不再解析 showinfo 拼真实 pts（trim 后的 pts_time 永远 ≈0，
+ * 旧代码用错了把 timeMs 全写成 0，导致命中时间显示成 0:00）；timeMs 改写
+ * 计划时间点，由 refineCandidateTimes 在命中邻域补采纠正。v4 库的
+ * timeMs 字段全部是坏值，沿用就会"命中但时间错"，必须重抽。
  */
-export const FRAME_FORMAT_VERSION = 4
+export const FRAME_FORMAT_VERSION = 5
 
 /**
  * Float32 颜色直方图（和为 1）→ u8 量化。
