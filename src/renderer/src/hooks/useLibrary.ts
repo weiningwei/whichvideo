@@ -28,32 +28,6 @@ export interface Notice {
 }
 
 /**
- * 库视图模式（按文件夹分组 vs 平铺）的持久化键。键名带 wv- 前缀避免
- * 与其他应用串味，与 useTheme 同款。
- */
-const VIEW_MODE_KEY = 'wv-library-group-by-folder'
-
-function readGroupByFolder(): boolean {
-  try {
-    const v = localStorage.getItem(VIEW_MODE_KEY)
-    if (v === '1') return true
-    if (v === '0') return false
-  } catch {
-    /* 隐私模式下 localStorage 可能抛错，用默认即可 */
-  }
-  // 默认分组：既然数据来源是文件夹，按文件夹查看更符合心智模型。
-  return true
-}
-
-function writeGroupByFolder(value: boolean): void {
-  try {
-    localStorage.setItem(VIEW_MODE_KEY, value ? '1' : '0')
-  } catch {
-    /* 存不下不影响本次会话使用 */
-  }
-}
-
-/**
  * 左侧文件夹树的显隐与当前选中目录的持久化键（wv- 前缀，与 useTheme 同款）。
  * `treeVisible` 取代旧的「分组/平铺」视图切换（wv-library-group-by-folder）；
  * `selectedDir` 记录地址栏当前所在目录（null = 整库）。
@@ -115,7 +89,6 @@ export interface LibraryState {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
-  groupByFolder: boolean
   /** 左侧文件夹树是否可见（取代旧的「分组」视图切换） */
   treeVisible: boolean
   /** 地址栏当前选中目录（null = 整库） */
@@ -136,14 +109,6 @@ export function useLibrary() {
   const videoList = useVideoList()
   const search = useSearch()
   const busy = useBusy(notices.pushNotice)
-  // 库视图模式（分组/平铺）持久化到 localStorage。新用户默认分组 —— 既然
-  // 数据来源是\"文件夹\"，按文件夹看比平铺更符合心智模型；老用户的选择会
-  // 被记住（与 useTheme 同款）。
-  const [groupByFolder, setGroupByFolder] = useState<boolean>(readGroupByFolder)
-
-  useEffect(() => {
-    writeGroupByFolder(groupByFolder)
-  }, [groupByFolder])
 
   // 左侧文件夹树显隐（取代旧的「分组」视图切换）。默认显示。
   const [treeVisible, setTreeVisible] = useState<boolean>(readTreeVisible)
@@ -176,10 +141,6 @@ export function useLibrary() {
   }, [core, videoList])
 
   const withBusy = busy.withBusy
-
-  const toggleGroupByFolder = useCallback(() => {
-    setGroupByFolder((v) => !v)
-  }, [])
 
   const actions = useMemo(
     () => ({
@@ -299,9 +260,6 @@ export function useLibrary() {
       setVideoQuery(next: VideoQuery): void {
         videoList.setVideoQuery(next)
       },
-      toggleGroupByFolder(): void {
-        setGroupByFolder((v) => !v)
-      },
       /** 切换左侧文件夹树显隐（资源管理器「导航窗格」开关，G 键同效） */
       toggleTreeVisible(): void {
         setTreeVisible((v) => !v)
@@ -330,7 +288,6 @@ export function useLibrary() {
     queryImage: search.queryImage,
     queryLabel: search.queryLabel,
     hasIndexedFrames: (core.stats?.frames ?? 0) > 0,
-    groupByFolder,
     treeVisible,
     selectedDir,
     visibleVideos,
@@ -345,10 +302,12 @@ export function useLibrary() {
     actions: {
       ...actions,
       reSearch: search.reSearch,
-      toggleGroupByFolder,
+      toggleTreeVisible: () => setTreeVisible((v) => !v),
+      setSelectedDir: (dir: string | null) => setSelectedDirState(dir),
       toggleVideoSelection: selection.toggleVideoSelection,
       clearSelection: selection.clearSelection,
       selectAll: selection.selectAll,
+      setSelectedIds: selection.setSelectedIds,
       toggleFolderExpanded: selection.toggleFolderExpanded,
       expandAllFolders: selection.expandAllFolders,
       collapseAllFolders: selection.collapseAllFolders,

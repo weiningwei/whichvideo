@@ -3,19 +3,18 @@ import type {
   DuplicatePair,
   SamplingMode,
   VideoQuery,
-  VideoRecord,
-  WatchedFolder
+  VideoRecord
 } from '@shared/types'
 
 interface ToolbarProps {
   query: VideoQuery
   onSetQuery: (query: VideoQuery) => void
-  folders: WatchedFolder[]
   videos: VideoRecord[]
   total: number
   selectedVideoIds: Set<number>
-  groupByFolder: boolean
-  onToggleGroupByFolder: () => void
+  /** 左侧文件夹树是否可见（G 键同效） */
+  treeVisible: boolean
+  onToggleTree: () => void
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
   onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
   /** 查重完成后把结果交给父组件（父组件持有 duplicates 状态供弹层使用） */
@@ -35,12 +34,11 @@ interface ToolbarProps {
 export function Toolbar({
   query,
   onSetQuery,
-  folders,
   videos,
   total,
   selectedVideoIds,
-  groupByFolder,
-  onToggleGroupByFolder,
+  treeVisible,
+  onToggleTree,
   onFindDuplicates,
   onDuplicatesResolved,
   onReindex,
@@ -66,24 +64,6 @@ export function Toolbar({
           placeholder="按文件名 / 目录筛选（/ 聚焦）"
           className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
         />
-        <select
-          value={String(query.folderId ?? '')}
-          onChange={(e) =>
-            onSetQuery({
-              ...query,
-              folderId: e.target.value === '' ? null : Number(e.target.value),
-              offset: 0
-            })
-          }
-          className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-        >
-          <option value="">全部监听目录</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
         <select
           value={query.status ?? 'all'}
           onChange={(e) => onSetQuery({ ...query, status: e.target.value as VideoQuery['status'], offset: 0 })}
@@ -121,9 +101,9 @@ export function Toolbar({
         </span>
         <span
           className="hidden text-[11px] text-tertiary lg:inline"
-          title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
+          title="↑/↓ 移动焦点 · Enter 打开 · Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换文件夹树"
         >
-          ↑↓ 移动 · Enter 选中
+          ↑↓ 移动 · Enter 打开
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -151,11 +131,11 @@ export function Toolbar({
           </>
         )}
         <button
-          className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
-          onClick={onToggleGroupByFolder}
-          title="按文件夹分组/平铺 (G)"
+          className={`btn text-[12px] hover:bg-ink-700/70 ${treeVisible ? 'bg-accent/20 border-accent/40' : ''}`}
+          onClick={onToggleTree}
+          title="显示/隐藏左侧文件夹树 (G)"
         >
-          {groupByFolder ? '📁 分组' : '📋 平铺'}
+          {treeVisible ? '🗂 树' : '🗂 显示树'}
         </button>
         <button
           className="btn text-[12px] hover:bg-ink-700/70"

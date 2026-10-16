@@ -4,7 +4,6 @@ import { PAGE_JUMP } from '../constants'
 import type { NavigableItem } from './useVideoCursor'
 
 export interface LibraryShortcutsArgs {
-  groupByFolder: boolean
   videos: VideoRecord[]
   navigableItems: NavigableItem[]
   focusedIndex: number
@@ -13,14 +12,12 @@ export interface LibraryShortcutsArgs {
   // 光标导航原语（来自 useVideoCursor）
   moveCursor: (delta: number, shiftKey: boolean, ctrlKey: boolean) => void
   jumpCursor: (pos: number, shiftKey: boolean) => void
-  expandFocusedFolder: () => void
-  collapseFocusedFolder: () => void
   toggleFocusedSelection: (shiftKey: boolean, ctrlKey: boolean) => void
   // 选中相关
   selectAll: () => void
   clearSelection: () => void
-  toggleFolderExpanded: (folderId: number) => void
-  onToggleGroupByFolder: () => void
+  /** G 键：切换左侧文件夹树显隐 */
+  onToggleTree: () => void
   // 业务动作（来自 props）
   onOpen: (videoId: number, atSeconds?: number) => void
   onReveal: (videoId: number) => void
@@ -42,9 +39,9 @@ export interface LibraryShortcutsArgs {
  */
 export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
   const {
-    groupByFolder, videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
-    moveCursor, jumpCursor, expandFocusedFolder, collapseFocusedFolder, toggleFocusedSelection,
-    selectAll, clearSelection, toggleFolderExpanded, onToggleGroupByFolder,
+    videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
+    moveCursor, jumpCursor, toggleFocusedSelection,
+    selectAll, clearSelection, onToggleTree,
     onOpen, onReveal, onReindex, onAddFolder, onImportFiles, onRescan,
     onRemoveVideo, onRemoveVideos, filterInputRef
   } = args
@@ -70,6 +67,10 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
       // 焦点在按钮上时，空格与回车应触发按钮本身，否则会出现"点一下按钮没反应又改了选中态"
       const onButton = e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement
       const mod = e.ctrlKey || e.metaKey
+      // 焦点在左侧文件夹树内时，方向键 / Enter 交给树自身处理，全局快捷键让位
+      // （仅 G 键切换树显隐仍由本 handler 处理）
+      const inTree = e.target instanceof HTMLElement && !!e.target.closest('[data-folder-tree]')
+      if (inTree && e.key.toLowerCase() !== 'g') return
 
       switch (e.key) {
         case 'ArrowDown':
@@ -100,28 +101,10 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
             jumpCursor(navigableItems.length - 1, e.shiftKey)
           }
           break
-        case 'ArrowRight':
-          if (groupByFolder) {
-            e.preventDefault()
-            expandFocusedFolder()
-          }
-          break
-        case 'ArrowLeft':
-          if (groupByFolder) {
-            e.preventDefault()
-            collapseFocusedFolder()
-          }
-          break
 
         case 'Enter': {
           if (onButton) return
           e.preventDefault()
-          // 光标在 folder 标题上：切换展开/收起（与 ↑↓ 跨组标题设计一致）
-          const focusedItem = navigableItems[focusedIndex]
-          if (groupByFolder && focusedItem && focusedItem.type === 'folder') {
-            toggleFolderExpanded(focusedItem.folderId)
-            break
-          }
           const target = getTargetVideo()
           if (target) onOpen(target.id)
           break
@@ -181,7 +164,7 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
         case 'g':
         case 'G':
           e.preventDefault()
-          onToggleGroupByFolder()
+          onToggleTree()
           break
 
         case 'Delete':
@@ -215,9 +198,9 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [
-    groupByFolder, videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
-    moveCursor, jumpCursor, expandFocusedFolder, collapseFocusedFolder, toggleFocusedSelection,
-    selectAll, clearSelection, toggleFolderExpanded, onToggleGroupByFolder,
+    videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
+    moveCursor, jumpCursor, toggleFocusedSelection,
+    selectAll, clearSelection, onToggleTree,
     onOpen, onReveal, onReindex, onAddFolder, onImportFiles, onRescan,
     onRemoveVideo, onRemoveVideos, filterInputRef
   ])

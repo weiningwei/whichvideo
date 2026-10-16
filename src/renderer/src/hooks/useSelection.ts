@@ -7,6 +7,8 @@ export interface UseSelectionReturn {
   toggleVideoSelection: (videoId: number, shiftKey?: boolean, ctrlKey?: boolean) => void
   clearSelection: () => void
   selectAll: () => void
+  /** 批量选中/取消一组 id（树节点复选框 / 表头全选用） */
+  setSelectedIds: (ids: number[], selected: boolean) => void
   toggleFolderExpanded: (folderId: number) => void
   expandAllFolders: () => void
   collapseAllFolders: () => void
@@ -51,6 +53,22 @@ export function useSelection(videos: VideoRecord[]): UseSelectionReturn {
     setSelectedVideoIds(new Set(videos.map((v) => v.id)))
   }, [videos])
 
+  /**
+   * 批量设置选中：树节点复选框勾选「该目录下全部视频」、表头全选框勾选「当前视图
+   * 全部」都走这里。selected=true 增量加、false 增量减，不破坏其它已选中的行。
+   * 锚点设为最后一项，使随后的 Shift 连选从这批的末尾继续。
+   */
+  const setSelectedIds = useCallback((ids: number[], selected: boolean) => {
+    if (ids.length === 0) return
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev)
+      if (selected) for (const id of ids) next.add(id)
+      else for (const id of ids) next.delete(id)
+      return next
+    })
+    lastSelectedRef.current = ids[ids.length - 1]
+  }, [])
+
   const toggleFolderExpanded = useCallback((folderId: number) => {
     setExpandedFolderIds((prev) => {
       const next = new Set(prev)
@@ -78,6 +96,7 @@ export function useSelection(videos: VideoRecord[]): UseSelectionReturn {
     toggleVideoSelection,
     clearSelection,
     selectAll,
+    setSelectedIds,
     toggleFolderExpanded,
     expandAllFolders,
     collapseAllFolders,
