@@ -6,6 +6,7 @@ import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor, PAGE_JUMP } from '../hooks/useVideoCursor'
 import { SidePanel } from './SidePanel'
 import { VideoRow } from './VideoRow'
+import { FolderHeader } from './FolderHeader'
 import { FrameGallery } from './FrameGallery'
 
 interface Props {
@@ -433,135 +434,10 @@ export function LibraryView(props: Props) {
                   return Array.from(groupedVideos.entries()).flatMap(([folderId, folderVideos]) => {
                     const groupHeaderIndex = cursor
                     cursor += 1 + folderVideos.length
-                    const folder = folderId === -1 ? null : folders.find((f) => f.id === folderId)
-                    const displayName = folderId === -1 ? '未分类' : (folder?.name ?? `文件夹 #${folderId}`)
+                    const folder = folderId === -1 ? null : (folders.find((f) => f.id === folderId) ?? null)
                     const expanded = expandedFolderIds.has(folderId)
                     const headerFocused = focusedIndex === groupHeaderIndex
 
-                    const groupSelected = folderVideos.length > 0 && folderVideos.every((v) => isVideoSelected(v.id))
-                    const groupPartial =
-                      !groupSelected && folderVideos.some((v) => isVideoSelected(v.id))
-
-                    const toggleGroup = () => {
-                      const target = !groupSelected
-                      folderVideos.forEach((v) => {
-                        if (target !== isVideoSelected(v.id)) toggleVideoSelection(v.id, false, false)
-                      })
-                    }
-
-                                        // 标题行的视觉态。**关键原则：folder 选中是"容器状态"，与 video
-                    // 选中（行内文件名染 accent）属于不同维度，不能让 folder 名也染 accent
-                    // —— 否则与视频选中视觉雷同，分不清'folder 被选中'还是'folder 内某行被选中'。
-                    //
-                    // 之前 4 个 commit 反馈'A 选中不明显'的真正根因：folder 的'选中'信号
-                    // 都放在了边角（左侧 2px 竖条、行末小徽标、淡淡的 bg-row-selected），
-                    // 与 a1 行那种'整行视觉中心都被 accent 染色'的视频选中无法对等。
-                    //
-                    // 现在用**四个独立维度**叠加视觉权重：
-                    //   1. 整行底色 bg-accent/12（accent 12% 叠 surface-1，明显的青色染色）
-                    //   2. 顶部 2px 实色 accent 横条（folder 独有的视觉通道，视频行无）
-                    //   3. 左侧 accent 竖条
-                    //   4. 文件夾名前的 ✓ K/N 实底徽标
-                    // 同时 folder 名保持 secondary，与 video 行 text-accent 文件名区分。
-                    // 加在一起 '这个 folder 有选中内容' 的视觉权重与视频选中对等甚至更重。
-                    const headerBg = groupSelected || groupPartial
-                      ? 'bg-accent/12'
-                      : headerFocused
-                        ? 'bg-row-focus'
-                        : 'bg-row-group hover:bg-row-hover'
-                    const headerBorder =
-                      groupSelected || groupPartial ? 'border-t-2 border-accent' : ''
-
-                    const header = (
-                      <tr
-                        key={`folder-header-${folderId}`}
-                        onMouseDown={blockModifierTextSelection}
-                        className={`border-t border-line/40 ${headerBorder}`}
-                      >
-                        <td colSpan={2} className={`relative px-3 py-2 transition-colors ${headerBg}`}>
-                          {/* 左侧 2px 竖条：选中态（全选 + 部分）一律走 accent 满色 —— 让 folder
-                              的"有选中"信号强度与 a1 行左侧 accent 竖条对齐。仅光标无选中时
-                              走 disabled 灰条。 */}
-                          {groupSelected || groupPartial ? (
-                            <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
-                          ) : headerFocused ? (
-                            <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
-                          ) : null}
-                          <div className="flex items-center gap-2 text-[12px] font-medium text-secondary">
-                            {/* 全选该组：点竖条。热区做到 12px 宽（视觉仍是 2px），
-                                否则这个 2px 的细条根本点不中。 */}
-                            <span
-                              className="-m-1 flex h-5 w-3 shrink-0 cursor-pointer items-center justify-center"
-                              onClick={toggleGroup}
-                              title={groupSelected ? '取消全选该组' : '全选该组'}
-                              role="checkbox"
-                              aria-checked={groupSelected}
-                              aria-label="全选该组"
-                            >
-                              <span
-                                className={`h-3.5 w-[2px] rounded-full transition ${
-                                  groupSelected || groupPartial ? 'bg-accent' : 'bg-transparent'
-                                }`}
-                              />
-                            </span>
-                            {/* 展开/收起：整块（竖条右侧到视频数）都可点。
-                                文件夾名维持 secondary —— 故意与选中视频行的 text-accent 文件名
-                                区分，避免视觉上被误读成"这个 folder 本身被选中"。选中状态
-                                由左侧竖条 + 行底色 + 右侧徽标三处表达。 */}
-                            <span
-                              className="-my-2 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 hover:text-primary"
-                              onClick={() => toggleFolderExpanded(folderId)}
-                              title={expanded ? '收起该目录' : '展开该目录'}
-                            >
-                              <span
-                                className="select-none transition-transform duration-150"
-                                style={{ transform: `rotate(${expanded ? 0 : -90}deg)` }}
-                              >
-                                ▼
-                              </span>
-                              {/* 选中徽标 —— **紧贴文件夹名右侧**，不挤到行末。
-                                  之前的症结：徽标小且在右侧，folder 名无色，整行视觉重心
-                                  是次要信息（"N 个视频"）。现在徽标加粗加大、贴名放置，
-                                  视觉重心 = folder 名 + 徽标，共占 a1 行 text-accent 文件名
-                                  的视觉权重。folder 名仍是 secondary（与 video 选中区分）。 */}
-                              {(groupSelected || groupPartial) && (
-                                <span
-                                  className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[12px] font-bold leading-none tabular-nums text-ink-950"
-                                  title={
-                                    groupSelected
-                                      ? '该目录下所有视频已选中'
-                                      : `该目录下有 ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length} 个视频被选中`
-                                  }
-                                >
-                                  {groupSelected
-                                    ? `✓ ${folderVideos.length}`
-                                    : `✓ ${folderVideos.filter((v) => isVideoSelected(v.id)).length}/${folderVideos.length}`}
-                                </span>
-                              )}
-                              <span
-                                className={`truncate ${
-                                  groupSelected
-                                    ? 'rounded-md bg-accent/25 px-2 py-0.5 font-bold text-accent-strong ring-1 ring-accent/40'
-                                    : groupPartial
-                                      ? 'font-medium text-accent'
-                                      : 'font-medium'
-                                }`}
-                              >
-                                {displayName}
-                              </span>
-                              <span className="ml-auto shrink-0 text-[11px] font-normal text-muted">
-                                {folderVideos.length} 个视频
-                              </span>
-                            </span>
-                          </div>
-                        </td>
-                        {/* 空的采样格：与数据行的采样列对齐 —— 跟随 headerBg 让整行底色一致 */}
-                        <td className={headerBg} />
-                        {/* 空的操作格：只为让吸附列的左侧分隔线在标题行也连续 —— 跟随 headerBg
-                            让整行底色一致；sticky right-0 与右吸列吸附语义保持 */}
-                        <td className={`sticky right-0 w-[210px] border-l border-line/70 ${headerBg}`} />
-                      </tr>
-                    )
                     const rows = expanded ? folderVideos.map((video) => (
                       <VideoRow
                         key={video.id}
@@ -579,7 +455,20 @@ export function LibraryView(props: Props) {
                       />
                     )) : []
 
-                    return [header, ...rows]
+                    return [
+                      <FolderHeader
+                        key={`folder-header-${folderId}`}
+                        folderId={folderId}
+                        folder={folder}
+                        videos={folderVideos}
+                        expanded={expanded}
+                        focused={headerFocused}
+                        isVideoSelected={isVideoSelected}
+                        toggleVideoSelection={toggleVideoSelection}
+                        toggleFolderExpanded={toggleFolderExpanded}
+                      />,
+                      ...rows
+                    ]
                   })
                 })()
               ) : (
