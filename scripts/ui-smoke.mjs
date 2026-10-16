@@ -638,6 +638,7 @@ export default mod
     const src = [
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
     ].join('\n')
@@ -784,6 +785,7 @@ export default mod
     const src = [
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
     ].join('\n')
@@ -1004,7 +1006,9 @@ export default mod
     const lib = [
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryShortcuts.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'constants.ts'), 'utf8')
     ].join('\n')
