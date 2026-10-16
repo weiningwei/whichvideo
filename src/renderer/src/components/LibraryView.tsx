@@ -6,6 +6,7 @@ import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
 import { SidePanel } from './SidePanel'
 import { VideoRow } from './VideoRow'
 import { FolderHeader } from './FolderHeader'
+import { Toolbar } from './Toolbar'
 import { DuplicatesModal } from './DuplicatesModal'
 import { FrameGallery } from './FrameGallery'
 
@@ -65,7 +66,6 @@ export function LibraryView(props: Props) {
   // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
-  const [scanningDuplicates, setScanningDuplicates] = useState(false)
   // 「查看索引帧」弹层的目标视频；null = 关闭。只存 id 对应的行对象，
   // 行被移除时弹层里的清单查询会自然失败/为空，无僵尸引用。
   const [framesVideo, setFramesVideo] = useState<VideoRecord | null>(null)
@@ -114,133 +114,23 @@ export function LibraryView(props: Props) {
 return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
-        {/* 工具条分两层：左侧筛选区（内容多了自己换行），右侧按钮区独立 shrink-0。
-            此前是单行 flex-wrap + ml-auto，选中时「已选 N」一出现就把整个按钮组
-            挤到第二行（用户反馈：选中视频后三个按钮下移）。拆开后按钮永不换行，
-            计数再用 invisible 常驻占位 —— 选中前后工具条布局零变化。 */}
-        <div className="flex min-w-0 items-center gap-2 border-b border-line/70 px-3 py-2.5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <input
-              ref={filterInputRef}
-              value={query.keyword ?? ''}
-              onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
-              placeholder="按文件名 / 目录筛选（/ 聚焦）"
-              className="w-40 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
-            />
-            <select
-              value={String(query.folderId ?? '')}
-              onChange={(e) =>
-                onSetQuery({
-                  ...query,
-                  folderId: e.target.value === '' ? null : Number(e.target.value),
-                  offset: 0
-                })
-              }
-              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-            >
-              <option value="">全部监听目录</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={query.status ?? 'all'}
-              onChange={(e) => onSetQuery({ ...query, status: e.target.value as VideoQuery['status'], offset: 0 })}
-              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-            >
-              <option value="all">全部状态</option>
-              <option value="ready">已索引</option>
-              <option value="pending">待索引</option>
-              <option value="indexing">索引中</option>
-              <option value="failed">索引失败</option>
-            </select>
-            <select
-              value={query.sort ?? 'added'}
-              onChange={(e) => onSetQuery({ ...query, sort: e.target.value as VideoQuery['sort'] })}
-              className="rounded-lg border border-line bg-ink-900/70 px-2 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
-            >
-              <option value="added">按导入时间</option>
-              <option value="name">按文件名</option>
-              <option value="size">按体积</option>
-              <option value="duration">按时长</option>
-            </select>
-            <span className="text-[11.5px] text-muted">
-              显示 {videos.length} / {total}
-            </span>
-            {/* 选中数量：多选时给出反馈（此前只能靠数竖条），也便于自查
-                「标题染色是否与选中数量一致」——见 test:range 的说明。
-                无选中时用 invisible 常驻占位而不是条件渲染：行宽保持不变，
-                选中瞬间不会把右侧按钮挤到第二行。tabular-nums 让数字等宽。 */}
-            <span
-              className={`text-[11.5px] tabular-nums ${
-                selectedVideoIds.size > 0 ? 'text-tertiary' : 'invisible'
-              }`}
-            >
-              已选 {selectedVideoIds.size}
-            </span>
-            <span
-              className="hidden text-[11px] text-tertiary lg:inline"
-              title="↑/↓ 移动焦点 · Enter/Space 选中 · Ctrl+A 全选 · Esc 取消 · G 切换分组"
-            >
-              ↑↓ 移动 · Enter 选中
-            </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {selectedVideoIds.size > 0 && (
-              <>
-                <button
-                  className="btn text-[12px] hover:bg-ink-700/70"
-                  onClick={() => props.onReindex([...selectedVideoIds])}
-                  title="按全局采样模式把选中的视频重新排入索引队列"
-                >
-                  重建索引（{selectedVideoIds.size}）
-                </button>
-                <button
-                  className="btn btn-danger text-[12px] hover:bg-bad/10"
-                  onClick={() => {
-                    const ids = [...selectedVideoIds]
-                    if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件，可随时重新导入）`)) return
-                    props.onRemoveVideos(ids)
-                    clearSelection()
-                  }}
-                  title="从索引库移除选中的视频（不删磁盘文件）"
-                >
-                  移除（{selectedVideoIds.size}）
-                </button>
-              </>
-            )}
-            <button
-              className={`btn text-[12px] hover:bg-ink-700/70 ${groupByFolder ? 'bg-accent/20 border-accent/40' : ''}`}
-              onClick={onToggleGroupByFolder}
-              title="按文件夹分组/平铺 (G)"
-            >
-              {groupByFolder ? '📁 分组' : '📋 平铺'}
-            </button>
-            <button
-              className="btn text-[12px] hover:bg-ink-700/70"
-              onClick={() => {
-                if (scanningDuplicates) return
-                setScanningDuplicates(true)
-                void props
-                  .onFindDuplicates()
-                  .then((pairs) => setDuplicates(pairs))
-                  .finally(() => setScanningDuplicates(false))
-              }}
-              disabled={scanningDuplicates}
-              title="找出库内画面高度相似的视频对（代表帧互搜，库越大越慢）"
-            >
-              {scanningDuplicates ? '查重中…' : '查重'}
-            </button>
-            <button className="btn text-[12px] hover:bg-ink-700/70" onClick={() => props.onReindex()}>
-              重建全部索引
-            </button>
-            <button className="btn text-[12px] hover:bg-ink-700/70" onClick={() => props.onRescan()}>
-              重新扫描目录
-            </button>
-          </div>
-        </div>
+        <Toolbar
+          query={query}
+          onSetQuery={onSetQuery}
+          folders={folders}
+          videos={videos}
+          total={total}
+          selectedVideoIds={selectedVideoIds}
+          groupByFolder={groupByFolder}
+          onToggleGroupByFolder={onToggleGroupByFolder}
+          onFindDuplicates={props.onFindDuplicates}
+          onDuplicatesResolved={(pairs) => setDuplicates(pairs)}
+          onReindex={props.onReindex}
+          onRescan={props.onRescan}
+          onRemoveVideos={props.onRemoveVideos}
+          clearSelection={clearSelection}
+          filterInputRef={filterInputRef}
+        />
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-ink-900">
           {/* min-w 是"低于这个宽度才允许横向滚动"的阈值，取各列下限之和：
