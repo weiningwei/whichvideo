@@ -5,6 +5,7 @@ import { useSearch } from './useSearch'
 import { useSelection } from './useSelection'
 import { useNotices } from './useNotices'
 import { useBusy } from './useBusy'
+import { videosUnderDir } from '../lib/libraryTree'
 import {
   type AppSettings,
   type DataDirInfo,
@@ -52,6 +53,52 @@ function writeGroupByFolder(value: boolean): void {
   }
 }
 
+/**
+ * 左侧文件夹树的显隐与当前选中目录的持久化键（wv- 前缀，与 useTheme 同款）。
+ * `treeVisible` 取代旧的「分组/平铺」视图切换（wv-library-group-by-folder）；
+ * `selectedDir` 记录地址栏当前所在目录（null = 整库）。
+ */
+const TREE_VISIBLE_KEY = 'wv-tree-visible'
+const SELECTED_DIR_KEY = 'wv-selected-dir'
+
+function readTreeVisible(): boolean {
+  try {
+    const v = localStorage.getItem(TREE_VISIBLE_KEY)
+    // 缺省视为 true：默认展示导航树（资源管理器默认就有导航窗格）
+    if (v === '0') return false
+  } catch {
+    /* 隐私模式 localStorage 抛错，用默认 */
+  }
+  return true
+}
+
+function writeTreeVisible(value: boolean): void {
+  try {
+    localStorage.setItem(TREE_VISIBLE_KEY, value ? '1' : '0')
+  } catch {
+    /* 存不下不影响本次会话 */
+  }
+}
+
+function readSelectedDir(): string | null {
+  try {
+    const v = localStorage.getItem(SELECTED_DIR_KEY)
+    return v && v.length > 0 ? v : null
+  } catch {
+    /* 隐私模式，当作整库 */
+  }
+  return null
+}
+
+function writeSelectedDir(value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(SELECTED_DIR_KEY)
+    else localStorage.setItem(SELECTED_DIR_KEY, value)
+  } catch {
+    /* 存不下不影响本次会话 */
+  }
+}
+
 export interface LibraryState {
   stats: LibraryStats
   status: IndexerStatus | null
@@ -69,6 +116,14 @@ export interface LibraryState {
   queryLabel: string | null
   hasIndexedFrames: boolean
   groupByFolder: boolean
+  /** 左侧文件夹树是否可见（取代旧的「分组」视图切换） */
+  treeVisible: boolean
+  /** 地址栏当前选中目录（null = 整库） */
+  selectedDir: string | null
+  /** 当前可见视频（按 selectedDir 过滤后的列表，供右栏与导航用） */
+  visibleVideos: VideoRecord[]
+  /** 当前可见视频数（与 visibleVideos 同步，供工具栏计数） */
+  visibleTotal: number
   selectedVideoIds: Set<number>
   expandedFolderIds: Set<number>
 }
@@ -81,7 +136,6 @@ export function useLibrary() {
   const videoList = useVideoList()
   const search = useSearch()
   const busy = useBusy(notices.pushNotice)
-  const selection = useSelection(videoList.videos)
   // 库视图模式（分组/平铺）持久化到 localStorage。新用户默认分组 —— 既然
   // 数据来源是\"文件夹\"，按文件夹看比平铺更符合心智模型；老用户的选择会
   // 被记住（与 useTheme 同款）。
@@ -90,6 +144,27 @@ export function useLibrary() {
   useEffect(() => {
     writeGroupByFolder(groupByFolder)
   }, [groupByFolder])
+
+  // 左侧文件夹树显隐（取代旧的「分组」视图切换）。默认显示。
+  const [treeVisible, setTreeVisible] = useState<boolean>(readTreeVisible)
+  useEffect(() => {
+    writeTreeVisible(treeVisible)
+  }, [treeVisible])
+
+  // 地址栏当前选中目录（null = 整库）。切换后右侧只显示该目录下的视频。
+  const [selectedDir, setSelectedDirState] = useState<string | null>(readSelectedDir)
+  useEffect(() => {
+    writeSelectedDir(selectedDir)
+  }, [selectedDir])
+
+  // 当前可见视频：整库视频按 selectedDir 递归过滤。selectedDir 为 null 时即整库。
+  // 选中操作（单选跟随、Shift 连选、全选）都作用在这一子集上，与资源管理器
+  // 「在过滤后的视图里选」一致。
+  const visibleVideos = useMemo(
+    () => videosUnderDir(videoList.videos, selectedDir, true),
+    [videoList.videos, selectedDir]
+  )
+  const selection = useSelection(visibleVideos)
 
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     await videoList.refreshVideos(query)
@@ -226,6 +301,14 @@ export function useLibrary() {
       },
       toggleGroupByFolder(): void {
         setGroupByFolder((v) => !v)
+      },
+      /** 切换左侧文件夹树显隐（资源管理器「导航窗格」开关，G 键同效） */
+      toggleTreeVisible(): void {
+        setTreeVisible((v) => !v)
+      },
+      /** 地址栏定位到某目录（null = 整库） */
+      setSelectedDir(dir: string | null): void {
+        setSelectedDirState(dir)
       }
     }),
     [withBusy, notices, refreshAll, core, videoList]
@@ -248,6 +331,10 @@ export function useLibrary() {
     queryLabel: search.queryLabel,
     hasIndexedFrames: (core.stats?.frames ?? 0) > 0,
     groupByFolder,
+    treeVisible,
+    selectedDir,
+    visibleVideos,
+    visibleTotal: visibleVideos.length,
     selectedVideoIds: selection.selectedVideoIds,
     expandedFolderIds: selection.expandedFolderIds
   }
