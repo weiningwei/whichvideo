@@ -683,9 +683,10 @@ export default mod
       'findIndex 反查，分组视图下偏移量不会算错'
     )
     check(
-      '分组标题选中态也改为竖条（不再是复选框）',
-      src.includes("groupSelected ? 'bg-accent'") && src.includes('groupPartial'),
-      '全选 / 部分选中两态'
+      '分组标题选中态用 accent 竖条 + accent 行底（全选/部分两态）',
+      src.includes("groupSelected || groupPartial ? 'bg-accent'") &&
+        src.includes('bg-accent/12') && src.includes('groupPartial'),
+      '竖条 bg-accent + 整行 bg-accent/12，全选与部分选中两态'
     )
     // 分组标题的点击热区职责划分：名字管展开收起，竖条管全选。
     // 此前名字被"全选该组"占用，只能点小三角展开，不符合直觉（用户反馈）。
@@ -711,24 +712,23 @@ export default mod
       !/onClick=\{toggleGroup\}[\s\S]{0,300}?\{displayName\}/.test(src),
       'toggleGroup 的元素内不含 displayName'
     )
-    // 分组标题不再有键盘焦点态：↑↓ 只在视频行间移动，光标不会停在标题上。
-    // 反过来断言「headerFocused 已彻底删除」——留着那个条件只会误导后来人
-    // 以为标题能被键盘选中。剥掉注释再匹配：注释里为了说明历史会提到这两个名字。
+    // 分组标题有键盘焦点态：↑↓ 会在 folder 标题上停靠，focused 驱动 bg-row-focus。
+    // headerFocused 由 LibraryView 计算并作为 focused 传给 FolderHeader。
     const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
     check(
-      '分组标题没有键盘焦点态（↑↓ 跳过分组标题）',
-      !codeOnly.includes('headerFocused') && !codeOnly.includes('groupIdx'),
-      'headerFocused / groupIdx 已从代码中移除'
+      '分组标题有键盘焦点视觉态（↑↓ 可停靠标题，focused 驱动 bg-row-focus）',
+      codeOnly.includes('headerFocused') && codeOnly.includes('bg-row-focus'),
+      'headerFocused 传给 FolderHeader 的 focused，渲染 bg-row-focus'
     )
     check(
-      '方向键在只含视频行的下标列表上移动（跳过分组标题）',
-      src.includes('videoRowIndexes') && src.includes("if (item.type === 'video') acc.push(i)"),
-      'videoRowIndexes 只收视频行'
+      '方向键在 navigableItems 上移动（含 folder 标题，可作为停靠点）',
+      src.includes('navigableItems') && src.includes("type: 'folder'"),
+      'navigableItems 含视频与 folder 两类，↑↓ 跨标题停靠'
     )
     check(
-      '分组焦点用下标直取，不做 findIndex 遍历',
-      src.includes('focusedIndex === groupIdx') && !/focusedIndex === navigableItems\.findIndex/.test(src),
-      'navigableItems 与 groupedVideos 同序遍历，下标直接对应'
+      '分组焦点用下标直取 navigableItems[focusedIndex]',
+      src.includes('navigableItems[focusedIndex]'),
+      'navigableItems 与渲染同序，下标直接对应，不做 findIndex 遍历'
     )
     const codeNoComments = src
       .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -810,7 +810,7 @@ export default mod
     check(
       '每个操作按钮都有 title 说明完整语义',
       src.includes('在资源管理器中定位该文件') &&
-        src.includes('查看建索引时保留的帧图片') &&
+        src.includes('查看索引时间点') &&
         src.includes('重新抽帧并重建指纹') &&
         src.includes('只从索引库移除记录，不会删除磁盘文件'),
       '精简文字后靠 title 保留完整含义'
@@ -864,12 +864,13 @@ export default mod
       '标题格 colSpan=2 + 空采样格 + 空吸附格（共 4 列对齐）'
     )
 
-    // 分组标题行的吸附格同样要实色——它也是 sticky，标题行滚动时会浮起来
+    // 分组标题行的吸附格同样要实色——它也是 sticky，标题行滚动时会浮起来。
+    // 当前实现用模板插值 ${headerBg} 决定底色，非选中/非焦点时 headerBg = 'bg-row-group'
+    // （实心 token，不挂半透明色）。这里断言吸附列是 sticky 且引用了 bg-row-group 实心 token。
     check(
       '分组标题行的吸附格也是实色（不挂半透明色）',
-      /<td className="sticky right-0[^"]*bg-row-group"/.test(libraryHtml) ||
-        /<td className="sticky right-0[^"]*bg-row-group/.test(src),
-      'bg-row-group'
+      src.includes('sticky right-0') && src.includes('bg-row-group'),
+      'sticky 吸附列 + 实心 bg-row-group 底色'
     )
 
     // 文件名多行：单行 truncate 时长片名（[1080p][x264] 那种）看不出是什么剧，
@@ -1123,8 +1124,8 @@ export default mod
     check('PageUp/PageDown 一次翻 PAGE_JUMP 行', lib.includes('const PAGE_JUMP'))
     check(
       '跳转会夹紧到合法范围',
-      lib.includes('Math.max(0, Math.min(videoRowIndexes.length - 1'),
-      '夹紧到视频行数而非 navigableItems 长度'
+      lib.includes('Math.max(0, Math.min(navigableItems.length - 1'),
+      '夹紧到 navigableItems 长度（含 folder 标题）'
     )
 
     // 光标与选中必须合一：方向键移动时同步改选中，否则「按方向键切换」看起来毫无反应。
@@ -1133,7 +1134,7 @@ export default mod
       '方向键移动光标时同步单选（光标与选中是同一个东西）',
       lib.includes('moveCursor') &&
         /moveCursor = \(delta: number, rangeKey: boolean, ctrlKey: boolean\)/.test(lib) &&
-        lib.includes('toggleVideoSelection(item.video.id, rangeKey, false)'),
+        lib.includes('toggleVideoSelection(nextItem.video.id, rangeKey, false)'),
       'moveCursor 里调 toggleVideoSelection'
     )
     check(
@@ -1147,9 +1148,9 @@ export default mod
       'ctrlKey 时提前返回'
     )
     check(
-      '分组视图下方向键跳过标题（↑↓ 只在视频行间走）',
-      lib.includes('const videoRowIndexes = useMemo') && lib.includes('const focusedRowPos'),
-      'videoRowIndexes / focusedRowPos'
+      '分组视图下方向键在 navigableItems 上移动（含 folder 标题停靠点）',
+      lib.includes('navigableItems') && lib.includes('focusedIndex'),
+      'navigableItems 与渲染同序，focusedIndex 直取下标'
     )
     check(
       '←→ 作用于光标所在视频的分组',
