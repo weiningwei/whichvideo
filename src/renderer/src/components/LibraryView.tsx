@@ -173,9 +173,11 @@ return (
                         onViewFrames={openFramesViewer}
                         globalSampling={props.globalSampling}
                         onSamplingChange={(id, mode) => props.onReindex([id], mode)}
-                        isVideoSelected={isVideoSelected}
-                        onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
-                      />
+          isVideoSelected={isVideoSelected}
+          onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
+          onToggleCheck={(id) => toggleVideoSelection(id, false, true)}
+          onOpenDouble={(id) => props.onOpen(id)}
+        />
                     )) : []
 
                     return [
@@ -209,6 +211,8 @@ return (
                     onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                     isVideoSelected={isVideoSelected}
                     onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
+                    onToggleCheck={(id) => toggleVideoSelection(id, false, true)}
+                    onOpenDouble={(id) => props.onOpen(id)}
                   />
                 ))
               )}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
@@ -14,7 +14,9 @@ export function VideoRow({
   globalSampling,
   onSamplingChange,
   isVideoSelected,
-  onRowClick
+  onRowClick,
+  onToggleCheck,
+  onOpenDouble
 }: {
   video: VideoRecord
   roots: string[]
@@ -35,16 +37,18 @@ export function VideoRow({
   onSamplingChange: (id: number, mode: 'uniform' | 'scene') => void
   isVideoSelected: (videoId: number) => boolean
   /**
-   * 点击整行。**必须同时移动光标**——光标与选中是同一个东西，只改选中会让
-   * 光标留在原地，之后按 ↑/↓ 从旧位置起算（点第三个再按 ↑ 跳回第一个）。
-   * 修饰键一起传上来，是为了支持 Shift 连选与 Ctrl 点选。
+   * 点击整行（非复选框）。**必须同时移动光标**——光标与选中是同一个东西，
+   * 只改选中会让光标留在原地，之后按 ↑/↓ 从旧位置起算（点第三个再按 ↑ 跳回第一个）。
+   * 修饰键一起传上来，支持 Shift 连选与 Ctrl 点选。
    */
   onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
+  /** 单击首列复选框：独立切换选中，不移动视频光标 */
+  onToggleCheck: (id: number) => void
+  /** 双击整行：用系统播放器打开（与资源管理器一致） */
+  onOpenDouble: (id: number) => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   // 用户在下拉里改选但尚未点「索引」的采样模式。null = 未改动（显示已固化值）。
-  // 刻意放行级本地 state：跨筛选/翻页丢失"未应用的选择"是可接受的 —— 那本来
-  // 就还没生效。点「索引」时才把它交给 onSamplingChange 真正应用。
   const [pendingSampling, setPendingSampling] = useState<'uniform' | 'scene' | null>(null)
   useEffect(() => {
     let alive = true
@@ -84,7 +88,6 @@ export function VideoRow({
   // 计算已用时间与预估剩余时间
   const startTimeRef = useRef<number | null>(null)
   const prevDoneRef = useRef<number>(0)
-  // 累计已用时间 = 数据库存储的跨会话耗时 + 本次会话耗时
   const sessionElapsedMs = frameProgress && video.status === 'indexing'
     ? Date.now() - (startTimeRef.current ?? Date.now())
     : 0
@@ -93,16 +96,14 @@ export function VideoRow({
     if (!frameProgress || video.status !== 'indexing' || frameProgress.total <= 0) return 0
     const done = frameProgress.done
     if (done <= 0) return 0
-    const rate = done / (sessionElapsedMs / 1000) // frames per second（基于本次会话速率）
+    const rate = done / (sessionElapsedMs / 1000)
     if (rate <= 0) return 0
     return Math.round((frameProgress.total - done) / rate * 1000)
   })()
 
-  // 初始化/重置开始时间
   useEffect(() => {
     if (frameProgress && video.status === 'indexing') {
       if (startTimeRef.current === null || frameProgress.done < prevDoneRef.current) {
-        // 首次获取到进度，或进度回退（重新开始），记录开始时间
         startTimeRef.current = Date.now()
       }
       prevDoneRef.current = frameProgress.done
@@ -120,11 +121,6 @@ export function VideoRow({
         : video.status === 'indexing'
           ? 'border-accent/40 bg-accent/10 text-accent'
           : 'border-warn/40 bg-warn/10 text-warn'
-  /**
-   * 徽标只表达**状态**（索引中 / 已索引 / 失败 / 待索引），阶段信息交给
-   * 进度条左侧的阶段标签 —— 两处都说阶段会重复，措辞还容易打架
-   * （徽标「索引中」vs 标签「抽帧」）。职责分离：徽标=状态，标签=阶段。
-   */
   const statusText =
     video.status === 'ready'
       ? '已索引'
@@ -136,35 +132,15 @@ export function VideoRow({
 
   const selected = isVideoSelected(video.id)
 
-  /**
-   * 进度条（仅索引中显示）。**两行结构**，各司其职：
-   *   第 1 行：[阶段标签] ................ 数字   ← 数字放文字行，不压在条上
-   *   第 2 行：[━━━━━━━━ 进度条（占满列宽）━━━━━━]
-   *
-   * 为什么数字不进条内：条会随进度变色（检测=琥珀、抽帧=蓝），文字压在
-   * 变色条上对比度不稳（实测看不清）；且挤在条里时列宽不够。
-   * 语义由 phase 决定：
-   * - phase='detecting'：场景检测（全片低分辨率解码），done/total = 已解码秒 / 总时长
-   * - phase='extracting'：抽帧，done/total = 帧数
-   * 已用/剩余时长、已分析秒数放 hover title，不占视觉。
-   */
   const frameProgressBar = (() => {
     if (!frameProgress || video.status !== 'indexing') return null
     const detecting = frameProgress.phase === 'detecting'
-    // 只有场景采样才有「检测 → 抽帧」两段（均匀采样只有抽帧一段）
     const twoPhase = (video.samplingOverride ?? globalSampling) === 'scene'
     const hasTotal = frameProgress.total > 0
     if (!detecting && !hasTotal) return null
-    const pct = hasTotal
-      ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100))
-      : null
-    // 数字：检测报百分比、抽帧报帧数（形式随阶段不同，位置统一在文字行右侧）
+    const pct = hasTotal ? Math.min(100, Math.round((frameProgress.done / frameProgress.total) * 100)) : null
     const countText =
-      pct === null
-        ? '分析中'
-        : detecting
-          ? `${pct}%`
-          : `${frameProgress.done}/${frameProgress.total}`
+      pct === null ? '分析中' : detecting ? `${pct}%` : `${frameProgress.done}/${frameProgress.total}`
     const hint = detecting
       ? hasTotal
         ? `场景检测：已分析 ${Math.round(frameProgress.done)}/${Math.round(frameProgress.total)} 秒`
@@ -175,10 +151,6 @@ export function VideoRow({
     return (
       <div className="mt-1 space-y-1" title={hint}>
         <div className="flex items-center gap-1.5">
-          {/* 阶段标签：场景采样有检测/抽帧两段，标序号（1/2、2/2）避免"数字
-              忽然归零"被误读为进度回退 —— 实测序列：检测 79% → 抽帧 0/18，
-              两段各自 0~100%，不标序号就像同一条进度在倒退。
-              均匀采样只有一段，不标序号（没有歧义）。 */}
           <span
             className={`shrink-0 rounded px-1 py-px text-[9.5px] leading-tight ${
               detecting ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
@@ -205,20 +177,6 @@ export function VideoRow({
     )
   })()
 
-  /**
-   * 选中提示。**单选与多选完全一致** —— 竖条 + 淡蓝底，两样一起上。
-   *
-   * 曾经分过两档（多选只留竖条），又取消过（单选多选都三样），现在定为
-   * **标题与按钮都不参与染色**。理由：那两处蓝色不是"选中信号"，而是噪声 ——
-   *   - 标题染成 accent 蓝后，一眼扫过去分不清是"这一项被选中"还是"这几项都选中"，
-   *     反而不如竖条 + 底色来得明确
-   *   - 操作按钮的 btn-bg 是半透明的，淡蓝底会从底下透上来把按钮连边框一起染蓝，
-   *     看着像"按钮被激活了"，实际它们只是可点
-   * 于是蓝色只留给左侧竖条与行底色 —— 这两处占地最小、语义最准。
-   *
-   * 仍然不做 `selectedCount` 之类的分档：多选就是"多个行各自被选中"，
-   * 每行的呈现与它单独被选中时没有区别。
-   */
   const rowBg = selected
     ? 'bg-row-selected'
     : focused
@@ -230,26 +188,31 @@ export function VideoRow({
       data-video-id={video.id}
       onMouseDown={blockModifierTextSelection}
       onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
+      onDoubleClick={() => onOpenDouble(video.id)}
       className="group cursor-pointer border-b border-line/40"
     >
-      <td className={`relative px-3 py-1.5 transition-colors ${rowBg}`}>
-        {/* 状态提示用左侧 2px 竖条（绝对定位，不占列宽）：
-            选中 = accent 蓝条；仅键盘光标 = 淡灰条。两者同时存在时以选中为准。 */}
+      {/* 首列复选框：独立切换选中，不移动视频光标（资源管理器式） */}
+      <td className={`relative w-9 px-0 py-1.5 text-center transition-colors ${rowBg}`}>
         {selected ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />
         ) : focused ? (
           <span className="absolute inset-y-0 left-0 w-[2px] bg-disabled/60" />
         ) : null}
+        <input
+          type="checkbox"
+          checked={selected}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => onToggleCheck(video.id)}
+          aria-label={`选择 ${video.name}`}
+          className="h-3.5 w-3.5 cursor-pointer accent-accent"
+        />
+      </td>
+      <td className={`px-3 py-1.5 transition-colors ${rowBg}`}>
         <div className="flex items-start gap-2.5">
           <div className="mt-0.5 h-9 w-16 shrink-0 overflow-hidden rounded border border-line bg-surface-inset">
             {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0 flex-1">
-            {/* 文件名最多两行：单行 truncate 时长片名（尤其带 [1080p][x264] 那种）
-                会被截到看不出是什么剧，而横向滚动才能看到全名很反直觉。
-                第二行的元信息保持单行——目录路径常有重复前缀，展开反而更吵。 */}
-            {/* 选中时文件名染强调色（与状态徽标同色）——单选多选走同一个
-                `selected` 条件，天然一致，不分档。 */}
             <div
               className={`line-clamp-2 break-all ${selected ? 'text-accent' : 'text-primary'}`}
               title={video.path}
@@ -257,15 +220,7 @@ export function VideoRow({
               {video.name}
             </div>
             <div className="truncate text-[10.5px] text-muted" title={video.path}>
-              {/* 目录（不含文件名，避免与上一行重复）· 时长 · 体积 · 帧数 */}
-              {[
-                shortDir(video.path, roots),
-                formatDuration(video.duration),
-                formatBytes(video.size),
-                `${video.frameCount} 帧`
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+              {[shortDir(video.path, roots), `${video.frameCount} 帧`].filter(Boolean).join(' · ')}
             </div>
           </div>
         </div>
@@ -276,14 +231,16 @@ export function VideoRow({
         </span>
         {frameProgressBar}
       </td>
+      {/* 时长 / 大小：Details 视图独立列（不再挤进元信息行） */}
+      <td className={`whitespace-nowrap px-2 py-1.5 align-top tabular-nums text-secondary transition-colors ${rowBg}`}>
+        {video.duration != null ? formatDuration(video.duration) : '—'}
+      </td>
+      <td className={`whitespace-nowrap px-2 py-1.5 align-top tabular-nums text-secondary transition-colors ${rowBg}`}>
+        {formatBytes(video.size)}
+      </td>
       <td className={`whitespace-nowrap px-2 py-1.5 align-top transition-colors ${rowBg}`}>
         {(() => {
-          // 两种模式各一个按钮，**单一选中态**：只有"将要生效的"高亮，另一个
-          // 普通灰。曾试过"当前实际=绿 + 将应用=蓝"双色并存 —— 用户实测完全
-          // 分不出哪个是哪个，弃。待应用未点「索引」时 hover 提示说明。
           const applied = video.samplingOverride ?? globalSampling
-          // 索引失败时忽略未应用的 pending 选择，回退显示事实值 ——
-          // 失败意味着按 pending 模式的重建没成功，显示它反而误导
           const pending = video.status === 'failed' ? null : pendingSampling
           const next = pending ?? applied
           return (
@@ -314,18 +271,11 @@ export function VideoRow({
           )
         })()}
       </td>
-      {/* sticky：横向滚动时这格钉在右侧，四个按钮永远看得见、点得到。
-
-          底色要**不透明**，否则左侧滚过来的文字会透上来叠在按钮上。行状态色
-          （选中蓝 / 光标灰 / hover）改由这格自己带——不能靠 tr 或绝对定位的
-          覆盖层，前者会被这格的底色盖住，后者在表格布局里定位不可靠。 */}
+      {/* sticky：横向滚动时这格钉在右侧，五个按钮永远看得见、点得到 */}
       <td
         className={`sticky right-0 border-l border-line/70 px-3 py-1.5 align-top transition-colors ${rowBg}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 五个操作全部平铺显示，文字精简到 2 字（播放 / 定位 / 帧 / 索引 / 移除）。
-            按钮内边距收到 px-1.5，五项合计约 190px，操作列由 w-[180px] 放宽到
-            w-[210px]；吸并列宽与 LibraryView 表头、分组标题行的空吸附格三处一致。 */}
         <div className="flex items-center justify-end gap-1">
           <button
             className={`btn px-1.5 py-0.5 text-[11px] hover:bg-ink-700/70 ${selected ? 'bg-surface-2 text-white' : ''}`}
