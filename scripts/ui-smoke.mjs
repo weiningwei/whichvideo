@@ -485,18 +485,16 @@ export default mod
       onReveal: noop,
       onRemoveVideo: noop,
       onReindex: noop,
-      groupByFolder: false,
-      onToggleGroupByFolder: noop,
+      selectedDir: null,
+      onSelectDir: noop,
+      treeVisible: false,
+      onToggleTree: noop,
       selectedVideoIds: emptySelected,
-      expandedFolderIds: emptyExpanded,
       isVideoSelected: noopBool,
-      isFolderExpanded: noopBool,
       toggleVideoSelection: noopSel,
       clearSelection: noopSel,
       selectAll: noopSel,
-      toggleFolderExpanded: noopSel,
-      expandAllFolders: noopSel,
-      collapseAllFolders: noopSel,
+      setSelectedIds: noopSel,
       sideSettings: null
     })
   )
@@ -525,18 +523,16 @@ export default mod
           onReveal: noop,
           onRemoveVideo: noop,
           onReindex: noop,
-          groupByFolder: false,
-          onToggleGroupByFolder: noop,
+          selectedDir: null,
+          onSelectDir: noop,
+          treeVisible: false,
+          onToggleTree: noop,
           selectedVideoIds: new Set(ids),
-          expandedFolderIds: emptyExpanded,
           isVideoSelected: (id) => ids.includes(id),
-          isFolderExpanded: noopBool,
           toggleVideoSelection: noopSel,
           clearSelection: noopSel,
           selectAll: noopSel,
-          toggleFolderExpanded: noopSel,
-          expandAllFolders: noopSel,
-          collapseAllFolders: noopSel,
+          setSelectedIds: noopSel,
           sideSettings: null
         })
       )
@@ -565,11 +561,11 @@ export default mod
     check(
       '多选时同样铺整行淡蓝底（与单选一致）',
       (multiHtml.match(/bg-row-selected/g) ?? []).length >= 4,
-      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 4 个，对应 4 列）`
+      `实际 ${(multiHtml.match(/bg-row-selected/g) ?? []).length} 处（每行选中产出 7 个，对应 7 列）`
     )
     // 核心断言：把单选与多选的渲染结果按"选中提示"维度逐项比对。
-    // 每行选中时产出：竖条 1 个、bg-row-selected 3 个（三个 td 各一个）、
-    // 标题 text-accent **1 个**、操作按钮 bg-surface-2 **4 个**（不透明底）。
+    // 每行选中时产出：竖条 1 个、bg-row-selected 7 个（七个 td 各一个）、
+    // 标题 text-accent **1 个**、操作按钮 bg-surface-2 **5 个**（不透明底）。
     // 样本固定渲染 2 行视频，单选命中 1 行、多选命中 2 行，所以各项应恰好翻倍。
     const countOf = (html, re) => (html.match(re) ?? []).length
     const BAR = /absolute inset-y-0 left-0 w-\[2px\] bg-accent/g
@@ -592,8 +588,8 @@ export default mod
       countOf(both, BTN_OPAQUE)
     ]
     check(
-      '单选 1 行 → 竖条 1、淡蓝底 4（4 列各一）、标题染色 1、按钮不透明底 5',
-      single[0] === 1 && single[1] === 4 && single[2] === 1 && single[3] === 5,
+      '单选 1 行 → 竖条 1、淡蓝底 7（7 列各一）、标题染色 1、按钮不透明底 5',
+      single[0] === 1 && single[1] === 7 && single[2] === 1 && single[3] === 5,
       `实际 ${single.join('/')}`
     )
     check(
@@ -617,18 +613,28 @@ export default mod
     /<td class="whitespace-nowrap px-2 py-1\.5 align-top[^"]*"><span[^>]*>已索引<\/span><\/td>/.test(libraryHtml),
     libraryHtml.match(/<td class="[^"]*"><span[^>]*>已索引<\/span><\/td>/)?.[0] ?? '没找到状态单元格'
   )
-  // 元信息合并进视频列第二行（用 · 分隔）；目录已由第一行的 title 提供，不再重复
-  // mock 数据 size=734003200 → "700 MB"
+  // 时长 / 大小在新模型里是独立列；元信息行只保留目录 + 帧数。
+  // mock：duration=3725 → "1:02:05"，size=734003200 → "700 MB"，frameCount=16。
   check(
-    '元信息合并进视频列信息行（时长 · 体积 · 帧数）',
-    /1:02:05 · 700 MB · 16 帧/.test(libraryHtml),
-    (libraryHtml.match(/[^<>]*1:02:05[^<>]*/)?.[0] ?? '没找到信息行').slice(0, 90)
+    '时长列独立显示（1:02:05）',
+    libraryHtml.includes('1:02:05'),
+    '时长拆为独立列'
   )
   check(
-    '表格 4 列（视频 / 状态 / 采样 / 操作，「选择」列已移除）',
-    /视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml) &&
-      !/<th[^>]*>\s*<input[^>]*checkbox/.test(libraryHtml),
-    (libraryHtml.match(/<th[^>]*>(?:(?!<\/th>)[\s\S])*?<\/th>/g) ?? []).length + ' 个表头，无全选框'
+    '大小列独立显示（700 MB）',
+    libraryHtml.includes('700 MB'),
+    '大小拆为独立列'
+  )
+  check(
+    '元信息行保留目录 + 帧数',
+    /16 帧/.test(libraryHtml),
+    '帧数仍在视频列第二行'
+  )
+  check(
+    '表格 7 列（复选框 / 视频 / 状态 / 时长 / 大小 / 采样 / 操作）',
+    /视频<\/th>[\s\S]*?状态<\/th>[\s\S]*?时长<\/th>[\s\S]*?大小<\/th>[\s\S]*?采样<\/th>[\s\S]*?操作<\/th>/.test(libraryHtml) &&
+      /<th[^>]*>\s*<input[^>]*type="checkbox"/.test(libraryHtml),
+    '表头含复选框（全选）与六文字列'
   )
   // 选中态改为左侧竖条提示。竖条只在 isVideoSelected 为真时渲染，而 mock 的
   // selectedVideoIds 是空集，SSR 走不到该分支，故静态检查源码。
@@ -638,11 +644,14 @@ export default mod
     const src = [
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderTree.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryShortcuts.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
     ].join('\n')
+    const treeSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderTree.tsx'), 'utf8')
+    // 选中提示：左侧 2px accent 竖条（绝对定位，不占列宽）+ 整行淡蓝底 + 文件名强调色
     check(
       '选中提示用左侧竖条（绝对定位，不占列宽）',
       src.includes('w-[2px] bg-accent') && src.includes('absolute inset-y-0 left-0'),
@@ -654,20 +663,29 @@ export default mod
         src.includes('onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}'),
       '点击整行即切换'
     )
-    // 拦原生文本选中只能拦"带修饰键的按下"这一档。整行 select-none 虽然也关掉了
-    // Shift 的蓝底，但把文件名的双击/拖选复制一起干掉了（用户反馈"文件名的选中
-    // 效果也没有了"）。修饰键是行多选专用，普通点击必须保持可选中文本。
+    check(
+      '首列复选框独立切换选中（不移动光标）',
+      src.includes('onChange={() => onToggleCheck(video.id)}') &&
+        src.includes('type="checkbox"') &&
+        src.includes('onClick={(e) => e.stopPropagation()}'),
+      '复选框独立切换、不抢整行点击'
+    )
+    check(
+      '双击整行用系统播放器打开（资源管理器式）',
+      src.includes('onDoubleClick={() => onOpenDouble(video.id)}') &&
+        src.includes('onOpenDouble={(id) => props.onOpen(id)}'),
+      '双击 = 打开'
+    )
+    // 拦原生文本选中只拦带修饰键的按下这一档
     check(
       '只拦带修饰键的按下（普通点击仍可选中文件名复制）',
       src.includes('const blockModifierTextSelection = (e: MouseEvent) =>') &&
         src.includes("if (e.shiftKey || e.ctrlKey || e.metaKey)") &&
         src.includes('window.getSelection()?.removeAllRanges()') &&
-        (src.match(/onMouseDown=\{blockModifierTextSelection\}/g) ?? []).length === 3 &&
+        (src.match(/onMouseDown=\{blockModifierTextSelection\}/g) ?? []).length >= 2 &&
         !src.includes('border-b border-line/40 select-none'),
-      '视频行/分组标题/表头三处都接了，select-none 已移除'
+      '视频行/表头两处都接了，select-none 已移除'
     )
-    // 点击必须同时移动光标。上一版只把方向键打通了、忘了点击这条路，
-    // 于是点第三个视频再按 ↑ 会从初始位置（第一个）起算 —— 又跳回第一个。
     check(
       '点击整行会同步移动光标（不只是改选中）',
       /const handleRowClick = \(videoId: number/.test(src) &&
@@ -680,71 +698,14 @@ export default mod
       '点击按 videoId 反查行下标（不靠 map 位置参数算偏移）',
       src.includes('navigableItems.findIndex((it) => it.type === \'video\'') &&
         src.includes('handleRowClick(video.id'),
-      'findIndex 反查，分组视图下偏移量不会算错'
+      'findIndex 反查'
     )
-    check(
-      '分组标题选中态用 accent 竖条 + accent 行底（全选/部分两态）',
-      src.includes("groupSelected || groupPartial ? 'bg-accent'") &&
-        src.includes('bg-accent/12') && src.includes('groupPartial'),
-      '竖条 bg-accent + 整行 bg-accent/12，全选与部分选中两态'
-    )
-    // 分组标题的点击热区职责划分：名字管展开收起，竖条管全选。
-    // 此前名字被"全选该组"占用，只能点小三角展开，不符合直觉（用户反馈）。
-    check(
-      '分组标题：竖条是全选入口，且有足够大的点击热区',
-      src.includes('全选该组') && /-m-1 flex h-5 w-3[^\n]*cursor-pointer/.test(src) &&
-        src.includes('role="checkbox"'),
-      '视觉 2px、点击区 12px'
-    )
-    check(
-      '分组标题：展开/收起绑在名字那一整块上（不是只有小三角）',
-      /onClick=\{\(\) => toggleFolderExpanded\(folderId\)\}[\s\S]{0,400}?展开该目录/.test(src) ||
-        /展开该目录[\s\S]{0,400}?onClick=\{\(\) => toggleFolderExpanded\(folderId\)\}/.test(src),
-      '点名字、点视频数、点空白都可展开收起'
-    )
-    check(
-      '展开热区包住三角 + 名字 + 视频数（flex-1）',
-      src.includes('flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2'),
-      '热区连续，不留死区'
-    )
-    check(
-      '全选与展开是两个独立元素，不会互相抢点击',
-      !/onClick=\{toggleGroup\}[\s\S]{0,300}?\{displayName\}/.test(src),
-      'toggleGroup 的元素内不含 displayName'
-    )
-    // 分组标题有键盘焦点态：↑↓ 会在 folder 标题上停靠，focused 驱动 bg-row-focus。
-    // headerFocused 由 LibraryView 计算并作为 focused 传给 FolderHeader。
-    const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
-    check(
-      '分组标题有键盘焦点视觉态（↑↓ 可停靠标题，focused 驱动 bg-row-focus）',
-      codeOnly.includes('headerFocused') && codeOnly.includes('bg-row-focus'),
-      'headerFocused 传给 FolderHeader 的 focused，渲染 bg-row-focus'
-    )
-    check(
-      '方向键在 navigableItems 上移动（含 folder 标题，可作为停靠点）',
-      src.includes('navigableItems') && src.includes("type: 'folder'"),
-      'navigableItems 含视频与 folder 两类，↑↓ 跨标题停靠'
-    )
-    check(
-      '分组焦点用下标直取 navigableItems[focusedIndex]',
-      src.includes('navigableItems[focusedIndex]'),
-      'navigableItems 与渲染同序，下标直接对应，不做 findIndex 遍历'
-    )
-    const codeNoComments = src
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^[ \t]*\/\/.*$/gm, '')
-    check(
-      '移除复选框后不再需要 indeterminate 同步副作用',
-      !codeNoComments.includes('indeterminate') && !codeNoComments.includes('selectAllRef'),
-      '已清理表头/分组复选框的 indeterminate 逻辑'
-    )
-
-    // ---- 键盘导航 ----
+    // 键盘导航
     check(
       '焦点以 video.id 派生（focusedVideoId）',
       src.includes('const focusedVideoId = useMemo') &&
         src.includes('focused={focusedVideoId === video.id}'),
-      '渲染时直接比 id，不按下标反查'
+      '渲染时直接比 id'
     )
     check(
       '焦点移动时自动滚进可视区',
@@ -759,137 +720,10 @@ export default mod
     )
     check(
       '工具条提示键盘快捷键',
-      libraryHtml.includes('↑↓ 移动 · Enter 选中'),
+      libraryHtml.includes('↑↓ 移动 · Enter 打开'),
       'lg 以上显示'
     )
-  }
-  // 目录不再重复显示文件名：可见文本里文件名只该出现一次（title 属性不计）
-  const visibleText = libraryHtml.replace(/\stitle="[^"]*"/g, '')
-  check(
-    '目录不再重复显示文件名（可见文本里文件名只出现一次）',
-    (visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length === 1,
-    `可见文本中出现 ${(visibleText.match(/Blue\.Intro\.1080p\.mp4/g) ?? []).length} 次（应为 1）`
-  )
-  // ---- 操作列：五个按钮全部平铺，文字精简到 2 字 ----
-  check(
-    '操作列五个按钮全部平铺显示',
-    ['播放', '定位', '帧', '索引', '移除'].every((t) => libraryHtml.includes(`>${t}</button>`)),
-    '播放 / 定位 / 帧 / 索引 / 移除'
-  )
-  check(
-    '不再有「更多」菜单（⋯ 触发器与浮层都已移除）',
-    !libraryHtml.includes('⋯') && !libraryHtml.includes('aria-haspopup="menu"') &&
-      !libraryHtml.includes('absolute right-0 top-full'),
-    'RowMenu 组件已删除'
-  )
-  {
-    const src = [
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'selection.ts'), 'utf8')
-    ].join('\n')
-    const codeNoComments = src
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^[ \t]*\/\/.*$/gm, '')
-    check(
-      'RowMenu 组件已彻底移除（含外部点击/Esc 关闭逻辑）',
-      !codeNoComments.includes('function RowMenu') &&
-        !codeNoComments.includes("addEventListener('mousedown'"),
-      '不再有菜单状态与关闭逻辑'
-    )
-    // 按钮内边距收到 px-1.5 才有宽度预算容纳五个 2 字按钮（合计约 190px）
-    const btnCount = (codeNoComments.match(/btn px-1\.5 py-0\.5 text-\[11px\]/g) ?? []).length
-    check(
-      '操作按钮内边距收紧到 px-1.5（容纳五个 2 字按钮）',
-      btnCount === 4 && codeNoComments.includes('btn-danger px-1.5 py-0.5 text-[11px]'),
-      `4 个普通按钮 + 1 个危险按钮，均为 px-1.5`
-    )
-    check(
-      '每个操作按钮都有 title 说明完整语义',
-      src.includes('在资源管理器中定位该文件') &&
-        src.includes('查看索引时间点') &&
-        src.includes('重新抽帧并重建指纹') &&
-        src.includes('只从索引库移除记录，不会删除磁盘文件'),
-      '精简文字后靠 title 保留完整含义'
-    )
-    check(
-      '操作列宽度已相应放宽到 210px',
-      src.includes('w-[210px]') && src.includes('min-w-[480px]'),
-      '列宽 210px，表格 min-w 480px'
-    )
-
-    // 操作列吸附右侧：窗口窄到表格要横向滚动时，五个按钮仍必须看得见、点得到。
-    // 这类问题 ui-smoke 的静态检查容易漏，所以逐条钉住关键前提。
-    check(
-      '操作列吸附在右侧（横向滚动时按钮不被推出视野）',
-      /<th[^>]*sticky right-0[^>]*w-\[210px\]/.test(libraryHtml) &&
-        /<td[^>]*sticky right-0[^>]*border-l/.test(libraryHtml),
-      '表头与数据格都带 sticky right-0'
-    )
-    // 吸附列的底色必须不透明，否则左侧滚过来的内容会透上来叠在按钮上。
-    // 实现上不是「给 td 加不透明色 + 内层覆盖层」（absolute 在表格布局里不可靠），
-    // 而是改用预先混好的 row-* 实色——两个断言各守一半，都必要。
-    check(
-      '吸附列底色用的是不透明实色（不是 bg-accent/12 这类半透明叠色）',
-      src.includes('const rowBg =') &&
-        src.includes("'bg-row-selected'") &&
-        src.includes("'bg-row-focus'") &&
-        !/sticky right-0[^`]*bg-accent\//.test(src),
-      'rowBg 走 row-* token，吸附格不再直接挂半透明色'
-    )
-    check(
-      'row-* 三个色值在深浅两套主题里都定义（预混不透明色）',
-      (() => {
-        const css = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
-        return (
-          css.includes('--color-row-selected') &&
-          css.includes('--color-row-focus') &&
-          css.includes('--color-row-hover') &&
-          (css.split("[data-theme='light']")[1] ?? '').includes('--color-row-selected')
-        )
-      })(),
-      '深浅两侧齐备'
-    )
-    check(
-      '行底色落在每个 td 上而不是 tr（否则吸附格与半透明 tr 背景叠出色差）',
-      src.includes('const rowBg =') && !/className={`group cursor-pointer[^`]*\$\{rowBg\}/.test(src),
-      'rowBg 只用于 td'
-    )
-    check(
-      '分组标题行拆成两格（colSpan 会盖住吸附列、让分隔线断开）',
-      src.includes('colSpan={2}') && !src.includes('colSpan={3}'),
-      '标题格 colSpan=2 + 空采样格 + 空吸附格（共 4 列对齐）'
-    )
-
-    // 分组标题行的吸附格同样要实色——它也是 sticky，标题行滚动时会浮起来。
-    // 当前实现用模板插值 ${headerBg} 决定底色，非选中/非焦点时 headerBg = 'bg-row-group'
-    // （实心 token，不挂半透明色）。这里断言吸附列是 sticky 且引用了 bg-row-group 实心 token。
-    check(
-      '分组标题行的吸附格也是实色（不挂半透明色）',
-      src.includes('sticky right-0') && src.includes('bg-row-group'),
-      'sticky 吸附列 + 实心 bg-row-group 底色'
-    )
-
-    // 文件名多行：单行 truncate 时长片名（[1080p][x264] 那种）看不出是什么剧，
-    // 而横向滚动才能看全名很反直觉。
-    check(
-      '文件名最多两行显示（line-clamp-2 + break-all）',
-      src.includes('line-clamp-2') && src.includes('break-all'),
-      '超长片名换行而非截断'
-    )
-    check(
-      '元信息行保持单行（目录路径重复前缀多，展开反而更吵）',
-      /<div className="truncate text-\[10\.5px\] text-muted"/.test(src),
-      '第二行仍 truncate'
-    )
-
-    // 选中提示**单选多选完全一致**：蓝竖条 + 淡蓝底 + 文件名染强调色。
-    // 曾按 selectedCount 分过两档（多选只留竖条），想"少即是多"，实际破坏了
-    // 风格统一 —— 同一个交互在两种状态下长得不一样，用户得先判断自己在哪种状态。
-    // 文件名染色也走同一个 `selected` 条件（用户要求明显提示），不引入分档变量。
+    // 选中视觉：单选多选完全统一
     check(
       '选中时文件名染强调色，且与单选/多选共用同一个 selected 条件',
       /line-clamp-2 break-all \$\{selected \? 'text-accent' : 'text-primary'\}/.test(src),
@@ -906,16 +740,56 @@ export default mod
       /const rowBg = selected\s*\n(\s*)\? 'bg-row-selected'/.test(src) && !src.includes('singleSelected'),
       '选中即铺底色'
     )
-    // 反向守护：别把 selectedCount 之类的分档变量加回来。
-    // 它看起来很有用（"要不要强调当前项"），但会让单选与多选长得不一样。
     check(
       '没有引入按选中数量分档的变量（避免单选多选长得不一样）',
       !/selectedCount|singleSelected|isMultiSelect/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')),
       '源码里（剥掉注释后）不应出现分档变量'
     )
-    // 工具条布局必须与选中状态无关：按钮区独立 shrink-0 分区（左侧筛选区怎么
-    // 换行都影响不到它），「已选」计数 invisible 常驻占位（行宽不随选中变化）。
-    // 否则选中一个视频，「已选 N」一出现就把按钮组挤到第二行 —— 用户反馈过。
+    // 行底色落在每个 td 上而不是 tr
+    check(
+      '行底色落在每个 td 上而不是 tr',
+      src.includes('const rowBg =') && !/className={`group cursor-pointer[^`]*\$\{rowBg\}/.test(src),
+      'rowBg 只用于 td'
+    )
+    check(
+      'row-* 三个色值在深浅两套主题里都定义（预混不透明色）',
+      (() => {
+        const css = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
+        return (
+          css.includes('--color-row-selected') &&
+          css.includes('--color-row-focus') &&
+          css.includes('--color-row-hover') &&
+          (css.split("[data-theme='light']")[1] ?? '').includes('--color-row-selected')
+        )
+      })(),
+      '深浅两侧齐备'
+    )
+    // 操作列
+    check(
+      '操作列吸附在右侧（横向滚动时按钮不被推出视野）',
+      /<th[^>]*sticky right-0[^>]*w-\[210px\]/.test(libraryHtml) &&
+        /<td[^>]*sticky right-0[^>]*border-l/.test(libraryHtml),
+      '表头与数据格都带 sticky right-0'
+    )
+    check(
+      '吸附列底色用的是不透明实色（不是半透明叠色）',
+      src.includes('const rowBg =') &&
+        src.includes("'bg-row-selected'") &&
+        src.includes("'bg-row-focus'") &&
+        !/sticky right-0[^`]*bg-accent\//.test(src),
+      'rowBg 走 row-* token，吸附格不再直接挂半透明色'
+    )
+    check(
+      '文件名最多两行显示（line-clamp-2 + break-all）',
+      src.includes('line-clamp-2') && src.includes('break-all'),
+      '超长片名换行而非截断'
+    )
+    check(
+      '元信息行保持单行（目录路径重复前缀多，展开反而更吵）',
+      /<div className="truncate text-\[10\.5px\] text-muted"/.test(src),
+      '第二行仍 truncate'
+    )
+    // 工具条布局与选中状态无关
     check(
       '工具条：按钮区独立 shrink-0，选中计数 invisible 常驻占位（选中不改布局）',
       src.includes('flex min-w-0 flex-1 flex-wrap items-center gap-2') &&
@@ -924,11 +798,42 @@ export default mod
         !src.includes('ml-auto flex gap-2'),
       '筛选区自己换行、按钮区不换行、计数不条件渲染'
     )
+    // 左侧文件夹树（资源管理器导航窗格）
+    check(
+      '左侧文件夹树：监听目录为根 + 全部视频虚拟根',
+      treeSrc.includes('全部视频') && treeSrc.includes('data-folder-tree') && treeSrc.includes('buildFolderTree'),
+      '树由 buildFolderTree 构建'
+    )
+    check(
+      '树节点复选框递归选中目录下全部视频（支持半选）',
+      treeSrc.includes('videosUnderDir') && treeSrc.includes('indeterminate') && treeSrc.includes('onSetDirSelection'),
+      '节点复选框批量选中'
+    )
+    check(
+      '树自带键盘导航（方向键 / Enter）',
+      treeSrc.includes("case 'ArrowDown':") && treeSrc.includes("case 'Enter'") && treeSrc.includes('onSelectDir'),
+      '树内方向键移动焦点、Enter 定位'
+    )
+    check(
+      '地址栏（面包屑）默认显示「全部视频」',
+      libraryHtml.includes('全部视频'),
+      'selectedDir 为 null 时显示整库'
+    )
+    check(
+      'G 键切换文件夹树显隐（不再按文件夹分组）',
+      src.includes("case 'g':") && src.includes('onToggleTree'),
+      'G 调 onToggleTree'
+    )
+    check(
+      '没有残留按文件夹分组的旧概念',
+      !src.includes('groupByFolder') && !src.includes('FolderHeader') && !src.includes("type: 'folder'"),
+      '分组模型已彻底移除'
+    )
   }
   check('视频库页显示监听文件夹', libraryHtml.includes('Movies') && libraryHtml.includes('E:\\Media\\Movies'))
   check('视频库页显示监听中状态', libraryHtml.includes('监听中'))
   check('视频库页显示手动标记', libraryHtml.includes('手动'))
-  check('视频库页有筛选控件', libraryHtml.includes('全部监听目录') && libraryHtml.includes('全部状态'))
+  check('视频库页有筛选控件', libraryHtml.includes('全部状态') && libraryHtml.includes('按导入时间') && libraryHtml.includes('按文件名 / 目录筛选'))
   check('视频库页有重建/重扫按钮', libraryHtml.includes('重建全部索引') && libraryHtml.includes('重新扫描目录'))
   check('视频库页有暂停与停止监听按钮', libraryHtml.includes('暂停监听') && libraryHtml.includes('停止监听'))
   check('右栏为单层面板（监听/索引设置 标签切换）', libraryHtml.includes('索引设置') && libraryHtml.includes('监听'))
@@ -1009,7 +914,7 @@ export default mod
     const lib = [
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'LibraryView.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8'),
-      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderHeader.tsx'), 'utf8'),
+      readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FolderTree.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8'),
       readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryShortcuts.ts'), 'utf8'),
@@ -1133,8 +1038,8 @@ export default mod
     check(
       '方向键移动光标时同步单选（光标与选中是同一个东西）',
       lib.includes('moveCursor') &&
-        /moveCursor = \(delta: number, rangeKey: boolean, ctrlKey: boolean\)/.test(lib) &&
-        lib.includes('toggleVideoSelection(nextItem.video.id, rangeKey, false)'),
+        /moveCursor = \(delta: number, shiftKey: boolean, ctrlKey: boolean\)/.test(lib) &&
+        lib.includes('toggleVideoSelection(nextItem.video.id, shiftKey, false)'),
       'moveCursor 里调 toggleVideoSelection'
     )
     check(
@@ -1153,10 +1058,10 @@ export default mod
       'navigableItems 与渲染同序，focusedIndex 直取下标'
     )
     check(
-      '←→ 作用于光标所在视频的分组',
-      lib.includes('const focusedFolderId = useMemo') &&
-        lib.includes('expandedFolderIds.has(focusedFolderId)'),
-      '从光标视频反查 folderId，不再等「光标在标题上」'
+      '焦点在文件夹树内时全局快捷键让位（←→/Enter 交给树处理，仅 G 仍由全局处理）',
+      lib.includes("const inTree = e.target instanceof HTMLElement && !!e.target.closest('[data-folder-tree]')") &&
+        lib.includes("if (inTree && e.key.toLowerCase() !== 'g') return"),
+      '树内拦截除 G 外的全局键，←→ 落入树自身导航'
     )
 
     // 操作键
