@@ -10,6 +10,8 @@ import type {
   VideoPage,
   FrameManifestEntry,
   AppSettings,
+  DataDirInfo,
+  IndexerStatus,
 } from '@shared/types'
 
 /**
@@ -27,12 +29,12 @@ const notImpl =
 export const tauriApi: WhichVideoApi = {
   library: {
     stats: () => invoke<LibraryStats>(IPC.libraryStats),
-    status: notImpl('library.status'),
+    status: () => invoke<IndexerStatus>(IPC.libraryStatus),
     settings: () => invoke<AppSettings>(IPC.librarySettings),
-    updateSettings: notImpl('library.updateSettings'),
-    dataDir: notImpl('library.dataDir'),
-    openDatabaseFolder: notImpl('library.openDatabaseFolder'),
-    reset: notImpl('library.reset'),
+    updateSettings: (patch) => invoke<AppSettings>(IPC.libraryUpdateSettings, { patch }),
+    dataDir: () => invoke<DataDirInfo>(IPC.libraryDataDir),
+    openDatabaseFolder: () => invoke<string>(IPC.libraryOpenDb),
+    reset: () => invoke<void>(IPC.libraryReset),
   },
   folders: {
     list: () => invoke<WatchedFolder[]>(IPC.foldersList),

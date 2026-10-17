@@ -616,3 +616,124 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
     }
     Ok(s)
 }
+
+/* ------------------------------------------------------------------ */
+/* 索引器状态 / 数据目录信息                                          */
+/* ------------------------------------------------------------------ */
+
+/// 与 src/shared/types.ts 的 IndexerStatus 对齐。M7 接入真实索引器前先用闲置态。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexerStatus {
+    pub running: bool,
+    pub active: i64,
+    pub queued: i64,
+    pub total: i64,
+    pub done: i64,
+    pub failed: i64,
+    pub current_path: Option<String>,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub last_error: Option<String>,
+}
+
+#[allow(dead_code)]
+pub fn idle_indexer_status() -> IndexerStatus {
+    IndexerStatus {
+        running: false,
+        active: 0,
+        queued: 0,
+        total: 0,
+        done: 0,
+        failed: 0,
+        current_path: None,
+        started_at: None,
+        finished_at: None,
+        last_error: None,
+    }
+}
+
+/// 与 src/shared/types.ts 的 DataDirInfo 对齐。tools_ready 在 M5（媒体探测）补齐。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataDirInfo {
+    pub dir: String,
+    pub portable: bool,
+    pub source: String,
+    pub tools_ready: bool,
+}
+
+/// 解析数据目录并附带便携判定与工具可用性。
+pub fn data_dir_info(tools_ready: bool) -> DataDirInfo {
+    let dir = data_dir();
+    let dir_str = dir.to_string_lossy().to_string();
+    let (portable, source) = if std::env::var("WHICHVIDEO_DATA_DIR").is_ok() {
+        (false, "env")
+    } else {
+        // exe 同级 data/ 存在 → 视为便携模式（数据随 exe 走）。
+        let is_portable = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.join("data").exists()))
+            .unwrap_or(false);
+        (is_portable, "default")
+    };
+    DataDirInfo {
+        dir: dir_str,
+        portable,
+        source: source.to_string(),
+        tools_ready,
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 设置写入 / 重置                                                    */
+/* ------------------------------------------------------------------ */
+
+/// library.updateSettings 的入参（全字段可选，camelCase 镜像 AppSettings）。
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsPatch {
+    pub frames_per_video: Option<i64>,
+    pub concurrency: Option<i64>,
+    pub min_hash_score: Option<f64>,
+    pub max_results: Option<i64>,
+    pub await_write_ms: Option<i64>,
+    pub prune_on_delete: Option<bool>,
+    pub sampling_mode: Option<String>,
+    pub update_check: Option<bool>,
+    pub keep_frame_images: Option<bool>,
+}
+
+pub fn update_settings(conn: &mut Connection, patch: &SettingsPatch) -> SqlResult<AppSettings> {
+    let candidates: Vec<(String, Option<String>)> = vec![
+        ("framesPerVideo".into(), patch.frames_per_video.map(|v| v.to_string())),
+        ("concurrency".into(), patch.concurrency.map(|v| v.to_string())),
+        ("minHashScore".into(), patch.min_hash_score.map(|v| v.to_string())),
+        ("maxResults".into(), patch.max_results.map(|v| v.to_string())),
+        ("awaitWriteMs".into(), patch.await_write_ms.map(|v| v.to_string())),
+        ("pruneOnDelete".into(), patch.prune_on_delete.map(|v| v.to_string())),
+        ("samplingMode".into(), patch.sampling_mode.clone()),
+        ("updateCheck".into(), patch.update_check.map(|v| v.to_string())),
+        ("keepFrameImages".into(), patch.keep_frame_images.map(|v| v.to_string())),
+    ];
+    let present: Vec<(String, String)> = candidates
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|val| (k, val)))
+        .collect();
+    if !present.is_empty() {
+        const UPSERT: &str = "INSERT INTO settings (key, value) VALUES (?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+        let tx = conn.transaction()?;
+        for (k, v) in &present {
+            tx.execute(UPSERT, rusqlite::params![k, v])?;
+        }
+        tx.commit()?;
+    }
+    get_settings(conn)
+}
+
+/// 重置索引库（清空视频/帧/文件夹，保留设置），对齐 Electron library_reset。
+pub fn clear_all(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch("DELETE FROM frames; DELETE FROM videos; DELETE FROM image_folders;")?;
+    Ok(())
+}

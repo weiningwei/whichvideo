@@ -11,6 +11,12 @@ fn main() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::library_stats,
+            commands::library_status,
+            commands::library_settings,
+            commands::library_update_settings,
+            commands::library_open_database_folder,
+            commands::library_data_dir,
+            commands::library_reset,
             commands::folders_list,
             commands::folders_add_path,
             commands::folders_remove,
@@ -18,8 +24,7 @@ fn main() {
             commands::videos_get,
             commands::videos_list,
             commands::videos_thumbnail,
-            commands::videos_frame_manifest,
-            commands::library_settings
+            commands::videos_frame_manifest
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

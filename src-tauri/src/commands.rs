@@ -1,5 +1,6 @@
 use crate::db;
 use crate::state::AppState;
+use std::process::Command;
 use tauri::State;
 
 /// 库统计：视频/帧/文件夹计数。复用现有 whichvideo.db。
@@ -117,4 +118,48 @@ pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, Strin
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::get_settings(conn).map_err(|e| e.to_string())
+}
+
+/// 更新用户设置，返回合并后的完整设置。
+#[tauri::command]
+pub fn library_update_settings(
+    state: State<AppState>,
+    patch: db::SettingsPatch,
+) -> Result<db::AppSettings, String> {
+    let mut guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_mut()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    db::update_settings(conn, &patch).map_err(|e| e.to_string())
+}
+
+/// 重置索引库（清空视频/帧/文件夹，保留设置）。
+#[tauri::command]
+pub fn library_reset(state: State<AppState>) -> Result<(), String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    db::clear_all(conn).map_err(|e| e.to_string())
+}
+
+/// 打开数据目录（含 whichvideo.db）。
+#[tauri::command]
+pub fn library_open_database_folder() -> Result<String, String> {
+    let dir = db::data_dir();
+    let dir_str = dir.to_string_lossy().to_string();
+    let _ = Command::new("explorer.exe").arg(&dir_str).spawn();
+    Ok(dir_str)
+}
+
+/// 运行时数据目录信息（toolsReady 在 M5 媒体探测后补全）。
+#[tauri::command]
+pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
+    Ok(db::data_dir_info(false))
+}
+
+/// 索引器实时状态（M7 接入真实索引器前返回闲置态）。
+#[tauri::command]
+pub fn library_status() -> Result<db::IndexerStatus, String> {
+    Ok(db::idle_indexer_status())
 }
