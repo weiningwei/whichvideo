@@ -74,6 +74,51 @@ pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::Vi
     db::get_video(conn, video_id).map_err(|e| e.to_string())
 }
 
+/// 删除视频记录（帧级联删除）。
+#[tauri::command]
+pub fn videos_remove(state: State<AppState>, video_id: i64) -> Result<(), String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    db::remove_video(conn, video_id).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 在资源管理器中定位文件。
+#[tauri::command]
+pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let video = db::get_video(conn, video_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "视频不存在".to_string())?;
+    let _ = Command::new("explorer.exe")
+        .arg(format!("/select,\"{}\"", video.path))
+        .spawn();
+    Ok(())
+}
+
+/// 打开视频文件（默认播放器；带时间戳定位由 M5 媒体探测补齐）。
+#[tauri::command]
+pub fn videos_open(
+    state: State<AppState>,
+    video_id: i64,
+    #[allow(unused_variables)] at_seconds: Option<f64>,
+) -> Result<(), String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let video = db::get_video(conn, video_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "视频不存在".to_string())?;
+    let _ = Command::new("explorer.exe").arg(&video.path).spawn();
+    Ok(())
+}
+
 /// 视频分页列表（支持 keyword/folderId/status 过滤、排序、分页）。
 #[tauri::command]
 pub fn videos_list(state: State<AppState>, query: db::VideoQuery) -> Result<db::VideoPage, String> {

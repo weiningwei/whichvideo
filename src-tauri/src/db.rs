@@ -461,6 +461,17 @@ pub fn get_video(conn: &Connection, id: i64) -> SqlResult<Option<VideoRecord>> {
     }
 }
 
+/// 删除视频记录（frames 经 ON DELETE CASCADE 一并删除）。返回删除前的记录，
+/// 便于上层广播事件。若不存在返回 None。
+pub fn remove_video(conn: &Connection, id: i64) -> SqlResult<Option<VideoRecord>> {
+    let video = get_video(conn, id)?;
+    if video.is_none() {
+        return Ok(None);
+    }
+    conn.execute("DELETE FROM videos WHERE id = ?", [id])?;
+    Ok(video)
+}
+
 pub fn list_videos(conn: &Connection, q: &VideoQuery) -> SqlResult<VideoPage> {
     let mut where_clauses: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();

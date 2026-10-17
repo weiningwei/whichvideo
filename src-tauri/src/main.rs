@@ -24,7 +24,10 @@ fn main() {
             commands::videos_get,
             commands::videos_list,
             commands::videos_thumbnail,
-            commands::videos_frame_manifest
+            commands::videos_frame_manifest,
+            commands::videos_remove,
+            commands::videos_reveal,
+            commands::videos_open
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
