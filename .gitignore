@@ -67,3 +67,4 @@ ENV/
 Thumbs.db
 .workbuddy/
 src-tauri/target/
+src-tauri/gen/

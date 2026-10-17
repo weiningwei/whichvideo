@@ -1,5 +1,6 @@
-use rusqlite::{Connection, Result as SqlResult};
-use serde::Serialize;
+use base64::Engine;
+use rusqlite::{params_from_iter, Connection, Result as SqlResult};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -59,7 +60,9 @@ CREATE TABLE IF NOT EXISTS videos (
   folder_id INTEGER REFERENCES image_folders(id) ON DELETE SET NULL,
   thumbnail BLOB,
   processed_timestamps TEXT NOT NULL DEFAULT '[]',
-  processed_ms INTEGER NOT NULL DEFAULT 0
+  processed_ms INTEGER NOT NULL DEFAULT 0,
+  file_hash TEXT,
+  sampling_override TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
 CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder_id);
@@ -122,7 +125,14 @@ pub fn open_db() -> SqlResult<Connection> {
     let _ = conn.pragma_update(None, "journal_mode", "WAL");
     let _ = conn.pragma_update(None, "synchronous", "NORMAL");
     let _ = conn.pragma_update(None, "foreign_keys", "ON");
-    conn.exec_batch(SCHEMA)?;
+    conn.execute_batch(SCHEMA)?;
+    // 与 src/main/db.ts 迁移保持一致：补齐旧 Electron 库可能缺失的列（已有则 ALTER 报错，忽略）。
+    for stmt in [
+        "ALTER TABLE videos ADD COLUMN file_hash TEXT",
+        "ALTER TABLE videos ADD COLUMN sampling_override TEXT",
+    ] {
+        let _ = conn.execute(stmt, []);
+    }
     Ok(conn)
 }
 
@@ -194,4 +204,295 @@ pub fn list_folders(conn: &Connection) -> SqlResult<Vec<WatchedFolder>> {
         out.push(f?);
     }
     Ok(out)
+}
+
+/* ------------------------------------------------------------------ */
+/* 视频记录 / 查询 / 分页                                              */
+/* ------------------------------------------------------------------ */
+
+/// 与 src/shared/types.ts 的 VideoRecord 对齐（serde rename 输出 camelCase）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoRecord {
+    pub id: i64,
+    pub path: String,
+    pub path_key: String,
+    pub name: String,
+    pub dir: String,
+    pub ext: String,
+    pub size: i64,
+    pub mtime_ms: i64,
+    pub duration: Option<f64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub video_codec: Option<String>,
+    pub frame_count: i64,
+    pub status: String,
+    pub error: Option<String>,
+    pub added_at: i64,
+    pub indexed_at: Option<i64>,
+    pub folder_id: Option<i64>,
+    pub processed_timestamps: Vec<i64>,
+    pub processed_ms: i64,
+    pub sampling_override: Option<String>,
+    pub file_hash: Option<String>,
+}
+
+/// 与 src/shared/types.ts 的 VideoPage 对齐。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoPage {
+    pub total: i64,
+    pub items: Vec<VideoRecord>,
+}
+
+/// videos.list 的入参（对齐 VideoQuery）。由 Tauri 从 invoke 参数反序列化，全字段可选。
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoQuery {
+    pub keyword: Option<String>,
+    pub folder_id: Option<i64>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub sort: Option<String>,
+    pub order: Option<String>,
+}
+
+/// 与 src/shared/types.ts 的 FrameManifestEntry 对齐。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameManifestEntry {
+    pub frame_index: i64,
+    pub time_ms: i64,
+}
+
+/// 与 src/shared/types.ts 的 AppSettings 对齐。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub frames_per_video: i64,
+    pub concurrency: i64,
+    pub min_hash_score: f64,
+    pub max_results: i64,
+    pub await_write_ms: i64,
+    pub prune_on_delete: bool,
+    pub sampling_mode: String,
+    pub update_check: bool,
+    pub keep_frame_images: bool,
+}
+
+/// Rust 侧镜像 src/shared/types.ts 的 DEFAULT_SETTINGS（含 String 字段，故用函数而非 const）。
+pub fn default_settings() -> AppSettings {
+    AppSettings {
+        frames_per_video: 240,
+        concurrency: 2,
+        min_hash_score: 0.6,
+        max_results: 40,
+        await_write_ms: 1500,
+        prune_on_delete: true,
+        sampling_mode: "uniform".to_string(),
+        update_check: true,
+        keep_frame_images: false,
+    }
+}
+
+/// 列表/单条取视频时选取的列（刻意排除 thumbnail BLOB，避免列表被大字段拖慢）。
+const VIDEO_COLUMNS: &str = "id, path, path_key, name, dir, ext, size, mtime_ms, duration, \
+    width, height, video_codec, frame_count, status, error, added_at, indexed_at, folder_id, \
+    processed_timestamps, processed_ms";
+
+fn row_to_video(row: &rusqlite::Row) -> rusqlite::Result<VideoRecord> {
+    let processed_timestamps: String = row.get("processed_timestamps")?;
+    let processed_timestamps: Vec<i64> = serde_json::from_str(&processed_timestamps).unwrap_or_default();
+    Ok(VideoRecord {
+        id: row.get("id")?,
+        path: row.get("path")?,
+        path_key: row.get("path_key")?,
+        name: row.get("name")?,
+        dir: row.get("dir")?,
+        ext: row.get("ext")?,
+        size: row.get("size")?,
+        mtime_ms: row.get("mtime_ms")?,
+        duration: row.get::<_, Option<f64>>("duration")?,
+        width: row.get::<_, Option<i64>>("width")?,
+        height: row.get::<_, Option<i64>>("height")?,
+        video_codec: row.get::<_, Option<String>>("video_codec")?,
+        frame_count: row.get("frame_count")?,
+        status: row.get("status")?,
+        error: row.get::<_, Option<String>>("error")?,
+        added_at: row.get("added_at")?,
+        indexed_at: row.get::<_, Option<i64>>("indexed_at")?,
+        folder_id: row.get::<_, Option<i64>>("folder_id")?,
+        processed_timestamps,
+        processed_ms: row.get("processed_ms")?,
+        sampling_override: row.get::<_, Option<String>>("sampling_override")?,
+        file_hash: row.get::<_, Option<String>>("file_hash")?,
+    })
+}
+
+pub fn get_video(conn: &Connection, id: i64) -> SqlResult<Option<VideoRecord>> {
+    let sql = format!("SELECT {} FROM videos WHERE id = ?", VIDEO_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query_map([id], row_to_video)?;
+    match rows.next() {
+        Some(r) => Ok(Some(r?)),
+        None => Ok(None),
+    }
+}
+
+pub fn list_videos(conn: &Connection, q: &VideoQuery) -> SqlResult<VideoPage> {
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(kw) = &q.keyword {
+        if !kw.is_empty() {
+            where_clauses.push("(name LIKE ? OR dir LIKE ?)".to_string());
+            let like = format!("%{}%", kw);
+            params.push(Box::new(like.clone()));
+            params.push(Box::new(like));
+        }
+    }
+    if let Some(folder_id) = q.folder_id {
+        where_clauses.push("folder_id = ?".to_string());
+        params.push(Box::new(folder_id));
+    }
+    if let Some(status) = &q.status {
+        if status != "all" && !status.is_empty() {
+            where_clauses.push("status = ?".to_string());
+            params.push(Box::new(status.clone()));
+        }
+    }
+
+    let where_sql = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", where_clauses.join(" AND "))
+    };
+
+    // 排序列白名单，杜绝注入；方向仅 ASC/DESC。
+    let sort = match q.sort.as_deref() {
+        Some("name") => "name",
+        Some("size") => "size",
+        Some("duration") => "COALESCE(duration, 0)",
+        _ => "added_at",
+    };
+    let order = match q.order.as_deref() {
+        Some("asc") => "ASC",
+        _ => "DESC",
+    };
+    let limit = q.limit.unwrap_or(200).clamp(1, 2000);
+    let offset = q.offset.unwrap_or(0).max(0);
+
+    let count_sql = format!("SELECT COUNT(*) FROM videos {}", where_sql);
+    let total: i64 = conn.query_row(
+        &count_sql,
+        params_from_iter(params.iter().map(|b| b.as_ref())),
+        |row| row.get(0),
+    )?;
+
+    let select_sql = format!(
+        "SELECT {} FROM videos {} ORDER BY {} {} LIMIT ? OFFSET ?",
+        VIDEO_COLUMNS, where_sql, sort, order
+    );
+    params.push(Box::new(limit));
+    params.push(Box::new(offset));
+    let mut stmt = conn.prepare(&select_sql)?;
+    let mut rows = stmt.query_map(params_from_iter(params.iter().map(|b| b.as_ref())), row_to_video)?;
+    let mut items = Vec::new();
+    while let Some(r) = rows.next() {
+        items.push(r?);
+    }
+    Ok(VideoPage { total, items })
+}
+
+pub fn get_thumbnail(conn: &Connection, video_id: i64) -> SqlResult<Option<String>> {
+    let blob: Option<Vec<u8>> = conn.query_row(
+        "SELECT thumbnail FROM videos WHERE id = ?",
+        [video_id],
+        |row| row.get(0),
+    )?;
+    Ok(blob.map(|b| {
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&b)
+        )
+    }))
+}
+
+pub fn list_frame_manifest(conn: &Connection, video_id: i64) -> SqlResult<Vec<FrameManifestEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT frame_index, time_ms FROM frames WHERE video_id = ? ORDER BY frame_index",
+    )?;
+    let rows = stmt.query_map([video_id], |row| {
+        Ok(FrameManifestEntry {
+            frame_index: row.get(0)?,
+            time_ms: row.get(1)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut s = default_settings();
+    for r in rows {
+        let (key, value) = r?;
+        match key.as_str() {
+            "framesPerVideo" => {
+                if let Ok(v) = serde_json::from_str::<i64>(&value) {
+                    s.frames_per_video = v;
+                }
+            }
+            "concurrency" => {
+                if let Ok(v) = serde_json::from_str::<i64>(&value) {
+                    s.concurrency = v;
+                }
+            }
+            "minHashScore" => {
+                if let Ok(v) = serde_json::from_str::<f64>(&value) {
+                    s.min_hash_score = v;
+                }
+            }
+            "maxResults" => {
+                if let Ok(v) = serde_json::from_str::<i64>(&value) {
+                    s.max_results = v;
+                }
+            }
+            "awaitWriteMs" => {
+                if let Ok(v) = serde_json::from_str::<i64>(&value) {
+                    s.await_write_ms = v;
+                }
+            }
+            "pruneOnDelete" => {
+                if let Ok(v) = serde_json::from_str::<bool>(&value) {
+                    s.prune_on_delete = v;
+                }
+            }
+            "samplingMode" => {
+                if let Ok(v) = serde_json::from_str::<String>(&value) {
+                    s.sampling_mode = v;
+                }
+            }
+            "updateCheck" => {
+                if let Ok(v) = serde_json::from_str::<bool>(&value) {
+                    s.update_check = v;
+                }
+            }
+            "keepFrameImages" => {
+                if let Ok(v) = serde_json::from_str::<bool>(&value) {
+                    s.keep_frame_images = v;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(s)
 }

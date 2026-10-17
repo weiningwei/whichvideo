@@ -6,6 +6,10 @@ import type {
   LibraryEvent,
   LibraryStats,
   WatchedFolder,
+  VideoRecord,
+  VideoPage,
+  FrameManifestEntry,
+  AppSettings,
 } from '@shared/types'
 
 /**
@@ -24,7 +28,7 @@ export const tauriApi: WhichVideoApi = {
   library: {
     stats: () => invoke<LibraryStats>(IPC.libraryStats),
     status: notImpl('library.status'),
-    settings: notImpl('library.settings'),
+    settings: () => invoke<AppSettings>(IPC.librarySettings),
     updateSettings: notImpl('library.updateSettings'),
     dataDir: notImpl('library.dataDir'),
     openDatabaseFolder: notImpl('library.openDatabaseFolder'),
@@ -39,8 +43,8 @@ export const tauriApi: WhichVideoApi = {
     setEnabled: notImpl('folders.setEnabled'),
   },
   videos: {
-    list: notImpl('videos.list'),
-    get: notImpl('videos.get'),
+    list: (query) => invoke<VideoPage>(IPC.videosList, { query: query ?? {} }),
+    get: (videoId) => invoke<VideoRecord | null>(IPC.videosGet, { videoId }),
     remove: notImpl('videos.remove'),
     reindex: notImpl('videos.reindex'),
     findDuplicates: notImpl('videos.findDuplicates'),
@@ -48,9 +52,9 @@ export const tauriApi: WhichVideoApi = {
     importImages: notImpl('videos.importImages'),
     openFile: notImpl('videos.openFile'),
     revealFile: notImpl('videos.revealFile'),
-    thumbnail: notImpl('videos.thumbnail'),
+    thumbnail: (videoId) => invoke<string | null>(IPC.videosThumbnail, { videoId }),
     frameProgress: notImpl('videos.frameProgress'),
-    frameManifest: notImpl('videos.frameManifest'),
+    frameManifest: (videoId) => invoke<FrameManifestEntry[]>(IPC.videosFrameManifest, { videoId }),
     matchFrame: notImpl('videos.matchFrame'),
   },
   search: {
