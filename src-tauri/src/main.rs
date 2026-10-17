@@ -3,6 +3,7 @@
 mod commands;
 mod constants;
 mod db;
+mod hash;
 mod media;
 mod state;
 
