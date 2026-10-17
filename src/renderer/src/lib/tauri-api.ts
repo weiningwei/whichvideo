@@ -37,10 +37,11 @@ export const tauriApi: WhichVideoApi = {
   folders: {
     list: () => invoke<WatchedFolder[]>(IPC.foldersList),
     addFromDialog: notImpl('folders.addFromDialog'),
-    addPath: notImpl('folders.addPath'),
-    remove: notImpl('folders.remove'),
+    addPath: (dirPath) => invoke<WatchedFolder>(IPC.foldersAddPath, { dirPath }),
+    remove: (folderId) => invoke<void>(IPC.foldersRemove, { folderId }),
     rescan: notImpl('folders.rescan'),
-    setEnabled: notImpl('folders.setEnabled'),
+    setEnabled: (folderId, enabled) =>
+      invoke<WatchedFolder>(IPC.foldersSetEnabled, { folderId, enabled }),
   },
   videos: {
     list: (query) => invoke<VideoPage>(IPC.videosList, { query: query ?? {} }),

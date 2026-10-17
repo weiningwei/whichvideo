@@ -179,31 +179,151 @@ pub fn stats(conn: &Connection) -> SqlResult<LibraryStats> {
     })
 }
 
+/// 路径规范化：统一成 Windows 反斜杠并去掉尾部反斜杠（镜像 types.ts::normalizePath）。
+fn normalize_path(p: &str) -> String {
+    p.replace('/', "\\").trim_end_matches('\\').to_string()
+}
+
+/// 比较用 key（镜像 types.ts::pathKeyOf）。
+fn path_key(p: &str) -> String {
+    normalize_path(p).to_lowercase()
+}
+
+/// 当前毫秒时间戳（避免引入 chrono 依赖）。
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn row_to_folder(row: &rusqlite::Row) -> rusqlite::Result<WatchedFolder> {
+    Ok(WatchedFolder {
+        id: row.get(0)?,
+        path: row.get(1)?,
+        path_key: row.get(2)?,
+        name: row.get(3)?,
+        pinned: row.get::<_, i64>(4)? != 0,
+        enabled: row.get::<_, i64>(5)? != 0,
+        recursive: row.get::<_, i64>(6)? != 0,
+        watch_state: row.get(7)?,
+        message: row.get(8)?,
+        added_at: row.get(9)?,
+        last_scan_at: row.get(10)?,
+    })
+}
+
 pub fn list_folders(conn: &Connection) -> SqlResult<Vec<WatchedFolder>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, path_key, name, pinned, enabled, recursive, watch_state, message, added_at, last_scan_at
          FROM image_folders ORDER BY pinned DESC, added_at ASC",
     )?;
-    let folders = stmt.query_map([], |row| {
-        Ok(WatchedFolder {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            path_key: row.get(2)?,
-            name: row.get(3)?,
-            pinned: row.get::<_, i64>(4)? != 0,
-            enabled: row.get::<_, i64>(5)? != 0,
-            recursive: row.get::<_, i64>(6)? != 0,
-            watch_state: row.get(7)?,
-            message: row.get(8)?,
-            added_at: row.get(9)?,
-            last_scan_at: row.get(10)?,
-        })
-    })?;
+    let folders = stmt.query_map([], row_to_folder)?;
     let mut out = Vec::new();
     for f in folders {
         out.push(f?);
     }
     Ok(out)
+}
+
+pub fn get_folder(conn: &Connection, id: i64) -> SqlResult<Option<WatchedFolder>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, path, path_key, name, pinned, enabled, recursive, watch_state, message, added_at, last_scan_at
+         FROM image_folders WHERE id = ?",
+    )?;
+    let mut rows = stmt.query_map([id], row_to_folder)?;
+    match rows.next() {
+        Some(r) => Ok(Some(r?)),
+        None => Ok(None),
+    }
+}
+
+pub fn find_folder_by_path(conn: &Connection, dir_path: &str) -> SqlResult<Option<WatchedFolder>> {
+    let key = path_key(dir_path);
+    let mut stmt = conn.prepare(
+        "SELECT id, path, path_key, name, pinned, enabled, recursive, watch_state, message, added_at, last_scan_at
+         FROM image_folders WHERE path_key = ?",
+    )?;
+    let mut rows = stmt.query_map([key], row_to_folder)?;
+    match rows.next() {
+        Some(r) => Ok(Some(r?)),
+        None => Ok(None),
+    }
+}
+
+/// 登记/更新一个被监听的文件夹，返回其记录。insert 与 update 等价（folderId
+/// 注册用），与 Electron db.upsertFolder 语义一致。
+pub fn insert_folder(
+    conn: &Connection,
+    dir_path: &str,
+    pinned: bool,
+    recursive: bool,
+) -> SqlResult<WatchedFolder> {
+    let normalized = normalize_path(dir_path);
+    let key = path_key(&normalized);
+    if let Some(existing) = find_folder_by_path(conn, &normalized)? {
+        if pinned {
+            conn.execute("UPDATE image_folders SET pinned = 1 WHERE id = ?", [existing.id])?;
+        }
+        return get_folder(conn, existing.id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows);
+    }
+    let name = std::path::Path::new(&normalized)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&normalized)
+        .to_string();
+    conn.execute(
+        "INSERT INTO image_folders (path, path_key, name, pinned, enabled, recursive, watch_state, added_at)
+         VALUES (?, ?, ?, ?, 1, ?, 'idle', ?)",
+        rusqlite::params![
+            normalized,
+            key,
+            name,
+            if pinned { 1i64 } else { 0i64 },
+            if recursive { 1i64 } else { 0i64 },
+            now_ms()
+        ],
+    )?;
+    let id = conn.last_insert_rowid();
+    get_folder(conn, id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)
+}
+
+pub fn set_folder_enabled(conn: &Connection, id: i64, enabled: bool) -> SqlResult<bool> {
+    let n = conn.execute(
+        "UPDATE image_folders SET enabled = ? WHERE id = ?",
+        rusqlite::params![if enabled { 1i64 } else { 0i64 }, id],
+    )?;
+    Ok(n > 0)
+}
+
+#[allow(dead_code)]
+pub fn update_folder_state(
+    conn: &Connection,
+    id: i64,
+    state: &str,
+    message: Option<&str>,
+) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE image_folders SET watch_state = ?, message = ? WHERE id = ?",
+        rusqlite::params![state, message, id],
+    )?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn mark_folder_scanned(conn: &Connection, id: i64) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE image_folders SET last_scan_at = ? WHERE id = ?",
+        rusqlite::params![now_ms(), id],
+    )?;
+    Ok(())
+}
+
+/// 删除文件夹记录（视频记录保留，folder_id 经 ON DELETE SET NULL 自动置空）。
+pub fn remove_folder(conn: &Connection, id: i64) -> SqlResult<bool> {
+    let n = conn.execute("DELETE FROM image_folders WHERE id = ?", [id])?;
+    Ok(n > 0)
 }
 
 /* ------------------------------------------------------------------ */

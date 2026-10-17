@@ -12,6 +12,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::library_stats,
             commands::folders_list,
+            commands::folders_add_path,
+            commands::folders_remove,
+            commands::folders_set_enabled,
             commands::videos_get,
             commands::videos_list,
             commands::videos_thumbnail,
