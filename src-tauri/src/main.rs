@@ -29,7 +29,8 @@ fn main() {
             commands::videos_frame_manifest,
             commands::videos_remove,
             commands::videos_reveal,
-            commands::videos_open
+            commands::videos_open,
+            commands::videos_match_frame
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

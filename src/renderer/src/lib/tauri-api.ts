@@ -58,7 +58,7 @@ export const tauriApi: WhichVideoApi = {
     thumbnail: (videoId) => invoke<string | null>(IPC.videosThumbnail, { videoId }),
     frameProgress: notImpl('videos.frameProgress'),
     frameManifest: (videoId) => invoke<FrameManifestEntry[]>(IPC.videosFrameManifest, { videoId }),
-    matchFrame: notImpl('videos.matchFrame'),
+    matchFrame: (videoId, timeMs) => invoke<string | null>(IPC.videosMatchFrame, { videoId, timeMs }),
   },
   search: {
     byPath: notImpl('search.byPath'),

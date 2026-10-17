@@ -3,7 +3,11 @@
 //! 仅含「探测」能力：工具路径解析、toolsReady、findSeekablePlayer。
 //! 实际的抽帧/解码/探测命令由后续模块（M6 的 decodeFrameAt、M7 的 indexer）复用这里的 helpers。
 
+use base64::Engine;
+use image::codecs::jpeg::JpegEncoder;
+use image::ExtendedColorType;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::OnceLock;
 
 #[derive(Clone)]
@@ -343,4 +347,62 @@ pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
     }
 
     None
+}
+
+/**
+ * 解码单个时间点的一帧（RGB24 裸像素），转 JPEG dataUrl 返回。
+ * 用于搜索结果命中帧预览 / 查看索引帧弹层。失败（文件已删/时间点越界/解码错误）
+ * 返回 None，调用方回退到缩略图。逻辑镜像 Electron media.decodeFrameAt + rgb24ToJpegDataUrl。
+ *
+ * ffmpeg 用 `-ss` 前置快速定位 + `-frames:v 1` 取一帧，scale 到 EXTRACT_WIDTH 宽、
+ * h=-2 偶数高，输出 rawvideo（rgb24）。rawvideo 无头，高度由字节数反推：
+ * height = len / (width*3)，整除校验保证未缺字节。
+ */
+#[allow(dead_code)]
+pub fn decode_frame_at(file_path: &str, time_ms: i64, width: u32) -> Option<String> {
+    let tools = resolve_tools()?;
+    let secs = (time_ms as f64 / 1000.0).max(0.0);
+    let args = [
+        "-hide_banner",
+        "-v",
+        "error",
+        "-nostdin",
+        "-ss",
+        &format!("{:.3}", secs),
+        "-i",
+        file_path,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-vf",
+        &format!("scale={}:-2", width),
+        "-pix_fmt",
+        "rgb24",
+        "-f",
+        "rawvideo",
+        "-an",
+        "-sn",
+        "-dn",
+        "pipe:1",
+    ];
+    let out = Command::new(&tools.ffmpeg).args(&args).output().ok()?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return None;
+    }
+    let w = width as usize;
+    if out.stdout.len() % (w * 3) != 0 {
+        return None;
+    }
+    let h = out.stdout.len() / (w * 3);
+    if h == 0 {
+        return None;
+    }
+    let mut buf = Vec::new();
+    let mut enc = JpegEncoder::new_with_quality(&mut buf, 80);
+    enc.encode(&out.stdout, width, h as u32, ExtendedColorType::Rgb8).ok()?;
+    Some(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&buf)
+    ))
 }

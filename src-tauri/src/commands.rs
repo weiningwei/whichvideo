@@ -129,6 +129,26 @@ pub fn videos_open(
     Ok(())
 }
 
+/// 命中时间点预览：现场解码一帧 JPEG dataUrl。失败返回 null（调用方回退缩略图）。
+#[tauri::command]
+pub fn videos_match_frame(
+    state: State<AppState>,
+    video_id: i64,
+    time_ms: i64,
+) -> Result<Option<String>, String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let video = db::get_video(conn, video_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "视频不存在".to_string())?;
+    if time_ms < 0 {
+        return Ok(None);
+    }
+    Ok(media::decode_frame_at(&video.path, time_ms, crate::constants::EXTRACT_WIDTH))
+}
+
 /// 视频分页列表（支持 keyword/folderId/status 过滤、排序、分页）。
 #[tauri::command]
 pub fn videos_list(state: State<AppState>, query: db::VideoQuery) -> Result<db::VideoPage, String> {
