@@ -1,0 +1,22 @@
+[package]
+name = "whichvideo-tauri"
+version = "0.1.0"
+description = "WhichVideo Tauri backend (Rust rewrite skeleton)"
+authors = ["weiningwei"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
