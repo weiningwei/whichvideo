@@ -1,4 +1,5 @@
 use crate::db;
+use crate::media;
 use crate::state::AppState;
 use std::process::Command;
 use tauri::State;
@@ -101,12 +102,12 @@ pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String
     Ok(())
 }
 
-/// 打开视频文件（默认播放器；带时间戳定位由 M5 媒体探测补齐）。
+/// 打开视频文件；带时间戳时优先用支持定位起播的播放器（mpv/PotPlayer/VLC）。
 #[tauri::command]
 pub fn videos_open(
     state: State<AppState>,
     video_id: i64,
-    #[allow(unused_variables)] at_seconds: Option<f64>,
+    at_seconds: Option<f64>,
 ) -> Result<(), String> {
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
@@ -115,6 +116,15 @@ pub fn videos_open(
     let video = db::get_video(conn, video_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "视频不存在".to_string())?;
+    if let Some(t) = at_seconds {
+        if t > 0.0 {
+            if let Some(player) = media::find_seekable_player(&video.path) {
+                let args = (player.args)(&video.path, t);
+                let _ = Command::new(&player.exe).args(&args).spawn();
+                return Ok(());
+            }
+        }
+    }
     let _ = Command::new("explorer.exe").arg(&video.path).spawn();
     Ok(())
 }
@@ -197,10 +207,10 @@ pub fn library_open_database_folder() -> Result<String, String> {
     Ok(dir_str)
 }
 
-/// 运行时数据目录信息（toolsReady 在 M5 媒体探测后补全）。
+/// 运行时数据目录信息（toolsReady 由媒体探测结果决定）。
 #[tauri::command]
 pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
-    Ok(db::data_dir_info(false))
+    Ok(db::data_dir_info(media::tools_ready()))
 }
 
 /// 索引器实时状态（M7 接入真实索引器前返回闲置态）。
