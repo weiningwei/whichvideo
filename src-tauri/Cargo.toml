@@ -1,9 +1,10 @@
 [package]
 name = "whichvideo-tauri"
 version = "0.1.0"
-description = "WhichVideo Tauri backend (Rust rewrite skeleton)"
+description = "WhichVideo desktop backend"
 authors = ["weiningwei"]
 edition = "2021"
+license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
