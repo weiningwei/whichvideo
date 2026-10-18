@@ -1,0 +1,21 @@
+scripts/test-cursor.mjs
+  s_e78e0118ab4232::t_51b208adc79dbb 11-13,199-201,203
+src/renderer/src/hooks/useVideoCursor.ts
+  s_e78e0118ab4232::t_51b208adc79dbb 138,141-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75abc17171451f4d00dc67077ab87e23e70191e6",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
