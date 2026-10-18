@@ -57,7 +57,8 @@ export function shortDir(path: string, roots: string[]): string {
   const lower = path.toLowerCase()
   for (const root of roots) {
     const r = root.toLowerCase()
-    if (lower.startsWith(r)) {
+    // 目录名只是前缀不代表归属：Movies2 不能被 Movies 当作子目录。
+    if (lower.startsWith(r) && (/[\\/]$/.test(root) || /[\\/]/.test(path.charAt(root.length)))) {
       const cut = path.slice(root.length).replace(/^[\\/]+/, '')
       // 注意 lastIndexOf 找不到时返回 -1，slice(0, -1) 会砍掉最后一个字符。
       // 文件直接位于根目录时（cut 里没有分隔符）必须走这个分支。

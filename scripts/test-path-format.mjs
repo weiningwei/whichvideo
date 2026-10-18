@@ -123,6 +123,7 @@ async function main() {
   check('单个文件名（无目录）不抛错', typeof shortDir('a.mkv', roots) === 'string', JSON.stringify(shortDir('a.mkv', roots)))
   check('正斜杠路径也支持', shortDir('/media/movies/x.mkv', ['/media/movies']) === '', JSON.stringify(shortDir('/media/movies/x.mkv', ['/media/movies'])))
   check('大小写不敏感匹配', shortDir('e:\\MEDIA\\MOVIES\\x.mkv', roots) === '', JSON.stringify(shortDir('e:\\MEDIA\\MOVIES\\x.mkv', roots)))
+  check('相似前缀的兄弟目录不被误认为监听根目录', shortDir('E:\\Media\\Movies2\\x.mkv', roots) === '…\\Media\\Movies2\\')
 
   console.log(`\n=== 路径格式化：${passed}/${passed + failed} 通过 ===`)
   if (failed) process.exit(1)
