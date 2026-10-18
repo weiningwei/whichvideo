@@ -10,6 +10,7 @@ mod hash;
 mod indexer;
 mod logger;
 mod media;
+mod process_ext;
 mod sampling;
 mod search;
 mod state;

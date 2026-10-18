@@ -1,5 +1,6 @@
 //! 启动后轻量检查 GitHub Releases；失败静默，不参与自动下载或安装。
 
+use crate::process_ext::CommandNoWindow;
 use crate::{db, logger, state::AppState};
 use base64::Engine;
 use serde::Deserialize;
@@ -49,6 +50,7 @@ fn fetch_latest() -> Option<UpdateInfo> {
         UPDATE_URL
     );
     let output = Command::new("powershell")
+        .no_window()
         .args(["-NoProfile", "-Command", &script])
         .output()
         .ok()?;
@@ -77,6 +79,7 @@ fn notify(info: &UpdateInfo, current: &str) {
         encoded
     );
     let _ = Command::new("powershell")
+        .no_window()
         .args(["-NoProfile", "-STA", "-Command", &script])
         .status();
 }

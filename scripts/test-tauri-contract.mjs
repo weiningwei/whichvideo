@@ -6,6 +6,10 @@ const shared = readFileSync(join(root, 'src', 'shared', 'types.ts'), 'utf8')
 const bridge = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'tauri-api.ts'), 'utf8')
 const rendererMain = readFileSync(join(root, 'src', 'renderer', 'src', 'main.tsx'), 'utf8')
 const rustMain = readFileSync(join(root, 'src-tauri', 'src', 'main.rs'), 'utf8')
+const processExt = readFileSync(join(root, 'src-tauri', 'src', 'process_ext.rs'), 'utf8')
+const processSources = ['commands.rs', 'media.rs', 'updater.rs']
+  .map((name) => readFileSync(join(root, 'src-tauri', 'src', name), 'utf8'))
+  .join('\n')
 const config = JSON.parse(readFileSync(join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'))
 
 let failed = 0
@@ -35,6 +39,13 @@ check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.i
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
+const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
+const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
+check(
+  'Windows 子进程全部隐藏控制台窗口',
+  commandStarts > 0 && commandStarts === hiddenStarts && processExt.includes('CREATE_NO_WINDOW'),
+  `${hiddenStarts}/${commandStarts}`
+)
 
 console.log('\n=== Tauri bundle 资源 ===')
 const resources = config.bundle?.resources ?? {}

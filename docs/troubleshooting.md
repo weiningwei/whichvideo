@@ -40,6 +40,9 @@ $LASTEXITCODE
 媒体工具缺失不会阻止界面启动，但新增目录后的探测、索引和图片检索会失败。先运行
 `pnpm test:rust` 区分后端逻辑问题与本机媒体工具问题。
 
+若启动或索引时出现一闪而过的终端窗口，说明新增的控制台子进程没有调用
+`CommandNoWindow::no_window()`；`pnpm test:contract` 会检查所有已登记的启动入口。
+
 ## `pnpm build` / Cargo 编译失败
 
 Windows 构建需要 Rust stable、MSVC C++ Build Tools 和 Windows SDK。先确认：

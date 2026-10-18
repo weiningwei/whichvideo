@@ -57,6 +57,8 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 - 核心功能默认离线。只有用户主动粘贴网页地址或启用版本检查时才允许联网。
 - 启动时先确定数据目录并初始化日志，再打开数据库、恢复目录监听和未完成任务。
   panic 信息也要写入同一日志。
+- Windows GUI 进程启动 PowerShell、ffmpeg、ffprobe、reg、资源管理器或播放器时，必须通过
+  `CommandNoWindow::no_window()` 创建，防止 release 应用闪出控制台窗口。
 
 ## 打包约束
 

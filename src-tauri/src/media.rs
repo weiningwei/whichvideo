@@ -3,6 +3,7 @@
 //! 仅含「探测」能力：工具路径解析、toolsReady、findSeekablePlayer。
 //! 实际的抽帧/解码/探测命令由后续模块（M6 的 decodeFrameAt、M7 的 indexer）复用这里的 helpers。
 
+use crate::process_ext::CommandNoWindow;
 use crate::sampling::should_use_full_scan;
 
 use base64::Engine;
@@ -35,6 +36,7 @@ fn reg_query_string(key: &str, value_name: Option<&str>) -> Option<String> {
         None => args.push("/ve".to_string()),
     }
     let out = std::process::Command::new("reg")
+        .no_window()
         .args(&args)
         .output()
         .ok()?;
@@ -264,6 +266,7 @@ fn find_potplayer_from_registry() -> Option<String> {
     for key in keys {
         for value in ["DisplayIcon", "InstallLocation"] {
             let out = std::process::Command::new("reg")
+                .no_window()
                 .args(["query", key, "/v", value])
                 .output()
                 .ok()?;
@@ -388,7 +391,7 @@ pub fn decode_frame_at(file_path: &str, time_ms: i64, width: u32) -> Option<Stri
         "-dn",
         "pipe:1",
     ];
-    let out = Command::new(&tools.ffmpeg).args(&args).output().ok()?;
+    let out = Command::new(&tools.ffmpeg).no_window().args(&args).output().ok()?;
     if !out.status.success() || out.stdout.is_empty() {
         return None;
     }
@@ -424,6 +427,7 @@ pub struct FfmpegOutput {
 pub fn run_ffmpeg(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
     let out = Command::new(&tools.ffmpeg)
+        .no_window()
         .args(args)
         .output()
         .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
@@ -438,6 +442,7 @@ pub fn run_ffmpeg(args: &[String]) -> Result<FfmpegOutput, String> {
 pub fn run_ffprobe(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffprobe".to_string())?;
     let out = Command::new(&tools.ffprobe)
+        .no_window()
         .args(args)
         .output()
         .map_err(|e| format!("启动 ffprobe 失败：{e}"))?;

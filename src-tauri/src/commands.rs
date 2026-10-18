@@ -5,6 +5,7 @@ use crate::frames_store;
 use crate::hash;
 use crate::indexer;
 use crate::media;
+use crate::process_ext::CommandNoWindow;
 use crate::search;
 use crate::state::AppState;
 use crate::watcher;
@@ -196,6 +197,7 @@ pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "视频不存在".to_string())?;
     let _ = Command::new("explorer.exe")
+        .no_window()
         .arg(format!("/select,\"{}\"", video.path))
         .spawn();
     Ok(())
@@ -219,12 +221,12 @@ pub fn videos_open(
         if t > 0.0 {
             if let Some(player) = media::find_seekable_player(&video.path) {
                 let args = (player.args)(&video.path, t);
-                let _ = Command::new(&player.exe).args(&args).spawn();
+                let _ = Command::new(&player.exe).no_window().args(&args).spawn();
                 return Ok(());
             }
         }
     }
-    let _ = Command::new("explorer.exe").arg(&video.path).spawn();
+    let _ = Command::new("explorer.exe").no_window().arg(&video.path).spawn();
     Ok(())
 }
 
@@ -609,7 +611,7 @@ pub fn library_reset(state: State<AppState>) -> Result<(), String> {
 pub fn library_open_database_folder() -> Result<String, String> {
     let dir = db::data_dir();
     let dir_str = dir.to_string_lossy().to_string();
-    let _ = Command::new("explorer.exe").arg(&dir_str).spawn();
+    let _ = Command::new("explorer.exe").no_window().arg(&dir_str).spawn();
     Ok(dir_str)
 }
 
@@ -1088,6 +1090,7 @@ pub fn search_url(state: State<AppState>, url: String) -> Result<SearchResponse,
 #[cfg(windows)]
 fn run_powershell(script: &str) -> Option<String> {
     let out = Command::new("powershell")
+        .no_window()
         .args(["-NoProfile", "-STA", "-Command", script])
         .output()
         .ok()?;
