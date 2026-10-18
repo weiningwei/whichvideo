@@ -158,6 +158,7 @@ pub fn folders_rescan(
         total.added += result.added;
         total.duplicates += result.duplicates;
         total.skipped += result.skipped;
+        total.failed += result.failed;
         total.scanned += result.scanned;
         total.folders += result.folders;
     }

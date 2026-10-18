@@ -243,6 +243,7 @@ export interface ImportResult {
   added: number
   duplicates: number
   skipped: number
+  failed: number
   scanned: number
   folders: number
 }

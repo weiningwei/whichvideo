@@ -24,6 +24,7 @@ pub struct ImportResult {
     pub added: i64,
     pub duplicates: i64,
     pub skipped: i64,
+    pub failed: i64,
     pub scanned: i64,
     pub folders: i64,
 }

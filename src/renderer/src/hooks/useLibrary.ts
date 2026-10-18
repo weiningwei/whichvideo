@@ -108,7 +108,10 @@ export function useLibrary() {
       async importFiles(): Promise<ImportResult | null> {
         return withBusy('正在导入视频文件…', async () => {
           const result = await window.whichvideo.videos.importFiles()
-          notices.pushNotice('info', `导入完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}`)
+          notices.pushNotice(
+            result.failed ? 'error' : 'info',
+            `导入完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}，失败 ${result.failed}`
+          )
           await refreshAll()
           return result
         })
@@ -117,8 +120,8 @@ export function useLibrary() {
         return withBusy('正在一次性导入文件夹…', async () => {
           const result = await window.whichvideo.videos.importFolderOnce()
           notices.pushNotice(
-            'info',
-            `导入完成（未监视）：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}`
+            result.failed ? 'error' : 'info',
+            `导入完成（未监视）：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}，失败 ${result.failed}`
           )
           await refreshAll()
           return result
@@ -150,7 +153,10 @@ export function useLibrary() {
       async rescan(folderId?: number): Promise<void> {
         await withBusy('正在重新扫描…', async () => {
           const result = await window.whichvideo.folders.rescan(folderId)
-          notices.pushNotice('info', `重新扫描完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}`)
+          notices.pushNotice(
+            result.failed ? 'error' : 'info',
+            `重新扫描完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}，失败 ${result.failed}`
+          )
           await refreshAll()
         })
       },
