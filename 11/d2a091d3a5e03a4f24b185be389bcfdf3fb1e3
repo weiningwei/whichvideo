@@ -1,0 +1,23 @@
+package.json
+  s_e78e0118ab4232::t_23308925d8353d 32
+.github/workflows/ci.yml
+  s_e78e0118ab4232::t_23308925d8353d 7
+docs/releasing.md
+  s_e78e0118ab4232::t_23308925d8353d 9,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11d2a091d3a5e03a4f24b185be389bcfdf3fb1e3",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
