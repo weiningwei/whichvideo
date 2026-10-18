@@ -134,6 +134,10 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     const source = readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
     return source.includes("event.key !== 'Escape'") || source.includes("e.key === 'Escape'")
   }) && ['DuplicatesModal.tsx', 'SidePanel.tsx'].every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('aria-modal="true"')))
+  check('所有覆盖层统一使用焦点捕获并在关闭时恢复触发元素', overlayFiles.every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('useModalFocus')) && (() => {
+    const focusHook = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useModalFocus.ts'), 'utf8')
+    return focusHook.includes('const trapTab') && focusHook.includes('previous?.isConnected') && focusHook.includes('requestAnimationFrame(focusFirst)')
+  })())
 
   console.log('\n=== 搜图页 ===')
   const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }

@@ -5,6 +5,7 @@
  */
 import { useEffect } from 'react'
 import { groupShortcuts, renderKeys } from '../lib/shortcuts'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 interface Props {
   open: boolean
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
+  const dialogRef = useModalFocus<HTMLDivElement>(open)
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -21,10 +23,6 @@ export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
         e.stopPropagation()
         onClose()
         return
-      }
-      if (e.key === 'Tab') {
-        // 面板内的按钮不多，Tab 直接锁住不让焦点跑到底下的表格去
-        e.preventDefault()
       }
     }
     window.addEventListener('keydown', handler, true)
@@ -44,6 +42,8 @@ export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
       aria-label="键盘快捷键"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="card max-h-[80vh] w-full max-w-2xl overflow-y-auto p-5"
         onClick={(e) => e.stopPropagation()}
       >

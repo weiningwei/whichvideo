@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { FrameManifestEntry, VideoRecord } from '@shared/types'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 interface Props {
   video: VideoRecord | null
@@ -121,6 +122,7 @@ function FrameCard({
 }
 
 export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
+  const dialogRef = useModalFocus<HTMLDivElement>(video !== null)
   const [manifest, setManifest] = useState<FrameManifestEntry[] | null>(null)
   const [manifestError, setManifestError] = useState(false)
 
@@ -147,9 +149,6 @@ export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
         onClose()
         return
       }
-      if (e.key === 'Tab') {
-        e.preventDefault()
-      }
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
@@ -169,6 +168,8 @@ export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
       aria-label="查看索引帧"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="card flex max-h-[84vh] w-full max-w-4xl flex-col overflow-hidden p-5"
         onClick={(e) => e.stopPropagation()}
       >

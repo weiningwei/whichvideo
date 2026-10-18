@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MediaToolsStatus } from '@shared/types'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 interface Props {
   status: MediaToolsStatus | null
@@ -8,6 +9,8 @@ interface Props {
 
 export function MediaToolsSetup({ status, onSelect }: Props) {
   const [dismissed, setDismissed] = useState(false)
+  const open = Boolean(status && !status.ready && !dismissed)
+  const dialogRef = useModalFocus<HTMLDivElement>(open)
 
   useEffect(() => {
     if (status?.ready) setDismissed(false)
@@ -24,11 +27,11 @@ export function MediaToolsSetup({ status, onSelect }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [status, dismissed])
 
-  if (!status || status.ready || dismissed) return null
+  if (!open || !status) return null
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-0/80 px-5 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="ffmpeg-title" className="w-full max-w-[460px] rounded-2xl border border-line bg-surface-1 p-5 shadow-2xl">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ffmpeg-title" className="w-full max-w-[460px] rounded-2xl border border-line bg-surface-1 p-5 shadow-2xl">
         <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-warn">需要外部工具</div>
         <h2 id="ffmpeg-title" className="text-[18px] font-semibold text-primary">设置 FFmpeg</h2>
         <p className="mt-2 text-[12px] leading-6 text-secondary">

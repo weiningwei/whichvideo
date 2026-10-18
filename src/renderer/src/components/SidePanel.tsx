@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 interface Props {
   mode: 'folders' | 'settings' | null
@@ -14,6 +15,7 @@ interface Props {
 export function SidePanel({
   mode, onClose, onAddFolder, folders, folderDrop, settings, folderCount
 }: Props) {
+  const dialogRef = useModalFocus<HTMLElement>(mode !== null)
   useEffect(() => {
     if (!mode) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -28,8 +30,13 @@ export function SidePanel({
   if (!mode) return null
   const foldersMode = mode === 'folders'
   return (
-    <div className="absolute inset-0 z-30 bg-surface-0/45" onMouseDown={onClose} role="dialog" aria-modal="true" aria-label={foldersMode ? '管理文件夹' : '索引设置'}>
+    <div className="absolute inset-0 z-30 bg-surface-0/45" onMouseDown={onClose}>
       <aside
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={foldersMode ? '管理文件夹' : '索引设置'}
         className="absolute inset-y-0 right-0 flex w-[360px] max-w-[85vw] flex-col border-l border-line bg-surface-2 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
