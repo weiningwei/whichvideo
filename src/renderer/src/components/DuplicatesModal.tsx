@@ -78,7 +78,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                           isKeep ? 'border-ok/40 bg-ok/10' : 'border-line bg-ink-900/40'
                         }`}
                       >
-                        <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
                           <span
                             className={`shrink-0 rounded px-1 py-0.5 text-[10px] ${
                               isKeep ? 'bg-ok/20 text-ok' : 'bg-bad/10 text-bad'
@@ -86,9 +86,10 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                           >
                             {isKeep ? '保留' : '将移除'}
                           </span>
-                          <span className="truncate text-[12px] text-primary" title={m.path}>
-                            {m.name}
-                          </span>
+                          <div className="flex min-w-0 flex-col">
+                            <span className="truncate text-[12px] text-primary" title={m.name}>{m.name}</span>
+                            <span className="truncate text-[10.5px] text-muted" title={m.dir}>{m.dir}</span>
+                          </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2 text-[10.5px] text-muted">
                           <span>{formatBytes(m.size)}</span>
@@ -115,7 +116,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                         const ids = toRemove.map((m) => m.id)
                         if (
                           !window.confirm(
-                            `从索引库移除这 ${ids.length} 个视频？（保留 ${keep.name}；不会删除磁盘文件）`
+                            `从索引库移除这 ${ids.length} 个视频？\n保留：${keep.path}\n不会删除磁盘文件。`
                           )
                         ) {
                           return

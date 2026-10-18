@@ -82,6 +82,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const { LibraryView } = await load('LibraryView')
   const { SettingsPanel } = await load('SettingsPanel')
   const { MediaToolsSetup } = await load('MediaToolsSetup')
+  const { DuplicatesModal } = await load('DuplicatesModal')
   const format = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'format.js')).href)
   const explorer = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'libraryExplorer.js')).href)
   const render = (element) => renderToStaticMarkup(element)
@@ -102,6 +103,12 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const status = { running: false, active: 0, queued: 0, total: 0, done: 0, failed: 0, currentPath: null, startedAt: null, finishedAt: Date.now(), lastError: null }
   const match = { video, score: 0.964, hashScore: 1, colorScore: 0.948, timeSeconds: 120, frameIndex: 2, hashDistance: 0 }
   const hit = { query: { width: 320, height: 180, colorScoreHint: 0.948 }, matchCount: 1, comparedFrames: 160000, elapsedMs: 18, found: true, matches: [match] }
+  const sameNameVideo = { ...video, id: 8, path: 'F:\\Archive\\Blue.Intro.1080p.mp4', dir: 'F:\\Archive', pathKey: 'f:\\archive\\blue.intro.1080p.mp4' }
+  const duplicateHtml = render(jsx(DuplicatesModal, {
+    duplicates: [{ videoA: video, videoB: sameNameVideo, score: 0.98, identicalFile: false }],
+    onClose: noop, onRemoveVideos: noop, onPrune: noop
+  }))
+  check('查重结果中同名文件显示各自目录', duplicateHtml.includes(video.dir) && duplicateHtml.includes(sameNameVideo.dir))
 
   console.log('\n=== 全局框架 ===')
   const header = render(jsx(Header, { stats, status, tab: 'search', onTab: noop, busy: null, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop, onShowShortcuts: noop }))
