@@ -297,6 +297,7 @@ function ResultCard({
       .then((data) => {
         if (alive) setThumb(data)
       })
+      .catch(() => { if (alive) setThumb(null) })
     return () => {
       alive = false
     }

@@ -122,20 +122,22 @@ function FrameCard({
 
 export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
   const [manifest, setManifest] = useState<FrameManifestEntry[] | null>(null)
+  const [manifestError, setManifestError] = useState(false)
 
   useEffect(() => {
+    setManifest(null)
+    setManifestError(false)
     if (!video) {
-      setManifest(null)
       return
     }
     let alive = true
-    void window.whichvideo.videos.frameManifest(video.id).then((list) => {
-      if (alive) setManifest(list)
-    })
+    void window.whichvideo.videos.frameManifest(video.id)
+      .then((list) => { if (alive) setManifest(list) })
+      .catch(() => { if (alive) setManifestError(true) })
     return () => {
       alive = false
     }
-  }, [video])
+  }, [video?.id])
 
   useEffect(() => {
     if (!video) return
@@ -176,8 +178,10 @@ export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
               索引帧 · {video.name}
             </h2>
             <p className="mt-0.5 text-[11.5px] text-muted">
-              {manifest === null
-                ? '读取帧清单…'
+              {manifestError
+                ? '读取帧清单失败，请关闭后重试'
+                : manifest === null
+                  ? '读取帧清单…'
                 : `共 ${total} 帧 · 点击单帧从视频动态解析，▶ 从该时间播放`}
             </p>
           </div>

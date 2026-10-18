@@ -36,7 +36,9 @@ export function VideoRow({
 
   useEffect(() => {
     let alive = true
-    void window.whichvideo.videos.thumbnail(video.id).then((data) => { if (alive) setThumb(data) })
+    void window.whichvideo.videos.thumbnail(video.id)
+      .then((data) => { if (alive) setThumb(data) })
+      .catch(() => { if (alive) setThumb(null) })
     return () => { alive = false }
   }, [video.id, video.indexedAt])
 
