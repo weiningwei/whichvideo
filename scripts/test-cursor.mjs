@@ -198,6 +198,7 @@ console.log('=== 点击后再连按方向键：从点击处连续走 ===')
 
 const cursorSource = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8')
 check('空格把选中当作切换而非普通单选', cursorSource.includes('toggleVideoSelection(item.video.id, shiftKey, true)'))
+check('Shift+Home/End/翻页会扩展选区', cursorSource.includes('toggleVideoSelection(nextItem.video.id, shiftKey, false)') && !cursorSource.includes('if (shiftKey) return'))
 
 console.log(`\n=== 光标行为：${pass}/${pass + fail} 通过 ===`)
 if (fail) process.exit(1)

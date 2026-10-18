@@ -73,9 +73,8 @@ export function useVideoCursor({ videos, toggleVideoSelection }: UseVideoCursorA
     const nextItem = navigableItems[nextPos]
     if (!nextItem) return
     setFocusedIndex(nextPos)
-    if (shiftKey) return
     if (nextItem.type === 'video' && nextItem.video) {
-      toggleVideoSelection(nextItem.video.id, false, false)
+      toggleVideoSelection(nextItem.video.id, shiftKey, false)
     }
   }
 
