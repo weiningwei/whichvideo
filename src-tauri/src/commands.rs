@@ -853,9 +853,10 @@ fn rerank_matches(
     videos: &HashMap<i64, db::VideoRecord>,
     qild: &hash::ImageDataLike,
     hits: &mut [search::IndexedHit],
-) {
+) -> HashMap<i64, media::RawFrame> {
+    let mut decoded = HashMap::new();
     if hits.len() <= 1 {
-        return;
+        return decoded;
     }
     let head_len = hits.len().min(RERANK_TOP_K);
     for i in 0..head_len {
@@ -875,7 +876,7 @@ fn rerank_matches(
             Ok(f) => f,
             Err(_) => continue,
         };
-        let frame = match frames.first() {
+        let frame = match frames.into_iter().next() {
             Some(f) => f,
             None => continue,
         };
@@ -889,25 +890,48 @@ fn rerank_matches(
         let ssim = hash::ssim_similarity(qild, &fild, 48, 48);
         let new_score = old_score * (1.0 - RERANK_WEIGHT) + ssim * RERANK_WEIGHT;
         hits[i].score = new_score;
+        decoded.insert(vid, frame);
     }
     hits.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    decoded
+}
+
+fn refinement_decode_times(candidates: &[f64], cached_center: bool) -> &[f64] {
+    if cached_center { &candidates[1..] } else { candidates }
+}
+
+fn score_refinement_frame(qv: &search::QueryVector, frame: &media::RawFrame) -> f64 {
+    let ild = hash::ImageDataLike {
+        width: frame.width,
+        height: frame.height,
+        channels: 3,
+        order: hash::ChannelOrder::Rgb,
+        data: &frame.rgb,
+    };
+    search::score_raw_frame(qv, &ild)
 }
 
 /// 命中时间精修：粗召回命中的是采样帧，显示时间 = 该采样帧的时间，与截图帧天然差半个
 /// 采样间隔以内。围绕命中时间按局部采样密度并行补采候选帧（逐点 seek），用与粗召回
 /// 相同的打分公式选最优；优于命中点自身才改写 timeSeconds。
-fn refine_hit_time(qv: &search::QueryVector, video: &db::VideoRecord, hit: &mut search::IndexedHit) {
+fn refine_hit_time(
+    qv: &search::QueryVector,
+    video: &db::VideoRecord,
+    hit: &mut search::IndexedHit,
+    cached_center: Option<&media::RawFrame>,
+) {
     let candidates = search::refine_candidate_times(video.duration, video.frame_count as usize, hit.time_seconds);
     if candidates.len() <= 1 {
         return;
     }
+    let decode_times = refinement_decode_times(&candidates, cached_center.is_some());
     let frames = match media::extract_and_hash_frames(
         &video.path,
-        &candidates,
+        decode_times,
         video.duration,
         video.width,
         video.height,
@@ -916,21 +940,10 @@ fn refine_hit_time(qv: &search::QueryVector, video: &db::VideoRecord, hit: &mut 
         Ok(f) => f,
         Err(_) => return,
     };
-    let mut best_score = -1.0f64;
-    let mut best_time: Option<f64> = None;
-    for (i, t) in candidates.iter().enumerate() {
-        let fr = match frames.get(i) {
-            Some(f) => f,
-            None => continue,
-        };
-        let ild = hash::ImageDataLike {
-            width: fr.width,
-            height: fr.height,
-            channels: 3,
-            order: hash::ChannelOrder::Rgb,
-            data: &fr.rgb,
-        };
-        let score = search::score_raw_frame(qv, &ild);
+    let mut best_score = cached_center.map(|frame| score_refinement_frame(qv, frame)).unwrap_or(-1.0);
+    let mut best_time = cached_center.map(|_| candidates[0]);
+    for (fr, t) in frames.iter().zip(decode_times.iter()) {
+        let score = score_refinement_frame(qv, fr);
         if score > best_score {
             best_score = score;
             best_time = Some(*t);
@@ -990,13 +1003,13 @@ fn perform_search(
             .collect()
     };
 
-    rerank_matches(&videos, qild, &mut results);
+    let decoded = rerank_matches(&videos, qild, &mut results);
 
     // 命中时间精修：只对最佳命中做（补采 2×4+1 帧逐点 seek），把显示时间从
     // 「最近采样帧」对准到「真实截图帧」。
     if let Some(top) = results.first_mut() {
         if let Some(video) = videos.get(&top.video_id) {
-            refine_hit_time(qv, &video, top);
+            refine_hit_time(qv, &video, top, decoded.get(&top.video_id));
         }
     }
 
@@ -1300,6 +1313,13 @@ mod tests {
         let (pixels, width, height) = prepare_query_image(image).unwrap();
         assert_eq!((width, height), (crate::constants::EXTRACT_WIDTH, 106));
         assert_eq!(pixels.len(), width as usize * height as usize * 3);
+    }
+
+    #[test]
+    fn refinement_reuses_a_reranked_center_frame() {
+        let candidates = [10.0, 9.5, 10.5];
+        assert_eq!(refinement_decode_times(&candidates, true), &[9.5, 10.5]);
+        assert_eq!(refinement_decode_times(&candidates, false), &candidates);
     }
 
     #[test]
