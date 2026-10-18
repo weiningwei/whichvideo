@@ -23,6 +23,7 @@ pub struct IndexerState {
     pub queue: Vec<i64>,
     pub queued: HashSet<i64>,
     pub active_ids: HashSet<i64>,
+    pub cancelled: HashSet<i64>,
     /// 需要在真正开始处理时清空旧索引的视频。这样正在处理的视频可以安全地
     /// 排队重建，而不会提前删掉当前工作线程仍在使用的数据。
     pub reset_before_run: HashSet<i64>,
@@ -43,6 +44,7 @@ impl Default for IndexerState {
             queue: Vec::new(),
             queued: HashSet::new(),
             active_ids: HashSet::new(),
+            cancelled: HashSet::new(),
             reset_before_run: HashSet::new(),
             active: 0,
             done: 0,
@@ -83,6 +85,24 @@ impl IndexerState {
         self.active_ids.insert(id);
         self.active += 1;
         Some((id, self.reset_before_run.remove(&id)))
+    }
+
+    fn cancel_one(&mut self, video_id: i64) {
+        self.queue.retain(|id| *id != video_id);
+        self.queued.remove(&video_id);
+        self.reset_before_run.remove(&video_id);
+        self.frame_progress.remove(&video_id);
+        if self.active_ids.contains(&video_id) {
+            self.cancelled.insert(video_id);
+        }
+    }
+
+    fn cancel_all_jobs(&mut self) {
+        self.queue.clear();
+        self.queued.clear();
+        self.reset_before_run.clear();
+        self.frame_progress.clear();
+        self.cancelled.extend(self.active_ids.iter().copied());
     }
 
     /// 当前索引器状态（供 library_status 命令）。
@@ -215,6 +235,26 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
     pump(app);
 }
 
+/// 取消一个视频的待处理任务，并通知已经运行的工作线程尽快退出。
+pub fn cancel(app: &AppHandle, video_id: i64) {
+    let state = app.state::<AppState>();
+    state.indexer.lock().unwrap().cancel_one(video_id);
+    broadcast_status(app);
+}
+
+/// 清空全部待处理任务；活动任务会在当前外部进程返回后的检查点退出。
+pub fn cancel_all(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.indexer.lock().unwrap().cancel_all_jobs();
+    broadcast_status(app);
+}
+
+fn is_cancelled(app: &AppHandle, video_id: i64) -> bool {
+    let state = app.state::<AppState>();
+    let cancelled = state.indexer.lock().unwrap().cancelled.contains(&video_id);
+    cancelled
+}
+
 /// 从队列取任务并发处理，直到达到并发上限。
 pub fn pump(app: AppHandle) {
     let concurrency = {
@@ -245,16 +285,17 @@ pub fn pump(app: AppHandle) {
 }
 
 /// 任务结束的收尾：更新计数、播报、继续泵队列。
-fn finish(app: AppHandle, video_id: i64, ok: bool) {
+fn finish(app: AppHandle, video_id: i64, outcome: Option<bool>) {
     {
         let state = app.state::<AppState>();
         let mut idx = state.indexer.lock().unwrap();
         idx.active_ids.remove(&video_id);
+        idx.cancelled.remove(&video_id);
         idx.active = idx.active.saturating_sub(1);
-        if ok {
-            idx.done += 1;
-        } else {
-            idx.failed += 1;
+        match outcome {
+            Some(true) => idx.done += 1,
+            Some(false) => idx.failed += 1,
+            None => {}
         }
         if idx.active == 0 && idx.queue.is_empty() {
             if idx.finished_at.is_none() {
@@ -266,6 +307,11 @@ fn finish(app: AppHandle, video_id: i64, ok: bool) {
     broadcast_status(&app);
     broadcast_stats(&app);
     pump(app);
+}
+
+fn finish_cancelled(app: AppHandle, video_id: i64) {
+    clear_frame_progress(&app, video_id);
+    finish(app, video_id, None);
 }
 
 fn fail(app: AppHandle, video_id: i64, error: &str) {
@@ -285,7 +331,7 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
             message: format!("索引失败：{error}"),
         },
     );
-    finish(app, video_id, false);
+    finish(app, video_id, Some(false));
 }
 
 fn rebuild_search_index(app: &AppHandle) {
@@ -304,7 +350,7 @@ fn rebuild_search_index(app: &AppHandle) {
 fn finish_ready(app: AppHandle, video_id: i64) {
     rebuild_search_index(&app);
     emit_video_updated(&app, video_id);
-    finish(app, video_id, true);
+    finish(app, video_id, Some(true));
 }
 
 /* ------------------------------------------------------------------ */
@@ -312,6 +358,10 @@ fn finish_ready(app: AppHandle, video_id: i64) {
 /* ------------------------------------------------------------------ */
 
 fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
+    if is_cancelled(&app, video_id) {
+        finish_cancelled(app, video_id);
+        return;
+    }
     let settings = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
@@ -343,7 +393,11 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     let video = match video {
         Some(v) => v,
         None => {
-            finish(app, video_id, false);
+            if is_cancelled(&app, video_id) {
+                finish_cancelled(app, video_id);
+            } else {
+                finish(app, video_id, Some(false));
+            }
             return;
         }
     };
@@ -388,6 +442,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 (p.duration, p.width, p.height, p.video_codec)
             }
             Err(e) => {
+                if is_cancelled(&app, video_id) {
+                    finish_cancelled(app, video_id);
+                    return;
+                }
                 fail(app, video_id, &format!("探测失败：{e}"));
                 return;
             }
@@ -409,6 +467,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         match media::detect_scenes(&video.path, 0.3) {
             Ok(scenes) => sampling::plan_scene_timestamps(&scenes, duration, settings.frames_per_video as usize),
             Err(e) => {
+                if is_cancelled(&app, video_id) {
+                    finish_cancelled(app, video_id);
+                    return;
+                }
                 log(&format!("场景检测失败，退回均匀采样：{e}"));
                 set_sampling_override(&app, &[video_id], "uniform");
                 sampling::plan_timestamps(duration, settings.frames_per_video as usize)
@@ -417,6 +479,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     } else {
         sampling::plan_timestamps(duration, settings.frames_per_video as usize)
     };
+    if is_cancelled(&app, video_id) {
+        finish_cancelled(app, video_id);
+        return;
+    }
 
     let processed: Vec<i64> = video.processed_timestamps.clone();
     let start_index = processed.len().min(timestamps.len());
@@ -466,11 +532,22 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         ) {
             Ok(f) => f,
             Err(e) => {
+                if is_cancelled(&app, video_id) {
+                    frames_store::remove_video(video_id);
+                    finish_cancelled(app, video_id);
+                    return;
+                }
                 fail(app, video_id, &format!("抽帧失败：{e}"));
                 return;
             }
         };
         let elapsed = started.elapsed().as_millis() as i64;
+
+        if is_cancelled(&app, video_id) {
+            frames_store::remove_video(video_id);
+            finish_cancelled(app, video_id);
+            return;
+        }
 
         if !frames.is_empty() {
             let mut new_frames = Vec::with_capacity(frames.len());
@@ -516,6 +593,11 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                     let _ = db::set_video_status(c, video_id, "indexing", None);
                 }
             }
+            if is_cancelled(&app, video_id) {
+                frames_store::remove_video(video_id);
+                finish_cancelled(app, video_id);
+                return;
+            }
             set_frame_progress(
                 &app,
                 video_id,
@@ -529,10 +611,20 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     }
 
     // 缩略图（兜底：失败也标记完成）
+    if is_cancelled(&app, video_id) {
+        frames_store::remove_video(video_id);
+        finish_cancelled(app, video_id);
+        return;
+    }
     let thumb_time = duration
         .map(|d| d * 0.12)
         .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
     let thumb = media::make_thumbnail(&video.path, thumb_time, constants::EXTRACT_WIDTH);
+    if is_cancelled(&app, video_id) {
+        frames_store::remove_video(video_id);
+        finish_cancelled(app, video_id);
+        return;
+    }
     {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
@@ -838,5 +930,20 @@ mod tests {
         assert_eq!(state.schedule(3, false), Some(false));
         assert_eq!(state.schedule(3, true), None);
         assert_eq!(state.take_next(1), Some((3, true)));
+    }
+
+    #[test]
+    fn cancellation_removes_queued_jobs_and_marks_active_jobs() {
+        let mut state = IndexerState::default();
+        state.schedule(1, false);
+        state.schedule(2, false);
+        assert_eq!(state.take_next(1), Some((1, false)));
+
+        state.cancel_one(2);
+        assert!(state.queue.is_empty());
+        assert!(!state.cancelled.contains(&2));
+
+        state.cancel_one(1);
+        assert!(state.cancelled.contains(&1));
     }
 }

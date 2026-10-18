@@ -180,15 +180,29 @@ pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::Vi
 
 /// 删除视频记录（帧级联删除）。
 #[tauri::command]
-pub fn videos_remove(state: State<AppState>, video_id: i64) -> Result<(), String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::remove_video(conn, video_id).map_err(|e| e.to_string())?;
+pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
+    indexer::cancel(&app, video_id);
+    let state = app.state::<AppState>();
+    let (removed, rebuilt) = {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let removed = db::remove_video(conn, video_id).map_err(|e| e.to_string())?;
+        let rebuilt = search::FrameSearchIndex::rebuild_from_db(conn);
+        (removed, rebuilt)
+    };
     frames_store::remove_video(video_id);
-    let rebuilt = search::FrameSearchIndex::rebuild_from_db(conn);
     *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
+    if let Some(video) = removed {
+        let _ = app.emit(
+            "library_event",
+            events::LibraryEvent::VideoRemoved {
+                video_id: video.id,
+                path: video.path,
+            },
+        );
+    }
     Ok(())
 }
 
@@ -614,12 +628,19 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
 
 /// 重置索引库（清空视频/帧/文件夹，保留设置）。
 #[tauri::command]
-pub fn library_reset(state: State<AppState>) -> Result<(), String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::clear_all(conn).map_err(|e| e.to_string())?;
+pub fn library_reset(app: AppHandle) -> Result<(), String> {
+    watcher::stop_all(&app)?;
+    indexer::cancel_all(&app);
+    let state = app.state::<AppState>();
+    {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::clear_all(conn).map_err(|e| e.to_string())?;
+    }
+    // watcher 析构前已进入回调的事件可能刚刚入队；清库后再收口一次。
+    indexer::cancel_all(&app);
     frames_store::remove_all();
     *state.search_index.lock().map_err(|e| e.to_string())? = search::FrameSearchIndex::new();
     Ok(())

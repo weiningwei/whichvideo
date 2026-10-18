@@ -66,6 +66,8 @@ const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\
 const foldersAddPathCommand = commandsSource.match(/pub fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''
 const foldersRemoveCommand = commandsSource.match(/pub fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
 const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enabled\([\s\S]*?\n}\n\n\/\/\/ 单个视频记录/)?.[0] ?? ''
+const videosRemoveCommand = commandsSource.match(/pub fn videos_remove\([\s\S]*?\n}\n\n\/\/\/ 在资源管理器/)?.[0] ?? ''
+const libraryResetCommand = commandsSource.match(/pub fn library_reset\([\s\S]*?\n}\n\n\/\/\/ 打开数据目录/)?.[0] ?? ''
 check(
   '导入视频不再隐式登记监听目录',
   importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
@@ -94,6 +96,16 @@ for (const [name, source] of [
       source.indexOf('drop(guard);') < source.lastIndexOf('watcher::')
   )
 }
+check(
+  '删除视频会取消后台索引并广播删除事件',
+  videosRemoveCommand.includes('indexer::cancel(&app, video_id)') &&
+    videosRemoveCommand.includes('LibraryEvent::VideoRemoved')
+)
+check(
+  '清空资料库会停止监听并取消全部索引任务',
+  libraryResetCommand.includes('watcher::stop_all(&app)?') &&
+    libraryResetCommand.includes('indexer::cancel_all(&app)')
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(
