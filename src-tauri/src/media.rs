@@ -983,7 +983,9 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
     let file = File::open(file_path).map_err(|e| format!("打开文件失败：{e}"))?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256::new();
-    let mut buf = [0u8; 4 * 1024 * 1024];
+    // Tauri async command / 索引工作线程的栈通常只有约 2 MiB；4 MiB 固定数组会在
+    // 导入阶段刚开始计算文件哈希时触发 Windows 0xc00000fd（栈溢出），进程直接退出。
+    let mut buf = vec![0u8; 4 * 1024 * 1024];
     loop {
         let n = reader.read(&mut buf).map_err(|e| format!("读取文件失败：{e}"))?;
         if n == 0 {
@@ -993,4 +995,30 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
     }
     let digest = hasher.finalize();
     Ok(format!("{:x}", digest))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sha256_of_file;
+    use std::fs;
+
+    #[test]
+    fn file_hash_buffer_is_safe_on_worker_sized_stacks() {
+        let path = std::env::temp_dir().join(format!(
+            "whichvideo-sha256-{}-{}.bin",
+            std::process::id(),
+            crate::db::now_ms()
+        ));
+        fs::write(&path, b"WhichVideo").unwrap();
+        let handle = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn({
+                let path = path.clone();
+                move || sha256_of_file(&path.to_string_lossy())
+            })
+            .unwrap();
+        let hash = handle.join().unwrap().unwrap();
+        let _ = fs::remove_file(path);
+        assert_eq!(hash, "6ff578d1e1e2346ac4c5da752462d1fa961e099b2e78ab88cb42d497ccc2c7c5");
+    }
 }
