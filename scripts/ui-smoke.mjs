@@ -124,6 +124,9 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('状态栏空闲时只显示简短状态', statusHtml.includes('就绪') && !statusHtml.includes('拖入图片'))
   const videoRowSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'VideoRow.tsx'), 'utf8')
   check('鼠标与键盘选中不混入浏览器默认焦点边线', videoRowSource.includes('border-line/40 outline-none'))
+  const themeSource = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
+  const gallerySource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FrameGallery.tsx'), 'utf8')
+  check('键盘焦点统一使用主题强调色，预览点击不误显焦点环', themeSource.includes("button:focus-visible") && themeSource.includes('outline: 2px solid var(--color-accent)') && gallerySource.includes('focus-visible:ring-2') && !gallerySource.includes(' focus:ring-2'))
 
   console.log('\n=== 搜图页 ===')
   const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }

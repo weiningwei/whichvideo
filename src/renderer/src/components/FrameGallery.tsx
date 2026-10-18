@@ -103,7 +103,7 @@ function FrameCard({
         tabIndex={0}
         onClick={decode}
         onKeyDown={handleKey}
-        className="flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded border border-line bg-surface-inset text-[10.5px] text-muted transition hover:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/60"
+        className="flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded border border-line bg-surface-inset text-[10.5px] text-muted transition hover:border-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         title={`点击从视频解析 ${frameTimeLabel(timeMs)} 处的画面`}
       >
         {loading ? (

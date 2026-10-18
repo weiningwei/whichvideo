@@ -124,6 +124,14 @@
     background: radial-gradient(1200px 600px at 20% -10%, #ffffff 0%, #f1f5f9 55%, #e8eef5 100%);
   }
 
+  /* 键盘焦点统一使用主题强调色，避免 Chromium 默认白色轮廓在不同控件上
+     忽隐忽现。列表行由自身的选中/光标样式表达焦点，不走这条通用规则。 */
+  button:focus-visible,
+  [role='button']:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
