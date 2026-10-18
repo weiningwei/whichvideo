@@ -8,6 +8,9 @@ const rendererMain = readFileSync(join(root, 'src', 'renderer', 'src', 'main.tsx
 const rustMain = readFileSync(join(root, 'src-tauri', 'src', 'main.rs'), 'utf8')
 const commandsSource = readFileSync(join(root, 'src-tauri', 'src', 'commands.rs'), 'utf8')
 const indexerSource = readFileSync(join(root, 'src-tauri', 'src', 'indexer.rs'), 'utf8')
+const mediaSource = readFileSync(join(root, 'src-tauri', 'src', 'media.rs'), 'utf8')
+const dbSource = readFileSync(join(root, 'src-tauri', 'src', 'db.rs'), 'utf8')
+const portableSource = readFileSync(join(root, 'scripts', 'build-tauri-portable.mjs'), 'utf8')
 const processExt = readFileSync(join(root, 'src-tauri', 'src', 'process_ext.rs'), 'utf8')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readFileSync(join(root, 'src-tauri', 'src', name), 'utf8'))
@@ -42,6 +45,14 @@ check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electr
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
 check(
+  'FFmpeg 支持环境变量、手动目录与 PATH 探测',
+  mediaSource.includes('WHICHVIDEO_FFMPEG') &&
+    mediaSource.includes('WHICHVIDEO_BIN_DIR') &&
+    mediaSource.includes('configured_dir') &&
+    mediaSource.includes('which(names.0)')
+)
+check('FFmpeg 手动目录持久化到 settings', dbSource.includes("key = 'ffmpegDir'") && dbSource.includes('set_ffmpeg_dir'))
+check(
   '文件导入使用绑定主窗口的 Tauri 原生对话框',
   rustMain.includes('tauri_plugin_dialog::init()') &&
     commandsSource.includes('app.dialog().file()') &&
@@ -72,21 +83,14 @@ check(
 console.log('\n=== Tauri bundle 资源 ===')
 const resources = config.bundle?.resources ?? {}
 check('bundle 目标为 NSIS', config.bundle?.targets === 'nsis')
-check('ffmpeg 已纳入 bundle', resources['../resources/bin/ffmpeg.exe'] === 'resources/bin/ffmpeg.exe')
-check('ffprobe 已纳入 bundle', resources['../resources/bin/ffprobe.exe'] === 'resources/bin/ffprobe.exe')
+check('bundle 不再内置 ffmpeg', !Object.keys(resources).some((key) => /ffmpeg|ffprobe/i.test(key)))
+check('便携目录不再复制 ffmpeg', !portableSource.includes("for (const name of ['ffmpeg.exe', 'ffprobe.exe'])"))
 check('ICO 与 PNG 已配置', config.bundle?.icon?.includes('icons/icon.ico') && config.bundle?.icon?.includes('icons/icon.png'))
 
 const buildIco = readFileSync(join(root, 'build', 'icon.ico'))
 const tauriIco = readFileSync(join(root, 'src-tauri', 'icons', 'icon.ico'))
 check('Tauri ICO 与品牌 ICO 字节一致', buildIco.equals(tauriIco), `${tauriIco.length} B`)
 check('Tauri PNG 存在', existsSync(join(root, 'src-tauri', 'icons', 'icon.png')))
-
-const generatedNsi = join(root, 'src-tauri', 'target', 'release', 'nsis', 'x64', 'installer.nsi')
-if (existsSync(generatedNsi)) {
-  const nsi = readFileSync(generatedNsi, 'utf8')
-  check('实包脚本安装 ffmpeg', nsi.includes('resources\\bin\\ffmpeg.exe'))
-  check('实包脚本安装 ffprobe', nsi.includes('resources\\bin\\ffprobe.exe'))
-}
 
 console.log(`\nTauri 契约自检：${failed ? `失败 ${failed} 项` : `${commands.length} 个命令全部通过`}`)
 process.exit(failed ? 1 : 0)

@@ -1,6 +1,7 @@
 use crate::db;
 use crate::indexer::IndexerState;
 use crate::logger;
+use crate::media;
 use crate::search::FrameSearchIndex;
 use crate::watcher::WatcherMap;
 use rusqlite::Connection;
@@ -21,6 +22,10 @@ impl AppState {
     pub fn new() -> Self {
         match db::open_db() {
             Ok(conn) => {
+                let ffmpeg_dir = db::get_ffmpeg_dir(&conn).unwrap_or(None);
+                media::initialize(ffmpeg_dir);
+                let tools = media::tools_status();
+                logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
                 let search_index = FrameSearchIndex::rebuild_from_db(&conn);
                 AppState {
                     db: Mutex::new(Some(conn)),
@@ -31,6 +36,7 @@ impl AppState {
             }
             Err(e) => {
                 logger::log(&format!("[ERROR] 数据库初始化失败：{e}"));
+                media::initialize(None);
                 AppState {
                     db: Mutex::new(None),
                     indexer: Mutex::new(IndexerState::default()),

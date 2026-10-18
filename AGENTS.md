@@ -15,7 +15,7 @@ pnpm dev              # Tauri 开发模式（Vite 热更新）
 pnpm typecheck        # 渲染端 TypeScript 类型检查
 pnpm test             # Rust、桥接契约、便携构建和 UI 回归门禁
 pnpm build            # 类型检查 + 图标 + release exe（不生成安装包）
-pnpm build:portable   # release exe + ffmpeg/ffprobe → dist/WhichVideo-portable
+pnpm build:portable   # 轻量 release exe → dist/WhichVideo-portable（不内置 FFmpeg）
 pnpm build:win        # Tauri NSIS 安装包
 pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin
 ```
@@ -63,11 +63,10 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 ## 打包约束
 
 - `src-tauri/tauri.conf.json` 是唯一桌面打包配置；`build/icon.ico` 是 Windows 图标源。
-- 发布包必须包含 `resources/bin/ffmpeg.exe` 和 `ffprobe.exe`。没有它们时应用可以启动，
-  但探测、抽帧和索引功能不可用。
-- `build:portable` 生成 `dist/WhichVideo-portable`，包含 exe、两个媒体工具和说明文件。
+- 发布包不得包含 `ffmpeg` / `ffprobe`。启动探测顺序为显式环境变量、用户手动目录、系统 PATH；
+  缺失时必须提示用户，并允许在设置中选择同时包含两个工具的 `bin` 目录。
+- `build:portable` 生成 `dist/WhichVideo-portable`，包含 exe 和说明文件。
   重建时必须保留已有 `data`，说明文件不能泄露构建机绝对路径。
-- 不要用 UPX 压缩媒体工具；seek 路径会频繁启动进程，解压开销会被放大。
 - `.vscode/settings.json` 故意入库，用来排除 `dist`、`target` 和临时目录的监视。
 
 ## 测试

@@ -7,6 +7,7 @@ import { ShortcutHelp } from './components/ShortcutHelp'
 import { SearchView } from './components/SearchView'
 import { LibraryView } from './components/LibraryView'
 import { SettingsPanel } from './components/SettingsPanel'
+import { MediaToolsSetup } from './components/MediaToolsSetup'
 
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
@@ -136,7 +137,10 @@ export default function App() {
                 <SettingsPanel
                   settings={state.settings}
                   dataDir={state.dataDir}
+                  mediaTools={state.mediaTools}
                   onChange={(patch) => void actions.updateSettings(patch)}
+                  onSelectMediaTools={() => void actions.selectMediaToolsDir()}
+                  onClearMediaTools={() => void actions.clearMediaToolsDir()}
                   onReset={() => void actions.resetLibrary()}
                   onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}
                 />
@@ -189,6 +193,7 @@ export default function App() {
       })()}
 
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} inLibrary={tab === 'library'} />
+      <MediaToolsSetup status={state.mediaTools} onSelect={() => void actions.selectMediaToolsDir()} />
     </div>
   )
 }

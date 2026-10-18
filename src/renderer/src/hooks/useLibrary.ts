@@ -14,6 +14,7 @@ import {
   type SamplingMode,
   type IndexerStatus,
   type LibraryStats,
+  type MediaToolsStatus,
   type SearchResponse,
   type VideoQuery,
   type VideoRecord,
@@ -79,6 +80,7 @@ export interface LibraryState {
   folders: WatchedFolder[]
   settings: AppSettings | null
   dataDir: DataDirInfo | null
+  mediaTools: MediaToolsStatus | null
   videos: VideoRecord[]
   total: number
   notices: Notice[]
@@ -268,6 +270,20 @@ export function useLibrary() {
         const dir = await window.whichvideo.library.openDatabaseFolder()
         notices.pushNotice('info', `索引库位置：${dir}`)
       },
+      async selectMediaToolsDir(): Promise<void> {
+        await withBusy('正在检测 FFmpeg…', async () => {
+          const status = await window.whichvideo.library.selectMediaToolsDir()
+          core.setMediaTools(status)
+          await core.refreshAll()
+          notices.pushNotice(status.ready ? 'info' : 'warn', status.message)
+        })
+      },
+      async clearMediaToolsDir(): Promise<void> {
+        const status = await window.whichvideo.library.clearMediaToolsDir()
+        core.setMediaTools(status)
+        await core.refreshAll()
+        notices.pushNotice(status.ready ? 'info' : 'warn', status.message)
+      },
       setVideoQuery(next: VideoQuery): void {
         videoList.setVideoQuery(next)
       },
@@ -289,6 +305,7 @@ export function useLibrary() {
     folders: core.folders,
     settings: core.settings,
     dataDir: core.dataDir,
+    mediaTools: core.mediaTools,
     videos: videoList.videos,
     total: videoList.total,
     notices: notices.notices,

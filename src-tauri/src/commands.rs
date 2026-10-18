@@ -637,6 +637,41 @@ pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
     Ok(db::data_dir_info(media::tools_ready()))
 }
 
+/// FFmpeg/ffprobe 当前探测结果与来源。
+#[tauri::command]
+pub fn library_media_tools() -> Result<media::MediaToolsStatus, String> {
+    Ok(media::tools_status())
+}
+
+/// 选择同时包含 ffmpeg 与 ffprobe 的目录，验证后持久化。
+#[tauri::command]
+pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
+    let Some(mut dirs) = native_folder_dialog(&app, "选择 FFmpeg 的 bin 目录") else {
+        return Ok(media::tools_status());
+    };
+    let Some(dir) = dirs.pop() else {
+        return Ok(media::tools_status());
+    };
+    let status = media::configure_dir(Some(dir.clone()))?;
+    let state = app.state::<AppState>();
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+    db::set_ffmpeg_dir(conn, Some(&dir)).map_err(|e| e.to_string())?;
+    logger::log(&format!("FFmpeg 目录已设置：{dir}（source={}）", status.source));
+    Ok(status)
+}
+
+/// 清除手动目录并重新按环境变量 / PATH 自动检测。
+#[tauri::command]
+pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::MediaToolsStatus, String> {
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+    db::set_ffmpeg_dir(conn, None).map_err(|e| e.to_string())?;
+    let status = media::configure_dir(None)?;
+    logger::log(&format!("FFmpeg 手动目录已清除（source={}）", status.source));
+    Ok(status)
+}
+
 /* ================================================================== */
 /* 图片检索：byPath / byDataUrl / byClipboard / byUrl                 */
 /* ================================================================== */

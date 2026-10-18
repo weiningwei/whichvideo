@@ -93,6 +93,16 @@ export interface DataDirInfo {
   toolsReady: boolean
 }
 
+export interface MediaToolsStatus {
+  ready: boolean
+  source: 'environment' | 'configured' | 'path' | 'development' | 'missing'
+  /** ffmpeg 与 ffprobe 所在目录 */
+  directory: string | null
+  ffmpeg: string | null
+  ffprobe: string | null
+  message: string
+}
+
 /** 索引器（后台队列）实时状态 */
 export interface IndexerStatus {
   running: boolean
@@ -351,6 +361,9 @@ export interface WhichVideoApi {
     settings(): Promise<AppSettings>
     updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
     dataDir(): Promise<DataDirInfo>
+    mediaTools(): Promise<MediaToolsStatus>
+    selectMediaToolsDir(): Promise<MediaToolsStatus>
+    clearMediaToolsDir(): Promise<MediaToolsStatus>
     openDatabaseFolder(): Promise<string>
     reset(): Promise<void>
   }
@@ -410,6 +423,9 @@ export const IPC = {
   libraryStatus: 'library_status',
   librarySettings: 'library_settings',
   libraryDataDir: 'library_data_dir',
+  libraryMediaTools: 'library_media_tools',
+  librarySelectMediaToolsDir: 'library_select_media_tools_dir',
+  libraryClearMediaToolsDir: 'library_clear_media_tools_dir',
   libraryUpdateSettings: 'library_update_settings',
   libraryOpenDb: 'library_open_database_folder',
   libraryReset: 'library_reset',

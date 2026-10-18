@@ -33,9 +33,11 @@ $LASTEXITCODE
 
 探测和抽帧依赖 `ffmpeg.exe` 与 `ffprobe.exe`：
 
-- 开发环境：放在 `resources/bin`，缺失时运行 `pnpm fetch:ffmpeg`。
-- 便携版：两者应位于 `WhichVideo.exe` 同级。
-- 安装版：两者由 Tauri 作为资源安装，检查日志中的媒体工具解析路径。
+- 正式版不内置媒体工具；首次启动找不到时会显示设置提示。
+- 推荐在「索引设置 → 媒体工具」选择同时包含两者的 `bin` 目录。
+- 也可加入系统 `PATH`，或设置 `WHICHVIDEO_BIN_DIR`。
+- 需要分别指定时，同时设置 `WHICHVIDEO_FFMPEG` 和 `WHICHVIDEO_FFPROBE`，不要混用不同版本。
+- 开发环境可运行 `pnpm fetch:ffmpeg` 放到 `resources/bin`；该目录只在 debug/test 构建中自动探测。
 
 媒体工具缺失不会阻止界面启动，但新增目录后的探测、索引和图片检索会失败。先运行
 `pnpm test:rust` 区分后端逻辑问题与本机媒体工具问题。
@@ -75,8 +77,8 @@ Tauri CLI 会把 NSIS 工具缓存到用户缓存目录。下载中断或缓存�
 src-tauri/target/release/bundle/nsis/
 ```
 
-安装包必须包含两个媒体工具。发布前至少运行一次 `pnpm build:win`，并在干净用户环境中验证
-安装、启动、建索引、卸载。
+安装包不包含媒体工具。发布前至少运行一次 `pnpm build:win`，并在未安装 FFmpeg 的干净环境中
+验证首次启动提示，再分别验证 PATH 自动检测、手动目录设置、建索引和卸载。
 
 ## `pnpm build:portable` 报占用或权限错误
 

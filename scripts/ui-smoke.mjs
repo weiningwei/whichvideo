@@ -81,6 +81,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const { SearchView } = await load('SearchView')
   const { LibraryView } = await load('LibraryView')
   const { SettingsPanel } = await load('SettingsPanel')
+  const { MediaToolsSetup } = await load('MediaToolsSetup')
   const format = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'format.js')).href)
   const render = (element) => renderToStaticMarkup(element)
   const noop = () => {}
@@ -124,7 +125,13 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
 
   console.log('\n=== 视频库 ===')
   const selected = new Set([video.id])
-  const settings = jsx(SettingsPanel, { settings: null, dataDir: { dir: 'E:\\WhichVideo\\data', source: 'install', toolsReady: true }, onChange: noop, onReset: noop, onOpenDatabaseFolder: noop })
+  const settings = jsx(SettingsPanel, {
+    settings: null,
+    dataDir: { dir: 'E:\\WhichVideo\\data', source: 'install', toolsReady: true },
+    mediaTools: { ready: true, source: 'path', directory: 'D:\\ffmpeg\\bin', ffmpeg: 'D:\\ffmpeg\\bin\\ffmpeg.exe', ffprobe: 'D:\\ffmpeg\\bin\\ffprobe.exe', message: '使用系统 PATH 中的 FFmpeg' },
+    onChange: noop, onSelectMediaTools: noop, onClearMediaTools: noop,
+    onReset: noop, onOpenDatabaseFolder: noop
+  })
   const libraryProps = {
     folders: [folder], videos: [video], total: 1, query: {}, onSetQuery: noop,
     onAddFolder: noop, onAddFolderPath: noop, onImportFolder: noop, onImportFiles: noop,
@@ -167,6 +174,12 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('五个滑块仍完整保留', (settingsHtml.match(/type="range"/g) ?? []).length === 5)
   check('说明改为悬停提示而非大段常驻文字', settingsHtml.includes('title="实际帧数') && !settingsHtml.includes('适合镜头切换密集'))
   check('数据目录与危险操作仍可访问', settingsHtml.includes('数据目录') && settingsHtml.includes('打开索引库位置') && settingsHtml.includes('清空索引库'))
+  check('FFmpeg 状态与手动目录入口可访问', settingsHtml.includes('FFmpeg 可用') && settingsHtml.includes('更换目录'))
+  const missingTools = render(jsx(MediaToolsSetup, {
+    status: { ready: false, source: 'missing', directory: null, ffmpeg: null, ffprobe: null, message: '未找到 FFmpeg' },
+    onSelect: noop
+  }))
+  check('首次缺少 FFmpeg 时给出设置引导', missingTools.includes('设置 FFmpeg') && missingTools.includes('选择 bin 目录') && missingTools.includes('稍后设置'))
   check('formatDuration 处理时分秒', format.formatDuration(3725) === '1:02:05')
   check('formatBytes 处理 MB', format.formatBytes(734003200) === '700 MB')
   check('shortPath 相对监听目录', format.shortPath(video.path, [folder.path]) === 'Blue.Intro.1080p.mp4')

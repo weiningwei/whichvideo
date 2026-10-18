@@ -5,6 +5,7 @@ import {
   type IndexerStatus,
   type LibraryEvent,
   type LibraryStats,
+  type MediaToolsStatus,
   type WatchedFolder
 } from '@shared/types'
 
@@ -25,9 +26,11 @@ export interface UseLibraryCoreReturn {
   folders: WatchedFolder[]
   settings: AppSettings | null
   dataDir: DataDirInfo | null
+  mediaTools: MediaToolsStatus | null
   refreshAll: () => Promise<void>
   refreshFolders: () => Promise<void>
   setSettings: (settings: AppSettings) => void
+  setMediaTools: (status: MediaToolsStatus) => void
 }
 
 export interface UseLibraryCoreOptions {
@@ -42,24 +45,27 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
   const [folders, setFolders] = useState<WatchedFolder[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [dataDir, setDataDir] = useState<DataDirInfo | null>(null)
+  const [mediaTools, setMediaTools] = useState<MediaToolsStatus | null>(null)
 
   const refreshFolders = useCallback(async () => {
     setFolders(await window.whichvideo.folders.list())
   }, [])
 
   const refreshAll = useCallback(async () => {
-    const [s, st, f, cfg, dirInfo] = await Promise.all([
+    const [s, st, f, cfg, dirInfo, tools] = await Promise.all([
       window.whichvideo.library.stats(),
       window.whichvideo.library.status(),
       window.whichvideo.folders.list(),
       window.whichvideo.library.settings(),
-      window.whichvideo.library.dataDir()
+      window.whichvideo.library.dataDir(),
+      window.whichvideo.library.mediaTools()
     ])
     setStats(s)
     setStatus(st)
     setFolders(f)
     setSettings(cfg)
     setDataDir(dirInfo)
+    setMediaTools(tools)
   }, [])
 
   useEffect(() => {
@@ -118,8 +124,10 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
     folders,
     settings,
     dataDir,
+    mediaTools,
     refreshAll,
     refreshFolders,
-    setSettings: updateSettings
+    setSettings: updateSettings,
+    setMediaTools
   }
 }

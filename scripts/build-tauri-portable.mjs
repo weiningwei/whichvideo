@@ -1,4 +1,4 @@
-/** 把 Tauri release exe 与媒体工具整理成可直接拷走的绿色目录。 */
+/** 把 Tauri release exe 整理成可直接拷走的绿色目录。FFmpeg 由用户外部配置。 */
 import {
   copyFileSync,
   cpSync,
@@ -21,9 +21,6 @@ const target = join(releaseRoot, 'WhichVideo-portable')
 const sourceExe = process.env.WHICHVIDEO_TAURI_EXE
   ? resolve(process.env.WHICHVIDEO_TAURI_EXE)
   : join(root, 'src-tauri', 'target', 'release', 'whichvideo-tauri.exe')
-const sourceBin = process.env.WHICHVIDEO_BIN_DIR
-  ? resolve(process.env.WHICHVIDEO_BIN_DIR)
-  : join(root, 'resources', 'bin')
 const outsideRoot = process.env.WHICHVIDEO_OUTSIDE_DIR
   ? resolve(process.env.WHICHVIDEO_OUTSIDE_DIR)
   : resolve(root, '..')
@@ -86,13 +83,6 @@ function replaceDirectorySafely(dir, parent) {
 function writePortable(source, destination, parent) {
   const dataPreserved = replaceDirectorySafely(destination, parent)
   copyFileSync(sourceExe, join(destination, 'WhichVideo.exe'))
-  const mediaTarget = join(destination, 'resources', 'bin')
-  mkdirSync(mediaTarget, { recursive: true })
-  for (const name of ['ffmpeg.exe', 'ffprobe.exe']) {
-    const from = join(sourceBin, name)
-    if (!existsSync(from)) throw new Error(`缺少媒体工具：${from}`)
-    copyFileSync(from, join(mediaTarget, name))
-  }
   writeFileSync(
     join(destination, '便携版说明.txt'),
     [
@@ -102,7 +92,9 @@ function writePortable(source, destination, parent) {
       '2. 首次运行会在本目录创建 data\\，索引库、日志与缓存都保存在其中。',
       '3. 迁移时复制整个 WhichVideo-portable 文件夹；升级时保留 data\\。',
       '4. 安装版与绿色版都把数据写在程序同级 data\\，目录必须可写。',
-      '5. 可用 WHICHVIDEO_DATA_DIR 环境变量显式指定数据位置。',
+      '5. FFmpeg 不随软件分发；首次启动请选择同时包含 ffmpeg.exe 和 ffprobe.exe 的 bin 目录。',
+      '6. 也可通过系统 PATH、WHICHVIDEO_BIN_DIR，或 WHICHVIDEO_FFMPEG / WHICHVIDEO_FFPROBE 指定媒体工具。',
+      '7. 可用 WHICHVIDEO_DATA_DIR 环境变量显式指定数据位置。',
       ''
     ].join('\r\n'),
     'utf8'

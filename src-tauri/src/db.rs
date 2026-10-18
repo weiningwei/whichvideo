@@ -714,6 +714,35 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
     Ok(s)
 }
 
+/// FFmpeg 手动目录单独保存在 settings 表；它属于运行环境配置，不参与索引参数广播。
+pub fn get_ffmpeg_dir(conn: &Connection) -> SqlResult<Option<String>> {
+    match conn.query_row(
+        "SELECT value FROM settings WHERE key = 'ffmpegDir'",
+        [],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
+        Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn set_ffmpeg_dir(conn: &Connection, dir: Option<&str>) -> SqlResult<()> {
+    match dir.filter(|value| !value.trim().is_empty()) {
+        Some(value) => {
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('ffmpegDir', ?) \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [value],
+            )?;
+        }
+        None => {
+            conn.execute("DELETE FROM settings WHERE key = 'ffmpegDir'", [])?;
+        }
+    }
+    Ok(())
+}
+
 /* ------------------------------------------------------------------ */
 /* 索引器状态 / 数据目录信息                                          */
 /* ------------------------------------------------------------------ */

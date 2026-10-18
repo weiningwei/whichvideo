@@ -9,20 +9,57 @@ use crate::sampling::should_use_full_scan;
 use base64::Engine;
 use image::codecs::jpeg::JpegEncoder;
 use image::ExtendedColorType;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[allow(dead_code)]
 pub struct ToolPaths {
     pub ffmpeg: String,
     pub ffprobe: String,
 }
 
-static TOOLS: OnceLock<Option<ToolPaths>> = OnceLock::new();
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaToolsStatus {
+    pub ready: bool,
+    pub source: String,
+    pub directory: Option<String>,
+    pub ffmpeg: Option<String>,
+    pub ffprobe: Option<String>,
+    pub message: String,
+}
+
+impl Default for MediaToolsStatus {
+    fn default() -> Self {
+        Self {
+            ready: false,
+            source: "missing".to_string(),
+            directory: None,
+            ffmpeg: None,
+            ffprobe: None,
+            message: "未找到 FFmpeg。请安装 FFmpeg，或手动选择包含 ffmpeg 和 ffprobe 的 bin 目录。".to_string(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ToolState {
+    configured_dir: Option<PathBuf>,
+    tools: Option<ToolPaths>,
+    status: MediaToolsStatus,
+    resolved: bool,
+}
+
+static TOOL_STATE: OnceLock<RwLock<ToolState>> = OnceLock::new();
+
+fn tool_state() -> &'static RwLock<ToolState> {
+    TOOL_STATE.get_or_init(|| RwLock::new(ToolState::default()))
+}
 
 /// 读取一个注册表 REG_SZ 值；键不存在或类型不符返回 None。
 #[cfg(windows)]
@@ -78,82 +115,173 @@ fn which(name: &str) -> Option<String> {
     None
 }
 
-/// 候选目录：打包资源目录 resources/bin、环境变量、常见安装位置。
-fn candidate_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Some(bin_dir) = std::env::var("WHICHVIDEO_BIN_DIR").ok() {
-        dirs.push(PathBuf::from(bin_dir));
+fn tool_names() -> (&'static str, &'static str) {
+    if cfg!(windows) {
+        ("ffmpeg.exe", "ffprobe.exe")
+    } else {
+        ("ffmpeg", "ffprobe")
     }
-    // 资源目录：exe 同级 resources/bin（Tauri 打包后）；开发态沿祖先向上找仓库 resources/bin。
+}
+
+fn paths_in_dir(dir: &std::path::Path) -> Option<ToolPaths> {
+    let names = tool_names();
+    let ffmpeg = dir.join(names.0);
+    let ffprobe = dir.join(names.1);
+    if ffmpeg.is_file() && ffprobe.is_file() {
+        Some(ToolPaths {
+            ffmpeg: ffmpeg.to_string_lossy().to_string(),
+            ffprobe: ffprobe.to_string_lossy().to_string(),
+        })
+    } else {
+        None
+    }
+}
+
+fn tools_are_usable(tools: &ToolPaths) -> bool {
+    [&tools.ffmpeg, &tools.ffprobe].into_iter().all(|path| {
+        Command::new(path)
+            .no_window()
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+}
+
+fn status_for(tools: ToolPaths, source: &str, message: &str) -> (Option<ToolPaths>, MediaToolsStatus) {
+    let directory = PathBuf::from(&tools.ffmpeg)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string());
+    let status = MediaToolsStatus {
+        ready: true,
+        source: source.to_string(),
+        directory,
+        ffmpeg: Some(tools.ffmpeg.clone()),
+        ffprobe: Some(tools.ffprobe.clone()),
+        message: message.to_string(),
+    };
+    (Some(tools), status)
+}
+
+fn detect_tools(configured_dir: Option<&std::path::Path>) -> (Option<ToolPaths>, MediaToolsStatus) {
+    // 有效的显式环境变量优先；无效时继续尝试手动目录和 PATH，但把原因带到最终提示。
+    let mut environment_error: Option<String> = None;
+    let mut configured_error: Option<MediaToolsStatus> = None;
+    let env_ffmpeg = std::env::var("WHICHVIDEO_FFMPEG").ok().filter(|s| !s.trim().is_empty());
+    let env_ffprobe = std::env::var("WHICHVIDEO_FFPROBE").ok().filter(|s| !s.trim().is_empty());
+    if env_ffmpeg.is_some() || env_ffprobe.is_some() {
+        if let (Some(ffmpeg), Some(ffprobe)) = (env_ffmpeg, env_ffprobe) {
+            let tools = ToolPaths { ffmpeg, ffprobe };
+            if PathBuf::from(&tools.ffmpeg).is_file()
+                && PathBuf::from(&tools.ffprobe).is_file()
+                && tools_are_usable(&tools)
+            {
+                return status_for(tools, "environment", "使用环境变量指定的 FFmpeg");
+            }
+        }
+        environment_error = Some("环境变量 WHICHVIDEO_FFMPEG / WHICHVIDEO_FFPROBE 无效；请同时指定两个有效的可执行文件。".to_string());
+    }
+
+    if let Ok(dir) = std::env::var("WHICHVIDEO_BIN_DIR") {
+        if let Some(tools) = paths_in_dir(std::path::Path::new(&dir)) {
+            if tools_are_usable(&tools) {
+                return status_for(tools, "environment", "使用 WHICHVIDEO_BIN_DIR 指定的 FFmpeg");
+            }
+        }
+        environment_error = Some(format!("WHICHVIDEO_BIN_DIR 中未同时找到 ffmpeg 和 ffprobe：{dir}"));
+    }
+
+    if let Some(dir) = configured_dir {
+        if let Some(tools) = paths_in_dir(dir) {
+            if tools_are_usable(&tools) {
+                return status_for(tools, "configured", "使用手动设置的 FFmpeg 目录");
+            }
+        }
+        let mut status = MediaToolsStatus::default();
+        status.source = "configured".to_string();
+        status.directory = Some(dir.to_string_lossy().to_string());
+        status.message = "已设置目录中的 ffmpeg / ffprobe 缺失或无法运行，请重新选择。".to_string();
+        configured_error = Some(status);
+    }
+
+    let names = tool_names();
+    if let (Some(ffmpeg), Some(ffprobe)) = (which(names.0), which(names.1)) {
+        let tools = ToolPaths { ffmpeg, ffprobe };
+        if tools_are_usable(&tools) {
+            return status_for(tools, "path", "使用系统 PATH 中的 FFmpeg");
+        }
+    }
+
+    // 开发与测试环境允许复用仓库 resources/bin；release 包不会走此分支，也不再携带它们。
+    #[cfg(debug_assertions)]
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            for ancestor in parent.ancestors().take(5) {
-                dirs.push(ancestor.join("resources").join("bin"));
+            for ancestor in parent.ancestors().take(6) {
+                if let Some(tools) = paths_in_dir(&ancestor.join("resources").join("bin")) {
+                    if tools_are_usable(&tools) {
+                        return status_for(tools, "development", "使用开发仓库 resources/bin 中的 FFmpeg");
+                    }
+                }
             }
         }
     }
-    if cfg!(windows) {
-        dirs.push(PathBuf::from("C:\\ffmpeg\\bin"));
-        dirs.push(PathBuf::from("C:\\Program Files\\ffmpeg\\bin"));
-        if let Some(local) = std::env::var("LOCALAPPDATA").ok() {
-            dirs.push(PathBuf::from(local).join("Microsoft\\WinGet\\Links"));
-        }
-        if let Some(user) = std::env::var("USERPROFILE").ok() {
-            dirs.push(PathBuf::from(user).join("scoop\\shims"));
-        }
-        if let Some(programdata) = std::env::var("ProgramData").ok() {
-            dirs.push(PathBuf::from(programdata).join("chocolatey\\bin"));
+
+    if let Some(status) = configured_error {
+        return (None, status);
+    }
+    let mut status = MediaToolsStatus::default();
+    if let Some(message) = environment_error {
+        status.message = message;
+    }
+    (None, status)
+}
+
+fn refresh_locked(state: &mut ToolState) {
+    let (tools, status) = detect_tools(state.configured_dir.as_deref());
+    state.tools = tools;
+    state.status = status;
+    state.resolved = true;
+}
+
+/// 数据库打开后载入用户选择的目录，并完成启动探测。
+pub fn initialize(configured_dir: Option<String>) {
+    let mut state = tool_state().write().unwrap_or_else(|e| e.into_inner());
+    state.configured_dir = configured_dir.filter(|s| !s.trim().is_empty()).map(PathBuf::from);
+    refresh_locked(&mut state);
+}
+
+/// 设置或清除手动目录。设置目录时必须同时包含 ffmpeg 与 ffprobe。
+pub fn configure_dir(configured_dir: Option<String>) -> Result<MediaToolsStatus, String> {
+    let requested = configured_dir.filter(|s| !s.trim().is_empty()).map(PathBuf::from);
+    if let Some(dir) = requested.as_deref() {
+        let Some(tools) = paths_in_dir(dir) else {
+            return Err("所选目录中未同时找到 ffmpeg.exe 和 ffprobe.exe，请选择 FFmpeg 的 bin 目录。".to_string());
+        };
+        if !tools_are_usable(&tools) {
+            return Err("所选目录中的 ffmpeg 或 ffprobe 无法运行，请检查文件版本和系统权限。".to_string());
         }
     }
-    dirs
+    let mut state = tool_state().write().map_err(|e| e.to_string())?;
+    state.configured_dir = requested;
+    refresh_locked(&mut state);
+    Ok(state.status.clone())
+}
+
+pub fn tools_status() -> MediaToolsStatus {
+    let mut state = tool_state().write().unwrap_or_else(|e| e.into_inner());
+    if !state.resolved {
+        refresh_locked(&mut state);
+    }
+    state.status.clone()
 }
 
 /// 解析 ffmpeg / ffprobe 路径并缓存结果。
-pub fn resolve_tools() -> Option<&'static ToolPaths> {
-    TOOLS
-        .get_or_init(|| {
-            let names = if cfg!(windows) {
-                ("ffmpeg.exe", "ffprobe.exe")
-            } else {
-                ("ffmpeg", "ffprobe")
-            };
-            let dirs = candidate_dirs();
-            let mut ffmpeg: Option<String> = std::env::var("WHICHVIDEO_FFMPEG")
-                .ok()
-                .filter(|p| PathBuf::from(p).exists());
-            let mut ffprobe: Option<String> = std::env::var("WHICHVIDEO_FFPROBE")
-                .ok()
-                .filter(|p| PathBuf::from(p).exists());
-
-            for dir in &dirs {
-                if ffmpeg.is_none() {
-                    let c = dir.join(names.0);
-                    if c.exists() {
-                        ffmpeg = Some(c.to_string_lossy().to_string());
-                    }
-                }
-                if ffprobe.is_none() {
-                    let c = dir.join(names.1);
-                    if c.exists() {
-                        ffprobe = Some(c.to_string_lossy().to_string());
-                    }
-                }
-            }
-            if ffmpeg.is_none() {
-                ffmpeg = which(names.0);
-            }
-            if ffprobe.is_none() {
-                ffprobe = which(names.1);
-            }
-            match (ffmpeg, ffprobe) {
-                (Some(f), Some(p)) => Some(ToolPaths {
-                    ffmpeg: f,
-                    ffprobe: p,
-                }),
-                _ => None,
-            }
-        })
-        .as_ref()
+pub fn resolve_tools() -> Option<ToolPaths> {
+    let mut state = tool_state().write().unwrap_or_else(|e| e.into_inner());
+    if !state.resolved {
+        refresh_locked(&mut state);
+    }
+    state.tools.clone()
 }
 
 /// ffmpeg/ffprobe 是否可用。

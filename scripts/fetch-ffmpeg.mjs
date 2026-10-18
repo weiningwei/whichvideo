@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 获取 ffmpeg / ffprobe 并放到 resources/bin（打包时随应用分发）。
+ * 获取 ffmpeg / ffprobe 并放到 resources/bin（仅供开发与测试，发布包不内置）。
  *
  *   pnpm fetch:ffmpeg                                  # 依次尝试多个下载源
  *   pnpm fetch:ffmpeg --from "D:\program\ffmpeg\bin"    # 直接用本机已装好的二进制

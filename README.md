@@ -58,10 +58,9 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 # 1. 安装依赖
 pnpm install
 
-# 2. 准备 ffmpeg（三选一）
-pnpm fetch:ffmpeg              # 联网自动下载（默认，多源回退）
-pnpm fetch:ffmpeg --from "<你本机 ffmpeg 的 bin 目录>"   # 复用本机已装的
-# 或：把 ffmpeg.exe / ffprobe.exe 手动放进 resources/bin
+# 2. 开发环境准备 ffmpeg（二选一；发布包不内置）
+pnpm fetch:ffmpeg              # 下载到 resources/bin，仅供开发与测试
+# 或：把 ffmpeg/ffprobe 加入系统 PATH
 
 # 3. 开发模式运行
 pnpm dev
@@ -75,6 +74,10 @@ pnpm build:win                 # NSIS 安装包
 脚本已做多源自动回退、有进度与超时、缓存续跑。走代理需要显式设 `HTTPS_PROXY`，
 且 Node 24 要加 `NODE_USE_ENV_PROXY=1`；实在不行就用浏览器下好 zip 再
 `--from "<zip 路径>"`。完整参数见 [docs/troubleshooting.md](docs/troubleshooting.md)。
+
+正式版不内置 FFmpeg。首次启动会依次检查环境变量、上次手动设置的目录和系统 PATH；
+仍未找到时会提示选择同时包含 `ffmpeg.exe` 与 `ffprobe.exe` 的 `bin` 目录。选择结果保存在
+应用数据目录中，也可随时在「索引设置 → 媒体工具」里更换。
 
 ---
 
@@ -256,6 +259,9 @@ data\
 | `WHICHVIDEO_FFMPEG` / `WHICHVIDEO_FFPROBE` | 指定 ffmpeg / ffprobe 路径 |
 | `WHICHVIDEO_BIN_DIR` | 指定包含二进制的目录 |
 
+FFmpeg 探测优先级：`WHICHVIDEO_FFMPEG` + `WHICHVIDEO_FFPROBE` → `WHICHVIDEO_BIN_DIR`
+→ 软件内手动设置的目录 → 系统 `PATH`。显式路径必须同时提供 `ffmpeg` 与 `ffprobe`，避免混用不同版本。
+
 ---
 
 ## 它是怎么判断的
@@ -287,6 +293,7 @@ data\
 
 | 设置 | 默认 | 说明 |
 | --- | --- | --- |
+| FFmpeg 目录 | 自动检测 | 未加入 PATH 时，可选择同时包含 ffmpeg 与 ffprobe 的 bin 目录 |
 | 抽帧采样模式 | 均匀采样 | 均匀 = 按间隔取帧、快；场景检测 = 每个镜头至少一帧、召回更高但更慢（可对单个视频单独指定） |
 | 每个视频抽帧数（上限） | 240 | 实际帧数按时长自动分档，这里是封顶值 |
 | 并发解码数 | 2 | 机械硬盘建议 1~2，固态可以 3~4 |

@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import type { AppSettings, DataDirInfo } from '@shared/types'
+import type { AppSettings, DataDirInfo, MediaToolsStatus } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 interface Props {
   settings: AppSettings | null
   dataDir: DataDirInfo | null
+  mediaTools: MediaToolsStatus | null
   onChange: (patch: Partial<AppSettings>) => void
+  onSelectMediaTools: () => void
+  onClearMediaTools: () => void
   onReset: () => void
   onOpenDatabaseFolder: () => void
 }
@@ -13,7 +16,10 @@ interface Props {
 export function SettingsPanel({
   settings,
   dataDir,
+  mediaTools,
   onChange,
+  onSelectMediaTools,
+  onClearMediaTools,
   onReset,
   onOpenDatabaseFolder
 }: Props) {
@@ -22,6 +28,39 @@ export function SettingsPanel({
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 text-[11.5px]">
+      <SectionTitle>媒体工具</SectionTitle>
+      <div className={`rounded-lg border px-2.5 py-2 ${mediaTools?.ready ? 'border-ok/30 bg-ok/10' : 'border-warn/40 bg-warn/10'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <span className={mediaTools?.ready ? 'text-ok' : 'text-warn'}>
+            {mediaTools?.ready ? 'FFmpeg 可用' : 'FFmpeg 未配置'}
+          </span>
+          <span className="text-[10px] text-tertiary">
+            {mediaTools?.source === 'environment'
+              ? '环境变量'
+              : mediaTools?.source === 'configured'
+                ? '手动目录'
+                : mediaTools?.source === 'path'
+                  ? '系统 PATH'
+                  : mediaTools?.source === 'development'
+                    ? '开发目录'
+                    : '未检测到'}
+          </span>
+        </div>
+        <div className="mt-1 break-all text-[10.5px] leading-relaxed text-secondary">
+          {mediaTools?.ready ? mediaTools.directory : mediaTools?.message ?? '正在检测…'}
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button className="btn text-[11px] hover:bg-ink-700/70" onClick={onSelectMediaTools}>
+            {mediaTools?.ready ? '更换目录' : '选择 bin 目录'}
+          </button>
+          {mediaTools?.source === 'configured' && (
+            <button className="btn text-[11px] hover:bg-ink-700/70" onClick={onClearMediaTools}>
+              恢复自动检测
+            </button>
+          )}
+        </div>
+      </div>
+
       <SectionTitle>索引质量</SectionTitle>
       <Field
         label="抽帧上限"
