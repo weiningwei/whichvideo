@@ -1,0 +1,22 @@
+src-tauri/src/watcher.rs
+  s_e78e0118ab4232::t_70d6705618cbe3 16-18,21-69,151,159-162,169-171
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_70d6705618cbe3 15,110-114
+  s_e78e0118ab4232::t_801ce7c67daac7 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7d842c326d4db00ca17d42ef636e2c370ff887e",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
