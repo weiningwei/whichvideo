@@ -167,7 +167,7 @@ struct HitAgg {
     hash_score: f64,
     color_score: f64,
     hash_distance: usize,
-    second_best: f64,
+    second_best: Option<f64>,
 }
 
 impl FrameSearchIndex {
@@ -359,21 +359,21 @@ impl FrameSearchIndex {
                             hash_score,
                             color_score,
                             hash_distance: struct_distance,
-                            second_best: 0.0,
+                            second_best: None,
                         },
                     );
                 }
                 Some(cur) => {
                     if score > cur.score {
-                        cur.second_best = cur.score;
+                        cur.second_best = Some(cur.score);
                         cur.frame_index = frame_index;
                         cur.time_seconds = time_seconds;
                         cur.score = score;
                         cur.hash_score = hash_score;
                         cur.color_score = color_score;
                         cur.hash_distance = struct_distance;
-                    } else if score > cur.second_best {
-                        cur.second_best = score;
+                    } else if cur.second_best.is_none_or(|second| score > second) {
+                        cur.second_best = Some(score);
                     }
                 }
             }
@@ -385,7 +385,7 @@ impl FrameSearchIndex {
                 video_id: v.video_id,
                 frame_index: v.frame_index,
                 time_seconds: v.time_seconds,
-                score: v.score * 0.75 + v.second_best * 0.25,
+                score: v.score * 0.75 + v.second_best.unwrap_or(v.score) * 0.25,
                 hash_score: v.hash_score,
                 color_score: v.color_score,
                 hash_distance: v.hash_distance,
@@ -510,6 +510,32 @@ mod tests {
         assert_eq!(hits[0].video_id, 10);
         assert_eq!(hits[0].frame_index, 4);
         assert_eq!(hits[0].time_seconds, 1.25);
+        assert!((hits[0].score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn single_exact_frame_keeps_full_score() {
+        let struct_hash = vec![0_u8; framepack::STRUCT_BYTES];
+        let mut color = vec![0_u8; framepack::COLOR_BYTES];
+        color[0] = 255;
+        let spatial = vec![32_u8; framepack::SPATIAL_BYTES];
+        let query = QueryVector {
+            dhash: 0,
+            struct_hash: struct_hash.clone(),
+            color: color.clone(),
+            spatial: spatial.clone(),
+            colorfulness: 1.0,
+        };
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        append_frame(&mut buffer, &mut video_ids, 10, 0, 1000, &struct_hash, &color, &spatial);
+        let words = buffer
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let index = FrameSearchIndex { buffer, video_ids, words, built_at: 0 };
+        let (hits, _) = index.search(&query, &SearchOptions { min_hash_score: 0.6, max_results: 10 });
+        assert_eq!(hits.len(), 1);
         assert!((hits[0].score - 1.0).abs() < f64::EPSILON);
     }
 
