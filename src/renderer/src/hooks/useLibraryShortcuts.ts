@@ -66,6 +66,7 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
       // 焦点在按钮上时，空格与回车应触发按钮本身，否则会出现"点一下按钮没反应又改了选中态"
       const onButton = e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement
+      if (onButton && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) return
       const mod = e.ctrlKey || e.metaKey
       switch (e.key) {
         case 'ArrowDown':

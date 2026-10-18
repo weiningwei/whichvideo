@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
@@ -139,6 +139,25 @@ export function LibraryView(props: Props) {
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
   } = useVideoCursor({ videos: shownVideos, toggleVideoSelection })
 
+  const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    const box = scrollRef.current
+    if (!box || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+    const entries = Array.from(box.querySelectorAll<HTMLElement>('[data-library-entry]'))
+    const current = entries.indexOf(event.currentTarget)
+    if (current < 0) return
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? entries.length - 1
+        : Math.max(0, Math.min(entries.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)))
+    event.preventDefault()
+    event.stopPropagation()
+    const next = entries[nextIndex]
+    next?.focus()
+    const videoId = next?.dataset.videoId
+    if (videoId) handleRowClick(Number(videoId), event.shiftKey, event.ctrlKey || event.metaKey)
+    else clearSelection()
+    setOpenMenuId(null)
+  }
+
   /**
    * 全局键盘快捷键（光标移动 + 操作键）。「键 → 行为」集中在 useLibraryShortcuts，
    * 这里只负责把当前状态/动作喂给它。
@@ -195,10 +214,15 @@ export function LibraryView(props: Props) {
                 <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path}>
                   <td colSpan={4} className="border-b border-line/50 bg-surface-1 p-0">
                     <button
+                      data-library-entry
                       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-row-hover focus-visible:outline-accent"
                       style={{ paddingLeft: `${16 + row.depth * 22}px` }}
                       onClick={() => toggleFolder(row.node.path)}
                       onKeyDown={(event) => {
+                        if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+                          handleEntryKeyDown(event)
+                          return
+                        }
                         const open = filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))
                         if ((event.key === 'ArrowRight' && !open) || (event.key === 'ArrowLeft' && open)) {
                           event.preventDefault()
@@ -260,6 +284,7 @@ export function LibraryView(props: Props) {
                     }
                   }}
                   onCloseMenu={() => setOpenMenuId(null)}
+                  onNavigateKey={handleEntryKeyDown}
                 />
               ))}
             </tbody>

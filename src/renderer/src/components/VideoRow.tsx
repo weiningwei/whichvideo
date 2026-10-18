@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
@@ -7,7 +7,7 @@ import { blockModifierTextSelection } from '../lib/selection'
 export function VideoRow({
   video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
   onSamplingChange, isVideoSelected, onRowClick, onOpenDouble,
-  menuOpen, onToggleMenu, onCloseMenu
+  menuOpen, onToggleMenu, onCloseMenu, onNavigateKey
 }: {
   video: VideoRecord
   roots: string[]
@@ -26,6 +26,7 @@ export function VideoRow({
   menuOpen: boolean
   onToggleMenu: () => void
   onCloseMenu: () => void
+  onNavigateKey: (event: ReactKeyboardEvent<HTMLElement>) => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
@@ -94,8 +95,11 @@ export function VideoRow({
   return (
     <tr
       data-video-id={video.id}
+      data-library-entry
+      tabIndex={focused ? 0 : -1}
       onMouseDown={blockModifierTextSelection}
-      onClick={(e) => onRowClick(e.shiftKey, e.ctrlKey || e.metaKey)}
+      onClick={(e) => { e.currentTarget.focus({ preventScroll: true }); onRowClick(e.shiftKey, e.ctrlKey || e.metaKey) }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget) onNavigateKey(event) }}
       onDoubleClick={() => onOpenDouble(video.id)}
       className="group cursor-pointer border-b border-line/40"
     >
