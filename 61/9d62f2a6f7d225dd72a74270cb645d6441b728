@@ -1,0 +1,28 @@
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_6eed5465e58822 13,771
+src-tauri/src/logger.rs
+  s_e78e0118ab4232::t_6eed5465e58822 1-19,23-65,71-79
+  s_e78e0118ab4232::t_3bd3209f300e91 20-22,66-70
+src-tauri/src/constants.rs
+  s_e78e0118ab4232::t_6eed5465e58822 39-41
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_6eed5465e58822 10,31-40
+src-tauri/src/state.rs
+  s_e78e0118ab4232::t_6eed5465e58822 3,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "619d62f2a6f7d225dd72a74270cb645d6441b728",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
