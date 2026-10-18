@@ -170,6 +170,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const emptyFilter = render(jsx(LibraryView, { ...libraryProps, folders: [], videos: [], total: 0, query: { keyword: '不存在' }, selectedVideoIds: new Set() }))
   check('筛选无结果不误报为空库，并可一键清除筛选', emptyFilter.includes('没有符合条件的视频') && emptyFilter.includes('清除筛选</button>') && !emptyFilter.includes('开始建立你的视频库'))
   check('默认只显示可展开的导入目录，不铺满视频文件', library.includes('Movies') && library.includes('aria-expanded="false"') && !library.includes(`播放 ${video.name}`))
+  check('文件夹使用描边图标而非易混淆的方框符号', library.includes('data-folder-icon="true"') && !library.includes('▣'))
   const pausedFolder = { ...folder, enabled: false, watchState: 'idle' }
   const pausedLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [pausedFolder] }))
   check('文件夹行显示实际监视状态', library.includes('监听中') && pausedLibrary.includes('已暂停') && !pausedLibrary.includes('自动同步'))

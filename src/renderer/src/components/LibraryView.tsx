@@ -235,7 +235,7 @@ export function LibraryView(props: Props) {
                       aria-label={`${row.node.name}，${row.node.count} 个视频`}
                     >
                       <span className="w-3 text-[11px] text-tertiary">{(filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))) ? '⌄' : '›'}</span>
-                      <span className="text-[17px] text-accent" aria-hidden="true">▣</span>
+                      <FolderIcon />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium text-primary" title={row.node.path}>{row.node.name}</span>
                         {row.depth === 0 && <span className="block truncate text-[10.5px] text-tertiary" title={row.node.path}>{row.node.path}</span>}
@@ -370,6 +370,26 @@ export function LibraryView(props: Props) {
         }}
       />
     </div>
+  )
+}
+
+/** 资源树节点标识：描边文件夹避免被误读成复选框或半选状态。 */
+function FolderIcon() {
+  return (
+    <svg
+      data-folder-icon
+      className="h-4 w-4 shrink-0 text-accent"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.75 5.5h5l1.7 2H17.25v7.25a1.5 1.5 0 0 1-1.5 1.5h-11.5a1.5 1.5 0 0 1-1.5-1.5V5.5Z" />
+      <path d="M2.75 7.5h14.5" />
+    </svg>
   )
 }
 
