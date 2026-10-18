@@ -46,4 +46,20 @@ impl AppState {
             }
         }
     }
+
+    /// 帧数据被删除或增量更新失败时，从数据库恢复内存搜索索引。
+    ///
+    /// 先释放数据库锁再获取搜索索引锁，避免与搜索、索引任务形成锁顺序反转。
+    pub fn rebuild_search_index(&self) {
+        let rebuilt = self
+            .db
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(FrameSearchIndex::rebuild_from_db));
+        if let Some(index) = rebuilt {
+            if let Ok(mut current) = self.search_index.lock() {
+                *current = index;
+            }
+        }
+    }
 }

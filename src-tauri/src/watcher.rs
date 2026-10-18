@@ -205,7 +205,7 @@ fn remove_by_path(app: &AppHandle, path: &str) {
                 path: v.path.clone(),
             },
         );
-        rebuild_search_index(app);
+        state.rebuild_search_index();
     }
 }
 
@@ -245,23 +245,7 @@ fn remove_under(app: &AppHandle, dir: &str) {
         );
     }
     if !ids.is_empty() {
-        rebuild_search_index(app);
-    }
-}
-
-fn rebuild_search_index(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let rebuilt = {
-        let guard = state.db.lock().ok();
-        guard
-            .as_ref()
-            .and_then(|guard| guard.as_ref())
-            .map(crate::search::FrameSearchIndex::rebuild_from_db)
-    };
-    if let Some(index) = rebuilt {
-        if let Ok(mut current) = state.search_index.lock() {
-            *current = index;
-        }
+        state.rebuild_search_index();
     }
 }
 

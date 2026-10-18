@@ -322,7 +322,7 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
             let _ = db::set_video_status(c, video_id, "failed", Some(error));
         }
     }
-    rebuild_search_index(&app);
+    app.state::<AppState>().rebuild_search_index();
     emit_video_updated(&app, video_id);
     emit(
         &app,
@@ -332,19 +332,6 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
         },
     );
     finish(app, video_id, Some(false));
-}
-
-fn rebuild_search_index(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let rebuilt = {
-        let guard = state.db.lock().unwrap();
-        guard
-            .as_ref()
-            .map(crate::search::FrameSearchIndex::rebuild_from_db)
-    };
-    if let Some(index) = rebuilt {
-        *state.search_index.lock().unwrap() = index;
-    }
 }
 
 fn update_search_index_for_video(app: &AppHandle, video_id: i64) {
@@ -359,7 +346,7 @@ fn update_search_index_for_video(app: &AppHandle, video_id: i64) {
         state.search_index.lock().unwrap().replace_video_frames(video_id, frames);
     } else {
         // 读取增量帧失败时回退全量重建，优先保持搜索结果与数据库一致。
-        rebuild_search_index(app);
+        state.rebuild_search_index();
     }
 }
 
