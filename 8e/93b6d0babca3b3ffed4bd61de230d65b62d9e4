@@ -1,0 +1,23 @@
+scripts/test-rust.mjs
+  s_e78e0118ab4232::t_c89a1d3c1880b1 1-15
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_c89a1d3c1880b1 1-57
+package.json
+  s_e78e0118ab4232::t_c89a1d3c1880b1 30-31,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e93b6d0babca3b3ffed4bd61de230d65b62d9e4",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
