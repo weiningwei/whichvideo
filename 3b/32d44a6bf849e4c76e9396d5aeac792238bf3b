@@ -1,0 +1,27 @@
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_aa2d44fd24009e 112-113
+src/renderer/src/App.tsx
+  s_e78e0118ab4232::t_140b141f788d08 122
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_140b141f788d08 177-178,180-188,190
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_140b141f788d08 32
+src/renderer/src/components/DuplicatesModal.tsx
+  s_e78e0118ab4232::t_140b141f788d08 9,25,116-117,126-139,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b32d44a6bf849e4c76e9396d5aeac792238bf3b",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
