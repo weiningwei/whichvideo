@@ -1,0 +1,23 @@
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_ed17a681e20d59 64-65,75,231
+src/renderer/src/components/SidePanel.tsx
+  s_e78e0118ab4232::t_6cfe348a65c715 15
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_6cfe348a65c715 2,116-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b4775de5131a40d8f0b431c25d1a9490242cd42",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
