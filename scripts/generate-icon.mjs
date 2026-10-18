@@ -254,10 +254,16 @@ function main() {
   mkdirSync(dirname(outIco), { recursive: true })
   writeFileSync(outIco, encodeICO(images))
 
+  // Tauri 的窗口图标与 Windows bundle 也必须使用同一图源，避免迁移后退回默认图标。
+  const tauriIconDir = join(root, 'src-tauri', 'icons')
+  mkdirSync(tauriIconDir, { recursive: true })
+  writeFileSync(join(tauriIconDir, 'icon.ico'), encodeICO(images))
+
   // 单独存一份 1024 的 PNG：README / 应用商店 / 文档插图用
   const bigPng = encodePNG(renderRGBA(1024), 1024)
   const pngPath = join(buildDir, 'icon.png')
   writeFileSync(pngPath, bigPng)
+  writeFileSync(join(tauriIconDir, 'icon.png'), bigPng)
 
   // favicon 从同一批渲染结果里切出来，避免"改了 build/ 忘了改 favicon"导致两边不一致
   const faviconDir = join(root, 'src', 'renderer', 'public')
@@ -269,6 +275,7 @@ function main() {
   console.log('\n已生成：')
   console.log('  ' + icoPath + '  （' + ICO_SIZES.join(', ') + '）  打包用（electron-builder win.icon）')
   console.log('  ' + outIco + '  同上，运行期随包（__dirname/../icon.ico）')
+  console.log('  ' + join(tauriIconDir, 'icon.ico') + ' / icon.png  Tauri 窗口与安装包')
   console.log('  ' + pngPath + '  1024×1024，' + (bigPng.length / 1024).toFixed(1) + ' KB')
   console.log('  ' + join(faviconDir, 'favicon-16.png') + ' / favicon-32.png')
 }

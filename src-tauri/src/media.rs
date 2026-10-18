@@ -82,13 +82,11 @@ fn candidate_dirs() -> Vec<PathBuf> {
     if let Some(bin_dir) = std::env::var("WHICHVIDEO_BIN_DIR").ok() {
         dirs.push(PathBuf::from(bin_dir));
     }
-    // 资源目录：exe 同级 resources/bin（Tauri 打包后）或开发期 resources/bin。
+    // 资源目录：exe 同级 resources/bin（Tauri 打包后）；开发态沿祖先向上找仓库 resources/bin。
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            dirs.push(parent.join("resources").join("bin"));
-            // 开发期 exe 在 target/.../，资源在仓库 src-tauri/resources/bin。
-            if let Some(pp) = parent.parent() {
-                dirs.push(pp.join("resources").join("bin"));
+            for ancestor in parent.ancestors().take(5) {
+                dirs.push(ancestor.join("resources").join("bin"));
             }
         }
     }

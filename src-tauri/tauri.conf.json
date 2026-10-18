@@ -29,7 +29,10 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
-    "icon": ["icons/icon.png"],
-    "resources": {}
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": {
+      "../resources/bin/ffmpeg.exe": "resources/bin/ffmpeg.exe",
+      "../resources/bin/ffprobe.exe": "resources/bin/ffprobe.exe"
+    }
   }
 }
