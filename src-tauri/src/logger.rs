@@ -67,8 +67,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("whichvideo-log-test-{nonce}"));
-        let _ = fs::create_dir_all(&dir);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("whichvideo-log-test-{nonce}"));
+        fs::create_dir_all(&dir).unwrap();
         let path = dir.join("whichvideo.log");
         fs::write(&path, b"123456").unwrap();
         rotate_if_needed(&path, 4);

@@ -19,6 +19,13 @@ use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
             let app_default = app.path().app_data_dir()?;
             #[cfg(windows)]
@@ -39,6 +46,11 @@ fn main() {
             ));
             logger::log(&format!("日志文件：{}", log_path.display()));
             app.manage(AppState::new());
+            if let Err(error) = watcher::sync_all(app.handle()) {
+                logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
+            }
+            indexer::resume_pending(app.handle().clone());
+            logger::log("启动生命周期初始化完成");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -74,6 +86,12 @@ fn main() {
             commands::search_clipboard,
             commands::search_url
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                let _ = watcher::stop_all(app);
+                logger::log("应用退出，文件夹监听已停止");
+            }
+        });
 }
