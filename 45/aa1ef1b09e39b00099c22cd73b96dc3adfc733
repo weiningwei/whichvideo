@@ -1,0 +1,23 @@
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_a06d9af2a31bec 127-129
+src/renderer/src/index.css
+  s_e78e0118ab4232::t_a06d9af2a31bec 127-134
+src/renderer/src/components/FrameGallery.tsx
+  s_e78e0118ab4232::t_a06d9af2a31bec 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45aa1ef1b09e39b00099c22cd73b96dc3adfc733",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
