@@ -1,6 +1,6 @@
 //! 索引器：把待处理视频抽帧、算指纹、写库，并对外播报进度。
 //!
-//! 镜像 Electron src/main/indexer.ts 的队列 + 处理模型，但状态保存在 AppState
+//! 索引队列与处理模型，状态保存在 AppState
 //! （共享受 Mutex 保护）。每条视频在独立线程里处理（ffmpeg 阻塞调用），并发数
 //! 受 settings.concurrency 限制。处理前后通过 Tauri 事件通道（library_event）
 //! 广播 status / stats / video-updated，供渲染端动态刷新。

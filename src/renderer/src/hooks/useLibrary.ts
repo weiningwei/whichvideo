@@ -102,8 +102,8 @@ export interface LibraryState {
 }
 
 export function useLibrary() {
-  // notices 先于 core：core 订阅的事件通道里有主进程的 notice（索引失败/
-  // 主进程异常等），需要消费入口转成渲染端通知
+  // notices 先于 core：core 订阅的事件通道里有后端 notice（索引失败/
+  // 后端异常等），需要消费入口转成渲染端通知
   const notices = useNotices()
   const core = useLibraryCore({ onNotice: notices.pushNotice })
   const videoList = useVideoList()
@@ -200,7 +200,7 @@ export function useLibrary() {
        * 此前 UI 层对选中集合循环调 removeVideo —— 每个 id 各自 withBusy +
        * refreshAll，删 N 个就闪 N 次busy 文案、跑 N 遍全量刷新，且循环里
        * 没 await，N 个请求并发交错。这里串行逐条调 IPC，最后统一刷新一次；
-       * 主进程广播的 video-removed 事件会由 useVideoList 逐条就地删行。
+       * 后端广播的 video-removed 事件会由 useVideoList 逐条就地删行。
        */
       async removeVideos(videoIds: number[]): Promise<void> {
         await withBusy(`正在从库中移除 ${videoIds.length} 个视频…`, async () => {

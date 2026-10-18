@@ -1,8 +1,8 @@
-//! 文件夹动态监听（镜像 Electron src/main/watcher.ts）。
+//! 文件夹动态监听与变更同步。
 //!
 //! 使用 notify crate 的 RecommendedWatcher（Windows 走 ReadDirectoryChangesW）。
 //! 视频文件新增/覆盖 → 入索引队列；删除 → 从库移除并播报；子目录被删 → 移除其下全部视频。
-//! 与 Electron 一致：监听只盯磁盘目录，忽略初始既有文件（notify 只回报变更）。
+//! 监听只处理启动后的磁盘变更；初始已有文件由扫描流程负责。
 
 use crate::db;
 use crate::events::LibraryEvent;

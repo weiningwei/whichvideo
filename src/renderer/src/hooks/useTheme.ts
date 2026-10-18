@@ -6,8 +6,8 @@
  * 当前是什么主题。
  *
  * 为什么不直接在 CSS 里用 prefers-color-scheme：那样"用户手动选浅色"就没法
- * 覆盖系统设置。Electron 也拿不到 CSS media query 的实时变化（要在渲染端
- * 监听 matchMedia），所以由这里统一处理，三种取值都能落到 data-theme 上。
+ * 覆盖系统设置。系统主题的实时变化需要在 WebView 中监听 matchMedia，
+ * 所以由这里统一处理，三种取值都能落到 data-theme 上。
  *
  * 选择持久化到 localStorage，键名带 wv- 前缀避免与其他应用串味。
  */
@@ -35,7 +35,7 @@ function systemTheme(): ResolvedTheme {
 
 function apply(theme: ResolvedTheme): void {
   document.documentElement.dataset.theme = theme
-  // Electron 的原生标题栏 / 窗口边框不跟 CSS，但窗口背景色会露出来
+  // 系统窗口边框不跟 CSS，但 WebView 背景色会露出来
   document.body.style.backgroundColor = theme === 'light' ? '#f8fafc' : '#0b0f17'
 }
 

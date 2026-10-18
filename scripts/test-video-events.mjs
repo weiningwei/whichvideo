@@ -1,7 +1,7 @@
 /**
  * 视频列表事件消费的行为验证。
  *
- * 背景：索引完成时主进程广播 `video-updated`（带完整 VideoRecord），但渲染端
+ * 背景：索引完成时后端广播 `video-updated`（带完整 VideoRecord），但渲染端
  * 没人消费 —— useLibraryCore 的分支是空的，videos state 又只在 useVideoList 里。
  * 于是新视频索引完了，列表还停在导入时的快照：状态「索引中」、帧数 0，
  * 直到手动切换查询或重开窗口才恢复。
@@ -134,9 +134,9 @@ console.log('=== 静态守卫：订阅真的接上了 ===')
     ''
   )
   check(
-    'useLibraryCore 消费 notice 事件（主进程通知转渲染端提示）',
+    'useLibraryCore 消费 notice 事件（后端通知转渲染端提示）',
     coreSrc.includes("case 'notice':") && coreSrc.includes('onNotice?.(event.level, event.message)'),
-    '此前该分支空置 —— 主进程 9 处 notice 广播全被丢弃，索引失败等提示看不到'
+    '此前该分支空置 —— 后端 notice 广播全被丢弃，索引失败等提示看不到'
   )
   const libSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8')
   check(

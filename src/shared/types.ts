@@ -1,6 +1,6 @@
 /**
- * 主进程 <-> 渲染进程共享的类型定义。
- * 这里只放纯类型，不能 import electron / node 模块，渲染端也要用。
+ * Rust 后端 <-> 渲染进程共享的类型定义。
+ * 这里只放纯类型，不能 import Node/Rust 平台模块，渲染端也要用。
  */
 import type { ErrorCode } from './result'
 
@@ -249,7 +249,7 @@ export interface VideoProbeInfo {
 export interface AppSettings {
   /**
    * 每个视频抽取的关键帧数量**上限**。
-   * 实际帧数按时长策略决定（见 src/main/media.ts 的 framesForDuration）：
+   * 实际帧数按时长策略决定（见 src-tauri/src/sampling.rs）：
    * 短视频少抽、长视频多抽，再与本值取小。填 16 会把 15 分钟以上的视频压到 16 帧。
    *
    * 注意两点：

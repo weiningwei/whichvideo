@@ -620,7 +620,7 @@ pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
 }
 
 /* ================================================================== */
-/* 图片检索（M9）：byPath / byDataUrl / byClipboard / byUrl            */
+/* 图片检索：byPath / byDataUrl / byClipboard / byUrl                 */
 /* ================================================================== */
 
 const RERANK_TOP_K: usize = 8;
@@ -678,7 +678,7 @@ fn round2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
 
-/// 统一的失败响应（四条检索入口共用同一形状，镜像 Electron failResponse）。
+/// 统一的失败响应，四条检索入口共用同一结构。
 fn fail_response(code: &str, message: &str) -> SearchResponse {
     SearchResponse {
         query: SearchQuery {

@@ -1,7 +1,7 @@
 //! 抽帧采样策略：决定「抽多少帧、抽哪些时间点」。纯函数，无 ffmpeg / 文件 IO 依赖，
 //! 与 media.rs（二进制查找 + 进程执行 + 抽帧）解耦，可独立测试。
 //!
-//! 镜像 Electron src/main/sampling.ts：framesForDuration → plannedFrameCount → 时间点计划。
+//! 场景采样计划：framesForDuration → plannedFrameCount → 时间点计划。
 
 use crate::constants::*;
 
@@ -62,7 +62,7 @@ pub fn plan_timestamps(duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
 
 /**
  * 场景采样计划：场景切换点优先 + 每镜头中点帧 + 长镜头内部均匀补充，总数不超过 frameBudget。
- * 镜像 Electron planSceneTimestamps。
+ * 生成场景感知的时间点计划。
  */
 pub fn plan_scene_timestamps(scene_times: &[f64], duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
     if scene_times.is_empty() {

@@ -39,7 +39,7 @@ pub struct WatchedFolder {
     pub last_scan_at: Option<i64>,
 }
 
-/// 复用现有 whichvideo.db 的 schema（与 src/main/db.ts 一致）。
+/// whichvideo.db 的当前 schema。
 /// 现有库已含这些表，CREATE TABLE IF NOT EXISTS 不会重复建。
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS videos (
@@ -119,7 +119,7 @@ fn clean_env(value: Option<String>) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// 纯判定函数，与 Electron datadir.ts 的优先级一致，便于独立测试。
+/// 数据目录优先级的纯判定函数，便于独立测试。
 pub fn resolve_data_dir<F>(
     default_dir: &Path,
     env_dir: Option<String>,
@@ -236,7 +236,7 @@ pub fn open_db() -> SqlResult<Connection> {
     let _ = conn.pragma_update(None, "synchronous", "NORMAL");
     let _ = conn.pragma_update(None, "foreign_keys", "ON");
     conn.execute_batch(SCHEMA)?;
-    // 与 src/main/db.ts 迁移保持一致：补齐旧 Electron 库可能缺失的列（已有则 ALTER 报错，忽略）。
+    // 兼容早期数据库：补齐可能缺失的列（已有则 ALTER 报错并忽略）。
     for stmt in [
         "ALTER TABLE videos ADD COLUMN file_hash TEXT",
         "ALTER TABLE videos ADD COLUMN sampling_override TEXT",
@@ -362,7 +362,7 @@ pub fn find_folder_by_path(conn: &Connection, dir_path: &str) -> SqlResult<Optio
 }
 
 /// 登记/更新一个被监听的文件夹，返回其记录。insert 与 update 等价（folderId
-/// 注册用），与 Electron db.upsertFolder 语义一致。
+/// 注册用），保持幂等更新语义。
 pub fn insert_folder(
     conn: &Connection,
     dir_path: &str,
@@ -864,7 +864,7 @@ pub fn update_settings(conn: &mut Connection, patch: &SettingsPatch) -> SqlResul
     get_settings(conn)
 }
 
-/// 重置索引库（清空视频/帧/文件夹，保留设置），对齐 Electron library_reset。
+/// 重置索引库：清空视频、帧和文件夹，保留用户设置。
 pub fn clear_all(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch("DELETE FROM frames; DELETE FROM videos; DELETE FROM image_folders;")?;
     Ok(())
@@ -1135,7 +1135,7 @@ pub struct FrameMatrix {
     pub video_ids: Vec<i64>,
 }
 
-/// 全量读出所有帧指纹，拼成常驻内存缓冲（镜像 Electron db.loadFrameMatrix）。
+/// 全量读出所有帧指纹，拼成常驻内存缓冲。
 ///
 /// dhash 在库中按 i64 存储（与 NewFrame.dhash 一致），读出后按小端 8 字节写回缓冲，
 /// 与索引侧 ffmpeg scale=w=320:h=-2 的 rgb24 帧哈希路径完全对称。struct/color/spatial

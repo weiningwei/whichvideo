@@ -1,6 +1,6 @@
-//! 每帧的紧凑指纹布局（镜像 Electron src/shared/framepack.ts）。
+//! 每帧的紧凑指纹布局，与前端共享格式保持字节级一致。
 //!
-//! 内存布局（M9 常驻内存比对用）：
+//! 常驻内存索引布局：
 //!   0   : 8 字节  64bit dHash
 //!   8   : 128 字节 1024bit 均值归一化结构指纹
 //!   136 : 64 字节 颜色直方图（4x4x4 RGB 分桶，量化为 u8）
@@ -45,7 +45,7 @@ pub fn quantize_color(hist: &[f32]) -> Vec<u8> {
     out
 }
 
-/// 量化后的直方图相交相似度，避免搜索时还原 Float32（镜像 framepack.ts）。
+/// 量化后的直方图相交相似度，避免搜索时还原 Float32。
 /// a 为量化直方图；b 为库侧缓冲，b_off 起 64 字节为本帧颜色。
 pub fn quantized_histogram_similarity(a: &[u8], b: &[u8], b_off: usize) -> f64 {
     let mut sum = 0u32;

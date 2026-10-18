@@ -427,7 +427,7 @@ async function main() {
   rmSync(unpacked, { recursive: true, force: true })
 
   console.log(`\n完成，产物在 ${outDir}${sep}`)
-  console.log('打包时 electron-builder 会把它复制到安装目录的 resources/bin。')
+  console.log('打包时 Tauri 会把它们作为资源复制到安装目录。')
 }
 
 try {

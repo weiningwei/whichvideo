@@ -1,4 +1,4 @@
-//! 感知哈希（perceptual hash）算法，镜像 Electron src/shared/hash.ts。
+//! 感知哈希（perceptual hash）算法，与共享指纹格式保持一致。
 //!
 //! 一张图压成三部分指纹：
 //!  1. 64bit dHash —— 9×8 灰度梯度，搜索时快速剪枝

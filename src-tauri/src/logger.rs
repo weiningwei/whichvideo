@@ -1,4 +1,4 @@
-//! Rust 主进程日志：GUI 子系统没有可见控制台，关键启动与索引消息必须落盘。
+//! Rust 后端日志：GUI 子系统没有可见控制台，关键启动与索引消息必须落盘。
 
 use crate::constants::MAX_LOG_BYTES;
 use std::fs::{self, OpenOptions};

@@ -1,4 +1,4 @@
-//! ffmpeg / ffprobe 定位与可定位播放器探测（镜像 Electron src/main/media.ts）。
+//! ffmpeg / ffprobe 定位、媒体探测、抽帧与播放器能力检查。
 //!
 //! 仅含「探测」能力：工具路径解析、toolsReady、findSeekablePlayer。
 //! 实际的抽帧/解码/探测命令由后续模块（M6 的 decodeFrameAt、M7 的 indexer）复用这里的 helpers。
@@ -106,7 +106,7 @@ fn candidate_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// 解析 ffmpeg / ffprobe 路径；结果缓存（与 Electron 行为一致）。
+/// 解析 ffmpeg / ffprobe 路径并缓存结果。
 pub fn resolve_tools() -> Option<&'static ToolPaths> {
     TOOLS
         .get_or_init(|| {
@@ -354,7 +354,7 @@ pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
 /**
  * 解码单个时间点的一帧（RGB24 裸像素），转 JPEG dataUrl 返回。
  * 用于搜索结果命中帧预览 / 查看索引帧弹层。失败（文件已删/时间点越界/解码错误）
- * 返回 None，调用方回退到缩略图。逻辑镜像 Electron media.decodeFrameAt + rgb24ToJpegDataUrl。
+ * 返回 None 时调用方回退到缩略图。
  *
  * ffmpeg 用 `-ss` 前置快速定位 + `-frames:v 1` 取一帧，scale 到 EXTRACT_WIDTH 宽、
  * h=-2 偶数高，输出 rawvideo（rgb24）。rawvideo 无头，高度由字节数反推：
@@ -410,7 +410,7 @@ pub fn decode_frame_at(file_path: &str, time_ms: i64, width: u32) -> Option<Stri
 }
 
 /* ================================================================== */
-/* 索引器所需的探测 / 抽帧 / 哈希能力（镜像 Electron src/main/media.ts） */
+/* 索引器所需的探测、抽帧与哈希能力 */
 /* ================================================================== */
 
 /// ffmpeg 单次调用的同步结果。

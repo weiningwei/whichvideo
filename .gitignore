@@ -1,20 +1,14 @@
-# ---- Node / Electron ----
+# ---- Node / Tauri ----
 node_modules/
 .pnpm-store/
 # pnpm 11 会在安装时自动生成这个文件（构建脚本白名单），内容与机器相关，不入库
 pnpm-workspace.yaml
-out/
-# out-e2e / out-startup：自检专用编译产物（scripts/build-core.mjs 用 tsc 把主进程
-# 编成裸 Node 可直接 require 的 CJS，供 test:core / test:startup 运行）。
-# 与发布产物 out/ 是两条产线（别名重写、package.json 标注 commonjs 都不同），
-# 删了能随时重建，不入库。
-out-e2e/
-out-startup/
 dist/
 release/
 *.tsbuildinfo
 .vite/
-.electron-cache/
+src-tauri/target/
+src-tauri/gen/
 
 # ---- 运行时数据（索引库、日志、测试素材）----
 data/
@@ -58,7 +52,7 @@ venv/
 ENV/
 
 # ---- 编辑器 / 系统 ----
-# 允许入库 .vscode/settings.json：里面排除了 dist/out/tmp，
+# 允许入库 .vscode/settings.json：里面排除了 dist/target/tmp，
 # 避免编辑器索引构建产物、占用 dist 目录导致打包 EPERM
 .vscode/*
 !.vscode/settings.json
@@ -66,5 +60,3 @@ ENV/
 .DS_Store
 Thumbs.db
 .workbuddy/
-src-tauri/target/
-src-tauri/gen/

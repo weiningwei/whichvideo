@@ -31,7 +31,7 @@ export interface UseLibraryCoreReturn {
 }
 
 export interface UseLibraryCoreOptions {
-  /** 主进程广播的 notice 事件消费入口（转成渲染端通知） */
+  /** 后端广播的 notice 事件消费入口（转成渲染端通知） */
   onNotice?: (level: 'info' | 'warn' | 'error', message: string) => void
 }
 
@@ -94,8 +94,8 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
           // 曾因该分支为空导致"索引完成后列表仍显示索引中/0 帧"——修复在 useVideoList。
           break
         case 'notice':
-          // 主进程的通知（索引失败/主进程异常/文件被移除/发现新视频等）在此
-          // 转成渲染端通知。此前该分支空置 —— 主进程 9 处 notice 广播全部被
+          // 后端通知（索引失败/后端异常/文件被移除/发现新视频等）在此
+          // 转成渲染端通知。此前该分支空置 —— 后端 notice 广播全部被
           // 丢弃，用户看不到"索引失败"这类关键信息。
           onNotice?.(event.level, event.message)
           break

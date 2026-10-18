@@ -16,19 +16,19 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ### 隐私
 
-**没有任何数据上传。** 这一点由 `pnpm test:network` 逐项断言，不只是口头承诺：
+**本地视频、索引与截图不会上传。** 后端仅在两种明确场景访问网络：
 
 | 环节 | 是否联网 |
 | --- | --- |
 | 导入 / 抽帧 / 建索引 | 否 |
 | 文件夹监听 | 否 |
 | 指纹检索 | 否 |
-| 自动更新 | 否（未配置更新源，运行时静默跳过） |
+| 启动版本检查 | 是（可在设置关闭；只查询 GitHub Releases） |
 | **粘贴网页链接取图** | **是 —— 仅此一处，且需你主动触发** |
 
-链接取图是唯一出口：只在你点「链接检索」或回车时发起，请求你贴的那个 URL，
+链接取图只在你点「链接检索」或回车时发起，请求你贴的那个 URL，
 **只带固定的 `User-Agent`，不带任何本机标识、不上传任何本地数据**。
-除此之外程序不发起任何网络请求（无遥测、无统计、无崩溃上报，依赖里也没有这类库）。
+除可关闭的版本检查外，程序不发起其他网络请求（无遥测、无统计、无崩溃上报）。
 
 运行期日志（`whichvideo.log`）会记录数据目录的绝对路径，仅写入本地文件，不外发。
 
@@ -52,7 +52,7 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ## 快速开始
 
-需要 node >= 22、pnpm >= 10，以及 **ffmpeg**（抽帧用，见下）。
+需要 Node >= 22、pnpm >= 10、Rust stable、Windows C++ 构建工具，以及 **ffmpeg**（抽帧用，见下）。
 
 ```bash
 # 1. 安装依赖
@@ -220,7 +220,7 @@ pnpm build:win                 # NSIS 安装包
 ### 通知
 
 - **状态栏**（底部）显示最近的操作反馈，几秒后自动消失
-- 需要留意的问题（**索引失败、主进程异常**等）在**右下角**弹出，按重要程度
+- 需要留意的问题（**索引失败、后端异常**等）在**右下角**弹出，按重要程度
   停留 8~12 秒；鼠标**悬停可暂停倒计时**，点击立即关闭
 
 ---
@@ -337,8 +337,8 @@ mp4 / mkv / avi / mov / wmv / flv / webm / m4v / ts / m2ts / mpg / mpeg / rmvb /
 
 ## 开发
 
-技术栈：Electron + React 19 + Tailwind CSS v4 + better-sqlite3。渲染端产物
-`app.asar` 约 3.4MB，其余是 Electron/Chromium 运行时与 ffmpeg。
+技术栈：Tauri 2 + Rust + React 19 + Tailwind CSS v4 + SQLite（rusqlite）。
+Windows 使用系统 WebView2，不再分发 Electron/Chromium 运行时。
 
 ```bash
 pnpm test                # 全部自检
@@ -346,10 +346,10 @@ pnpm dev                 # 开发模式
 pnpm icon                # 重新生成应用图标
 ```
 
-`pnpm test` 会依次跑 21 套自检（打包配置、启动链路、指纹性质、采样计划、
-路径处理、配色纪律、图标接线、光标与连选行为、渲染端冒烟等）。各套的作用
+`pnpm test` 会依次跑 Rust 单测、Tauri IPC/资源契约、便携版、路径处理、配色纪律、
+光标与连选行为、渲染端冒烟和事件消费等门禁。各套的作用
 与单独运行方式见 [AGENTS.md](AGENTS.md)。打包与运行遇到怪问题（双击没反应、
-EPERM、Electron 运行时反复下载）见 [docs/troubleshooting.md](docs/troubleshooting.md)。
+EPERM、Rust/NSIS 工具下载）见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
 更多文档：
 

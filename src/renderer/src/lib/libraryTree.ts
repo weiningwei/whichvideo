@@ -8,7 +8,7 @@ import type { VideoRecord, WatchedFolder } from '@shared/types'
  * 下的全部视频），与监听目录的「文件夹」概念解耦 —— 一个监听目录里可以有很多
  * 层子目录，树把它们都展开。
  *
- * 全部为纯函数，可单测；不依赖 React / Electron。
+ * 全部为纯函数，可单测；不依赖 React 或桌面后端。
  */
 
 export interface DirNode {

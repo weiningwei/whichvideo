@@ -368,7 +368,7 @@ function FolderCard({
   )
 }
 
-/** 从拖拽内容里尽力提取目录绝对路径（Electron 下 File.path 可用） */
+/** 从拖拽内容里尽力提取目录绝对路径（桌面 WebView 的 File.path 扩展可用时优先）。 */
 function extractDroppedDir(dataTransfer: DataTransfer): string | null {
   const files = Array.from(dataTransfer.files ?? [])
   for (const file of files) {

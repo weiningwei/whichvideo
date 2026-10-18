@@ -1,14 +1,14 @@
-//! 内存帧索引 + 搜索打分（镜像 Electron src/main/search.ts）。
+//! 内存帧索引与搜索打分。
 //!
 //! 帧指纹（8 字节 dHash + 128 字节结构 + 64 字节颜色 + 48 字节空间 + 8 字节元信息）
 //! 全量常驻内存，图片搜索 = 纯内存扫描：先用 64bit dHash 剪枝，再做 1024bit 结构
 //! 距离与颜色分。
 //!
-//! 打分公式（与 search.ts 一致，颜色权重上下界见 hash::COLOR_WEIGHT_MIN/MAX）：
+//! 打分公式（颜色权重上下界见 hash::COLOR_WEIGHT_MIN/MAX）：
 //!   颜色越鲜明的查询图，颜色直方图权重越高（0.3 → 0.7），因为纯色/少色画面的结构
 //!   指纹会退化，必须靠颜色区分。
 //!
-//! 剪枝阈值（镜像 Electron src/main/constants.ts::DHASH_PRUNE_BITS / STRUCT_PRUNE_BITS）。
+//! dHash 与结构指纹剪枝阈值。
 
 use crate::db;
 use crate::framepack;
@@ -81,7 +81,7 @@ pub const REFINE_POINTS_PER_SIDE: usize = 4;
 ///
 /// 窗口 = 局部采样间隔（时长/帧数）的一半，夹到 [1, 15] 秒；每侧均匀取
 /// REFINE_POINTS_PER_SIDE 个点。时长/帧数未知时按 10s 间隔兜底。
-/// 候选点夹到 [0, 时长] 内，0.05s 内视为同点去重（镜像 search.ts）。
+/// 候选点夹到 [0, 时长] 内，0.05s 内视为同点去重。
 pub fn refine_candidate_times(
     duration_seconds: Option<f64>,
     frame_count: usize,
@@ -113,10 +113,10 @@ pub fn refine_candidate_times(
 }
 
 /* ------------------------------------------------------------------ *
- * 打分（与 search.ts 完全一致的公式）
+ * 打分
  * ------------------------------------------------------------------ */
 
-/// 用与 search() 完全相同的公式给单帧指纹打分（不剪枝）：
+/// 用主搜索相同的公式给单帧指纹打分（不剪枝）：
 /// score = 结构相似度 × (1-颜色权重) + 颜色分 × 颜色权重。
 /// 只用于精修候选帧的比对 —— 候选是个位数帧，无需 dHash/结构剪枝。
 pub fn score_signature(
@@ -148,7 +148,7 @@ pub fn score_raw_frame(qv: &QueryVector, ild: &hash::ImageDataLike) -> f64 {
  * 内存帧索引
  * ------------------------------------------------------------------ */
 
-/// 全量常驻内存的帧指纹索引（镜像 Electron FrameSearchIndex）。
+/// 全量常驻内存的帧指纹索引。
 ///
 /// buffer 按 256 字节/帧紧凑排列；words 是其小端 u32 视图，热循环里免算偏移。
 pub struct FrameSearchIndex {
@@ -228,7 +228,7 @@ impl FrameSearchIndex {
     }
 
     /// 某视频的代表帧查询向量：取该视频在索引中时间居中的那一帧。
-    /// 查重场景下没有外部查询图，只能拿库内自己的帧当查询（见 Electron 注释）。
+    /// 查重场景没有外部查询图，因此使用库内帧作为查询样本。
     #[allow(dead_code)]
     pub fn video_query_vector(&self, video_id: i64) -> Option<QueryVector> {
         self.video_frame_vectors(video_id, 1).into_iter().next()

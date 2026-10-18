@@ -372,7 +372,7 @@ export default mod
       /<input[^>]*disabled[^>]*placeholder="粘贴图片链接或网页地址/.test(emptyHtml),
     '避免重复提交'
   )
-  // 链接检索后：没有预览图（主进程不回字节），但要显示来源链接
+  // 链接检索后：没有预览图（后端不回字节），但要显示来源链接
   const urlHtml = render(
     jsx(SearchView, {
       ...searchBase,
@@ -400,7 +400,7 @@ export default mod
     })
   )
   check(
-    '链接取图失败时把主进程给的原因原样显示',
+    '链接取图失败时把后端给的原因原样显示',
     urlFailHtml.includes('这个网页里没找到图片'),
     '错误文案透出，不显示成 IPC 调用异常'
   )

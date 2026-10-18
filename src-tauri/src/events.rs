@@ -1,4 +1,4 @@
-//! 库事件统一类型（镜像 Electron shared/types.ts 的 LibraryEvent）。
+//! 库事件统一类型，与前端 `LibraryEvent` 契约保持一致。
 //!
 //! 经 Tauri 事件通道播给渲染端（`library_event`）。当前由 indexer（M7）与
 //! 后续模块（M11 事件广播）产出；渲染端通过 listen(IPC.eventChannel) 订阅。

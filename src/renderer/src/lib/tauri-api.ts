@@ -22,8 +22,7 @@ import type {
 /**
  * Tauri 版桥接：用 @tauri-apps/api 的 invoke / listen 实现 WhichVideoApi。
  *
- * 保持与 Electron preload 暴露的 WhichVideoApi 同一契约，渲染端现有的
- * `window.whichvideo.*` 调用无需感知后端已切换为 Rust。
+ * 实现 WhichVideoApi 契约，集中管理命令参数和后端事件订阅。
  */
 export const tauriApi: WhichVideoApi = {
   library: {

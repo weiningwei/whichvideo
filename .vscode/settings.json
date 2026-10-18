@@ -6,25 +6,19 @@
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/.pnpm-store/**": true,
-    "**/out/**": true,
-    "**/out-e2e/**": true,
-    "**/out-startup/**": true,
     "**/dist/**": true,
+    "**/src-tauri/target/**": true,
+    "**/src-tauri/gen/**": true,
     "**/tmp/**": true,
-    "**/.electron-cache/**": true
+    "**/.vite/**": true
   },
   "search.exclude": {
     "**/node_modules": true,
     "**/.pnpm-store": true,
-    "**/out": true,
-    "**/out-e2e": true,
-    "**/out-startup": true,
     "**/dist": true,
+    "**/src-tauri/target": true,
+    "**/src-tauri/gen": true,
     "**/tmp": true,
     "**/pnpm-lock.yaml": true
-  },
-  "files.exclude": {
-    "**/out-e2e": true,
-    "**/out-startup": true
   }
 }
