@@ -1,0 +1,97 @@
+src-tauri/src/framepack.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1
+  s_e78e0118ab4232::t_10e9e656677b82 3,48
+src/renderer/src/hooks/useLibraryCore.ts
+  s_e78e0118ab4232::t_62ab2e45417a4b 34,97-98,125
+src/renderer/src/lib/tauri-api.ts
+  s_e78e0118ab4232::t_e79b0b0806ab93 25
+.vscode/settings.json
+  s_e78e0118ab4232::t_62d28c931d007a 10-11,13,19-20
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_62ab2e45417a4b 623
+  s_e78e0118ab4232::t_83321ff132ad16 681
+scripts/test-path-format.mjs
+  s_e78e0118ab4232::t_e79b0b0806ab93 2
+src-tauri/src/db.rs
+  s_e78e0118ab4232::t_83321ff132ad16 42,122,239,365,867,1138
+src-tauri/src/logger.rs
+  s_e78e0118ab4232::t_62ab2e45417a4b 1
+.gitignore
+  s_e78e0118ab4232::t_62d28c931d007a 1,10-11
+  s_e78e0118ab4232::t_f7ffc2c0b2979b 55
+src/renderer/src/hooks/useVideoList.ts
+  s_e78e0118ab4232::t_62ab2e45417a4b 15,26
+src-tauri/src/media.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1,109,357,413
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_62ab2e45417a4b 375,403
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_83321ff132ad16 3
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_6272c48797d138 3,5,7,9-13,15,17-23,25,28-29,32,34,36-38,40-41,43,45,47-51,54,56-61,63,65-67,69,71-72,75-76,78,80,82-83,86-87,89,91,93-96,98
+src-tauri/src/events.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1
+src/renderer/src/lib/libraryTree.ts
+  s_e78e0118ab4232::t_e79b0b0806ab93 11
+src-tauri/src/hash.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1
+AGENTS.md
+  s_e78e0118ab4232::t_6272c48797d138 3-4,6,8-9,11,14-20,23-41,44-73,75-84,87-88,90,92-97,99,101-104
+tsconfig.json
+  s_e78e0118ab4232::t_8b8d6c031d7476 3
+scripts/fetch-ffmpeg.mjs
+  s_e78e0118ab4232::t_e79b0b0806ab93 430
+src/renderer/src/hooks/useTheme.ts
+  s_e78e0118ab4232::t_e79b0b0806ab93 9-10,38
+docs/how-search-works.md
+  s_e78e0118ab4232::t_e79b0b0806ab93 65,71,91,112,115,184,196-197
+  s_e78e0118ab4232::t_10e9e656677b82 52,54,78,119-120,124
+  s_e78e0118ab4232::t_49d41130605ee7 11-12,35,64,145,149,156
+scripts/test-video-events.mjs
+  s_e78e0118ab4232::t_62ab2e45417a4b 4,137,139
+package.json
+  s_e78e0118ab4232::t_e79b0b0806ab93 21,23,29
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_e79b0b0806ab93 371
+src/shared/result.ts
+  s_e78e0118ab4232::t_e79b0b0806ab93 13
+src-tauri/src/watcher.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1,5
+src-tauri/src/constants.rs
+  s_e78e0118ab4232::t_83321ff132ad16 3
+src-tauri/src/search.rs
+  s_e78e0118ab4232::t_83321ff132ad16 1,11,151,231
+  s_e78e0118ab4232::t_10e9e656677b82 7,84,116,119
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_62ab2e45417a4b 105-106,203,327
+src/shared/types.ts
+  s_e78e0118ab4232::t_10e9e656677b82 2
+  s_e78e0118ab4232::t_8b8d6c031d7476 3,252
+README.md
+  s_e78e0118ab4232::t_62ab2e45417a4b 223
+  s_e78e0118ab4232::t_49d41130605ee7 19,26,29,31,55,340-341,349-350,352
+resources/bin/.gitkeep
+  s_e78e0118ab4232::t_8b8d6c031d7476 7-8
+src/renderer/src/lib/duplicates.ts
+  s_e78e0118ab4232::t_62ab2e45417a4b 4
+CLAUDE.md
+  s_e78e0118ab4232::t_6272c48797d138 3,5-6,8-12,14-16
+src-tauri/src/sampling.rs
+  s_e78e0118ab4232::t_83321ff132ad16 4,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecc937d11537ff9cb1d825318ed665383fc8439f",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
