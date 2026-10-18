@@ -201,11 +201,20 @@ console.log('=== 6. 渲染端被 CSP 限制，无法自行联网 ===')
   const html = readFileSync(join(root, 'src', 'renderer', 'index.html'), 'utf8')
   const csp = html.match(/content="(default-src[^"]*)"/)?.[1] ?? ''
   check('CSP 有 default-src', csp.includes("default-src 'self'"), csp)
-  // connect-src 缺失时回退到 default-src 'self' —— 渲染端不能发 XHR/fetch
+  // Electron 下 connect-src 缺失会回退到 default-src 'self'；Tauri 2 的 invoke/listen
+  // 需要内部 ipc: / ipc.localhost 桥接。只放行这三个固定目标，仍禁止任意外网 fetch。
+  const connectSrc = csp.match(/connect-src[^;]*/)?.[0]
+  const allowedConnectTokens = new Set([
+    'connect-src',
+    'ipc:',
+    'http://ipc.localhost',
+    'https://ipc.localhost'
+  ])
+  const connectTokens = connectSrc?.trim().split(/\s+/) ?? []
   check(
-    '没有 connect-src 放宽网络（缺失时回退 default-src self）',
-    !/connect-src/.test(csp),
-    '渲染端无法 fetch 任何地址'
+    'connect-src 未放宽到 Tauri 内部 IPC 之外',
+    connectTokens.every((token) => allowedConnectTokens.has(token)),
+    connectSrc ?? '缺失时回退 default-src self'
   )
   check('img-src 不含 http/https（渲染端不能加载远程图片）', !/img-src[^;]*https?:/.test(csp), csp.match(/img-src[^;]*/)?.[0] ?? '')
 

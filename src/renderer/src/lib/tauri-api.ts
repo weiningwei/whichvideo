@@ -14,14 +14,16 @@ import type {
   IndexerStatus,
   ImportResult,
   FrameProgress,
+  SearchResponse,
+  ClipboardSearchResult,
 } from '@shared/types'
 
 /**
  * Tauri 版桥接：用 @tauri-apps/api 的 invoke / listen 实现 WhichVideoApi。
  *
- * 骨架阶段仅 library.stats / folders.list 真实打通 Rust 后端（src-tauri/src/commands.rs），
- * 其余命令返回「未实现」以满足类型编译；后续阶段逐个补齐。
- * 渲染端其余 36 处 `window.whichvideo.*` 调用完全不变。
+ * 保持与 Electron preload 暴露的 WhichVideoApi 同一契约，渲染端现有的
+ * `window.whichvideo.*` 调用无需感知后端已切换为 Rust。
+ * 当前仅视频查重仍由后续迁移阶段补齐。
  */
 const notImpl =
   (name: string) =>
@@ -63,10 +65,10 @@ export const tauriApi: WhichVideoApi = {
     matchFrame: (videoId, timeMs) => invoke<string | null>(IPC.videosMatchFrame, { videoId, timeMs }),
   },
   search: {
-    byPath: notImpl('search.byPath'),
-    byDataUrl: notImpl('search.byDataUrl'),
-    byClipboard: notImpl('search.byClipboard'),
-    byUrl: notImpl('search.byUrl'),
+    byPath: (filePath: string) => invoke<SearchResponse>(IPC.searchPath, { filePath }),
+    byDataUrl: (dataUrl: string) => invoke<SearchResponse>(IPC.searchDataUrl, { dataUrl }),
+    byClipboard: () => invoke<ClipboardSearchResult | null>(IPC.searchClipboard),
+    byUrl: (url: string) => invoke<SearchResponse>(IPC.searchUrl, { url }),
   },
   events: {
     subscribe: (listener: (event: LibraryEvent) => void): (() => void) => {

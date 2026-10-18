@@ -9,6 +9,7 @@ mod hash;
 mod indexer;
 mod media;
 mod sampling;
+mod search;
 mod state;
 mod watcher;
 
@@ -43,7 +44,11 @@ fn main() {
             commands::videos_import,
             commands::videos_import_images,
             commands::videos_reindex,
-            commands::watcher_sync
+            commands::watcher_sync,
+            commands::search_path,
+            commands::search_data_url,
+            commands::search_clipboard,
+            commands::search_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

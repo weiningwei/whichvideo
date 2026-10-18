@@ -244,6 +244,7 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
             let _ = db::set_video_status(c, video_id, "failed", Some(error));
         }
     }
+    rebuild_search_index(&app);
     emit_video_updated(&app, video_id);
     emit(
         &app,
@@ -255,7 +256,21 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
     finish(app, false);
 }
 
+fn rebuild_search_index(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let rebuilt = {
+        let guard = state.db.lock().unwrap();
+        guard
+            .as_ref()
+            .map(crate::search::FrameSearchIndex::rebuild_from_db)
+    };
+    if let Some(index) = rebuilt {
+        *state.search_index.lock().unwrap() = index;
+    }
+}
+
 fn finish_ready(app: AppHandle, video_id: i64) {
+    rebuild_search_index(&app);
     emit_video_updated(&app, video_id);
     finish(app, true);
 }

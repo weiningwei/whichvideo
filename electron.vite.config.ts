@@ -93,7 +93,8 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': pathOf('src', 'renderer', 'src'),
-        '@shared': pathOf('src', 'shared')
+        '@shared': pathOf('src', 'shared'),
+        '@tauri-apps': pathOf('node_modules', '@tauri-apps')
       }
     },
     plugins: [react(), tailwindcss()],

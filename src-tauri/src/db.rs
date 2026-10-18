@@ -1,4 +1,5 @@
 use base64::Engine;
+use crate::framepack;
 use rusqlite::{params_from_iter, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -995,6 +996,60 @@ pub fn upsert_frames_incremental(conn: &mut Connection, video_id: i64, frames: &
     Ok(())
 }
 
+/// 搜索层所需的内存帧矩阵：256 字节/帧的紧凑缓冲 + 每帧对应的 video_id。
+/// 顺序与帧在库中的 (video_id, frame_index) 一致，FrameSearchIndex 直接按偏移寻址。
+pub struct FrameMatrix {
+    pub buffer: Vec<u8>,
+    pub video_ids: Vec<i64>,
+}
+
+/// 全量读出所有帧指纹，拼成常驻内存缓冲（镜像 Electron db.loadFrameMatrix）。
+///
+/// dhash 在库中按 i64 存储（与 NewFrame.dhash 一致），读出后按小端 8 字节写回缓冲，
+/// 与索引侧 ffmpeg scale=w=320:h=-2 的 rgb24 帧哈希路径完全对称。struct/color/spatial
+/// 为 BLOB，按各自长度拷贝（不足按 0 填充，防御性）。
+pub fn load_frame_matrix(conn: &Connection) -> SqlResult<FrameMatrix> {
+    let mut stmt = conn.prepare(
+        "SELECT video_id, dhash, struct, color, spatial, frame_index, time_ms \
+         FROM frames ORDER BY video_id, frame_index",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,              // video_id
+            row.get::<_, i64>(1)?,              // dhash (i64)
+            row.get::<_, Vec<u8>>(2)?,          // struct (BLOB 128)
+            row.get::<_, Vec<u8>>(3)?,          // color (BLOB 64)
+            row.get::<_, Vec<u8>>(4)?,          // spatial (BLOB 48)
+            row.get::<_, i64>(5)?,              // frame_index
+            row.get::<_, i64>(6)?,              // time_ms
+        ))
+    })?;
+    let mut buffer = Vec::new();
+    let mut video_ids = Vec::new();
+    for r in rows {
+        let (vid, dhash, st, col, sp, fi, tm) = r?;
+        let off = buffer.len();
+        buffer.resize(off + framepack::FRAME_STRIDE, 0u8);
+        buffer[off + framepack::DHASH_OFFSET..off + framepack::DHASH_OFFSET + 8]
+            .copy_from_slice(&dhash.to_le_bytes());
+        let sl = st.len().min(framepack::STRUCT_BYTES);
+        buffer[off + framepack::STRUCT_OFFSET..off + framepack::STRUCT_OFFSET + sl]
+            .copy_from_slice(&st[..sl]);
+        let cl = col.len().min(framepack::COLOR_BYTES);
+        buffer[off + framepack::COLOR_OFFSET..off + framepack::COLOR_OFFSET + cl]
+            .copy_from_slice(&col[..cl]);
+        let spl = sp.len().min(framepack::SPATIAL_BYTES);
+        buffer[off + framepack::SPATIAL_OFFSET..off + framepack::SPATIAL_OFFSET + spl]
+            .copy_from_slice(&sp[..spl]);
+        buffer[off + framepack::META_OFFSET..off + framepack::META_OFFSET + 4]
+            .copy_from_slice(&(fi as u32).to_le_bytes());
+        buffer[off + framepack::META_OFFSET + 4..off + framepack::META_OFFSET + 8]
+            .copy_from_slice(&(tm as u32).to_le_bytes());
+        video_ids.push(vid);
+    }
+    Ok(FrameMatrix { buffer, video_ids })
+}
+
 /// 删除某目录（含子目录）下的所有视频，返回被删 id 列表（frames 级联删除）。
 #[allow(dead_code)]
 pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> {
@@ -1016,4 +1071,89 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
         conn.execute(&sql, params.as_slice())?;
     }
     Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_matrix_keeps_each_frame_in_its_own_stride() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE frames (
+                video_id INTEGER NOT NULL,
+                frame_index INTEGER NOT NULL,
+                time_ms INTEGER NOT NULL,
+                dhash INTEGER NOT NULL,
+                struct BLOB NOT NULL,
+                color BLOB NOT NULL,
+                spatial BLOB NOT NULL
+            );",
+        )
+        .unwrap();
+
+        for (video_id, frame_index, time_ms, marker) in
+            [(11_i64, 3_i64, 1250_i64, 0x11_u8), (22, 7, 9876, 0x22)]
+        {
+            conn.execute(
+                "INSERT INTO frames
+                 (video_id, frame_index, time_ms, dhash, struct, color, spatial)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    video_id,
+                    frame_index,
+                    time_ms,
+                    marker as i64,
+                    vec![marker; framepack::STRUCT_BYTES],
+                    vec![marker; framepack::COLOR_BYTES],
+                    vec![marker; framepack::SPATIAL_BYTES],
+                ],
+            )
+            .unwrap();
+        }
+
+        let matrix = load_frame_matrix(&conn).unwrap();
+        assert_eq!(matrix.video_ids, vec![11, 22]);
+        assert_eq!(matrix.buffer.len(), 2 * framepack::FRAME_STRIDE);
+
+        for (index, marker, frame_index, time_ms) in
+            [(0_usize, 0x11_u8, 3_u32, 1250_u32), (1, 0x22, 7, 9876)]
+        {
+            let off = index * framepack::FRAME_STRIDE;
+            assert_eq!(
+                &matrix.buffer[off + framepack::STRUCT_OFFSET
+                    ..off + framepack::STRUCT_OFFSET + framepack::STRUCT_BYTES],
+                vec![marker; framepack::STRUCT_BYTES]
+            );
+            assert_eq!(
+                &matrix.buffer[off + framepack::COLOR_OFFSET
+                    ..off + framepack::COLOR_OFFSET + framepack::COLOR_BYTES],
+                vec![marker; framepack::COLOR_BYTES]
+            );
+            assert_eq!(
+                &matrix.buffer[off + framepack::SPATIAL_OFFSET
+                    ..off + framepack::SPATIAL_OFFSET + framepack::SPATIAL_BYTES],
+                vec![marker; framepack::SPATIAL_BYTES]
+            );
+            assert_eq!(
+                u32::from_le_bytes(
+                    matrix.buffer[off + framepack::META_OFFSET
+                        ..off + framepack::META_OFFSET + 4]
+                        .try_into()
+                        .unwrap()
+                ),
+                frame_index
+            );
+            assert_eq!(
+                u32::from_le_bytes(
+                    matrix.buffer[off + framepack::META_OFFSET + 4
+                        ..off + framepack::META_OFFSET + 8]
+                        .try_into()
+                        .unwrap()
+                ),
+                time_ms
+            );
+        }
+    }
 }
