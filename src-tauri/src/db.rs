@@ -1086,6 +1086,17 @@ pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
     Ok(())
 }
 
+/// 原子清除一个视频的帧和续传元数据，避免崩溃后旧时间点指向空帧表。
+pub fn reset_frame_index_progress(conn: &mut Connection, video_id: i64) -> SqlResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM frames WHERE video_id = ?", [video_id])?;
+    tx.execute(
+        "UPDATE videos SET processed_timestamps = '[]', frame_count = 0 WHERE id = ?",
+        [video_id],
+    )?;
+    tx.commit()
+}
+
 /// 写入已处理的时间点索引（断点续传）。
 pub fn update_processed_timestamps(conn: &Connection, id: i64, ts: &[i64]) -> SqlResult<()> {
     let json = serde_json::to_string(ts).unwrap_or_else(|_| "[]".to_string());
@@ -1269,6 +1280,25 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resetting_frame_progress_clears_frames_and_resume_markers_together() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE videos (id INTEGER PRIMARY KEY, processed_timestamps TEXT, frame_count INTEGER);\
+             CREATE TABLE frames (video_id INTEGER, frame_index INTEGER);\
+             INSERT INTO videos VALUES (1, '[1000]', 1);\
+             INSERT INTO frames VALUES (1, 0);",
+        ).unwrap();
+        reset_frame_index_progress(&mut conn, 1).unwrap();
+        let (processed, count): (String, i64) = conn.query_row(
+            "SELECT processed_timestamps, frame_count FROM videos WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        let frames: i64 = conn.query_row("SELECT COUNT(*) FROM frames WHERE video_id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!((processed.as_str(), count, frames), ("[]", 0, 0));
+    }
 
     #[test]
     fn data_dir_is_always_next_to_executable_unless_explicitly_overridden() {

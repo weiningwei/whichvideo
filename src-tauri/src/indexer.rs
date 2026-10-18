@@ -484,21 +484,32 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         return;
     }
 
-    let processed: Vec<i64> = video.processed_timestamps.clone();
-    let start_index = processed.len().min(timestamps.len());
+    let uses_full_scan =
+        !force_seek && sampling::should_use_full_scan(timestamps.len(), width, height);
+    let mut processed: Vec<i64> = video.processed_timestamps.clone();
+    let start_index = resume_start_index(&processed, &timestamps, uses_full_scan);
+    if start_index == 0 {
+        processed.clear();
+    }
     if start_index >= timestamps.len() {
         // 已完成
         finish_ready(app, video_id);
         return;
     }
-    // 全新跑才清旧帧图/帧数据，断点续传不清（保留已落库帧）
+    // 全新跑或无法安全续传时清旧帧与进度；全片解码必须从片头一次完成。
     if start_index == 0 {
-        frames_store::remove_video(video_id);
-        let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
-        if let Some(c) = guard.as_mut() {
-            let _ = db::clear_frames(c, &[video_id]);
+        let reset_result = {
+            let state = app.state::<AppState>();
+            let mut guard = state.db.lock().unwrap();
+            guard.as_mut()
+                .ok_or_else(|| "数据库未初始化".to_string())
+                .and_then(|c| db::reset_frame_index_progress(c, video_id).map_err(|e| e.to_string()))
+        };
+        if let Err(e) = reset_result {
+            fail(app, video_id, &format!("重置索引进度失败：{e}"));
+            return;
         }
+        frames_store::remove_video(video_id);
     }
     set_frame_progress(
         &app,
@@ -508,8 +519,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         Some("extracting"),
     );
 
-    let uses_full_scan =
-        !force_seek && sampling::should_use_full_scan(timestamps.len(), width, height);
     let batch_size = if uses_full_scan {
         timestamps.len() - start_index
     } else {
@@ -634,6 +643,21 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     }
     clear_frame_progress(&app, video_id);
     finish_ready(app, video_id);
+}
+
+/// 只有逐点 seek 的旧进度与新计划完全对齐时才能按时间点续传。
+/// 全片解码始终从片头开始，不能用剩余帧数重新计算 fps。
+fn resume_start_index(processed: &[i64], timestamps: &[f64], uses_full_scan: bool) -> usize {
+    if uses_full_scan || processed.len() > timestamps.len() {
+        return 0;
+    }
+    if processed.iter().zip(timestamps).all(|(saved, planned)| {
+        *saved == (planned * 1000.0).round() as i64
+    }) {
+        processed.len()
+    } else {
+        0
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -923,7 +947,16 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::IndexerState;
+    use super::{resume_start_index, IndexerState};
+
+    #[test]
+    fn full_scan_restarts_instead_of_misaligning_partial_frames() {
+        let timestamps = [1.0, 3.0, 5.0];
+        assert_eq!(resume_start_index(&[1000], &timestamps, true), 0);
+        assert_eq!(resume_start_index(&[1000], &timestamps, false), 1);
+        assert_eq!(resume_start_index(&[2000], &timestamps, false), 0);
+        assert_eq!(resume_start_index(&[1000, 3000, 5000, 7000], &timestamps, false), 0);
+    }
 
     #[test]
     fn forced_reindex_waits_for_the_same_active_video() {
