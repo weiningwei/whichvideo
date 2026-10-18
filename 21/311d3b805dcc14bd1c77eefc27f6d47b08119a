@@ -1,0 +1,22 @@
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_b8a5728d7a05f0 80-84
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_b8a5728d7a05f0 25-28,45-46,60-87,188-191,194-195,201,203,205-206,231,234-237,241,248,252,288,307,314,324-334,346,815-841
+  s_e78e0118ab4232::t_f9e8ff8b6583dd 842
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "21311d3b805dcc14bd1c77eefc27f6d47b08119a",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
