@@ -719,34 +719,48 @@ pub fn is_video_file(name: &str) -> bool {
     )
 }
 
-fn scan_video_files(root: &str, recursive: bool) -> Vec<String> {
+fn scan_video_files(root: &str, recursive: bool) -> Result<Vec<String>, String> {
+    let root_path = std::path::Path::new(root);
+    if !root_path.is_dir() {
+        return Err("目录不存在或无法读取".to_string());
+    }
     let mut out = Vec::new();
-    walk(root, 0, recursive, &mut out);
-    out
+    walk(root_path, 0, recursive, &mut out)?;
+    Ok(out)
 }
 
-fn walk(dir: &str, depth: usize, recursive: bool, out: &mut Vec<String>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
+fn walk(
+    dir: &std::path::Path,
+    depth: usize,
+    recursive: bool,
+    out: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("无法读取目录：{e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("无法读取目录项：{e}"))?;
         let path = entry.path();
-        let pstr = path.to_string_lossy().to_string();
-        if path.is_dir() {
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("无法读取目录项类型：{e}"))?;
+        // 不跟随链接目录，避免网络盘或错误链接导致的循环扫描。
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             if recursive && depth < crate::constants::MAX_SCAN_DEPTH {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
                 if !crate::constants::DEFAULT_SKIP_DIRS.contains(&name.as_str()) {
-                    walk(&pstr, depth + 1, recursive, out);
+                    walk(&path, depth + 1, recursive, out)?;
                 }
             }
-        } else if path.is_file() {
+        } else if file_type.is_file() {
             let name = entry.file_name().to_string_lossy().to_string();
             if is_video_file(&name) {
-                out.push(pstr);
+                out.push(path.to_string_lossy().to_string());
             }
         }
     }
+    Ok(())
 }
 
 /// 注册单个文件并加入索引队列，更新 result 计数。
@@ -832,13 +846,14 @@ pub fn import_files(app: AppHandle, files: Vec<String>, folder_id: Option<i64>) 
 
 /// 递归导入目录内的视频，但不登记目录、不启动文件系统监听。
 pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> Result<ImportResult, String> {
+    let files = scan_video_files(&dir_path, recursive)?;
     let folder = {
         let state = app.state::<AppState>();
         let guard = state.db.lock().unwrap();
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
         db::insert_imported_folder(conn, &dir_path, recursive).map_err(|e| e.to_string())?
     };
-    let result = import_files(app.clone(), scan_video_files(&folder.path, recursive), Some(folder.id));
+    let result = import_files(app.clone(), files, Some(folder.id));
     {
         let state = app.state::<AppState>();
         let guard = state.db.lock().unwrap();
@@ -859,6 +874,7 @@ pub fn import_folder(
     pinned: bool,
     recursive: bool,
 ) -> Result<(ImportResult, i64), String> {
+    let files = scan_video_files(&dir_path, recursive)?;
     let folder = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
@@ -871,7 +887,6 @@ pub fn import_folder(
         folders: 1,
         ..Default::default()
     };
-    let files = scan_video_files(&folder.path, recursive);
     for file in files {
         register_and_enqueue(&app, file, Some(folder.id), &mut result);
     }
@@ -971,8 +986,30 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, resume_start_index, IndexerState};
+    use super::{can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, resume_start_index, scan_video_files, IndexerState};
     use crate::media::RawFrame;
+    use std::fs;
+
+    #[test]
+    fn folder_scan_reports_missing_directories_and_finds_nested_videos() {
+        let missing = std::env::temp_dir().join(format!("whichvideo-missing-{}", crate::db::now_ms()));
+        assert_eq!(
+            scan_video_files(&missing.to_string_lossy(), true).unwrap_err(),
+            "目录不存在或无法读取"
+        );
+
+        let root = std::env::temp_dir().join(format!("whichvideo-scan-{}", crate::db::now_ms()));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join("clip.mp4"), b"").unwrap();
+        fs::write(nested.join("episode.MKV"), b"").unwrap();
+        fs::write(nested.join("notes.txt"), b"").unwrap();
+        let files = scan_video_files(&root.to_string_lossy(), true).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|path| path.ends_with("clip.mp4")));
+        assert!(files.iter().any(|path| path.ends_with("episode.MKV")));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn thumbnail_reuses_only_the_closest_nearby_indexed_frame() {
