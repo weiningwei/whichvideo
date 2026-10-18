@@ -1,5 +1,6 @@
 use crate::db;
 use crate::indexer::IndexerState;
+use crate::logger;
 use crate::search::FrameSearchIndex;
 use crate::watcher::WatcherMap;
 use rusqlite::Connection;
@@ -29,7 +30,7 @@ impl AppState {
                 }
             }
             Err(e) => {
-                eprintln!("[whichvideo] 数据库初始化失败: {e}");
+                logger::log(&format!("[ERROR] 数据库初始化失败：{e}"));
                 AppState {
                     db: Mutex::new(None),
                     indexer: Mutex::new(IndexerState::default()),

@@ -36,6 +36,9 @@ pub const FRAME_COUNT_TABLE: &[(f64, usize)] = &[
 /// 递归扫描最大深度。
 pub const MAX_SCAN_DEPTH: usize = 24;
 
+/// 日志超过 512 KiB 时轮转为 whichvideo.log.1，避免长期运行无限增长。
+pub const MAX_LOG_BYTES: u64 = 512 * 1024;
+
 /// 默认跳过的目录名（系统目录 + 构建产物 + VCS）。
 pub const DEFAULT_SKIP_DIRS: &[&str] = &[
     "$recycle.bin",

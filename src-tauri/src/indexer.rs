@@ -10,6 +10,7 @@ use crate::db;
 use crate::events::{ImportResult, LibraryEvent};
 use crate::framepack;
 use crate::hash;
+use crate::logger;
 use crate::media;
 use crate::sampling;
 use crate::state::AppState;
@@ -767,6 +768,5 @@ pub fn resume_pending(app: AppHandle) {
 }
 
 fn log(msg: &str) {
-    // 索引器日志走 stderr（与 Electron logger 对齐；Tauri 侧暂无文件日志基础设施）。
-    eprintln!("[whichvideo][indexer] {msg}");
+    logger::log(&format!("[indexer] {msg}"));
 }

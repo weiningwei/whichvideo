@@ -7,6 +7,7 @@ mod events;
 mod framepack;
 mod hash;
 mod indexer;
+mod logger;
 mod media;
 mod sampling;
 mod search;
@@ -27,7 +28,16 @@ fn main() {
                 .unwrap_or(app_default);
             #[cfg(not(windows))]
             let default_dir = app_default;
-            db::initialize_data_dir(default_dir, !cfg!(debug_assertions))?;
+            let resolution = db::initialize_data_dir(default_dir, !cfg!(debug_assertions))?;
+            let log_path = logger::init(&resolution.dir);
+            logger::install_panic_hook();
+            logger::log(&format!(
+                "数据目录：{}（portable={} source={}）",
+                resolution.dir.display(),
+                resolution.portable,
+                resolution.source
+            ));
+            logger::log(&format!("日志文件：{}", log_path.display()));
             app.manage(AppState::new());
             Ok(())
         })
