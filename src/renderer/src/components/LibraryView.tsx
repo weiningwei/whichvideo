@@ -233,6 +233,7 @@ export function LibraryView(props: Props) {
                   key={row.video.id}
                   video={row.video}
                   depth={row.depth}
+                  showLocation={!treeVisible || row.depth === 0}
                   roots={roots}
                   focused={focusedVideoId === row.video.id}
                   onOpen={(id) => { handleRowClick(id, false, false); props.onOpen(id) }}

@@ -5,7 +5,7 @@ import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 
 export function VideoRow({
-  video, roots, focused, depth = 0, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
+  video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
   onSamplingChange, isVideoSelected, onRowClick, onOpenDouble,
   menuOpen, onToggleMenu, onCloseMenu
 }: {
@@ -13,6 +13,7 @@ export function VideoRow({
   roots: string[]
   focused: boolean
   depth?: number
+  showLocation?: boolean
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
@@ -107,7 +108,7 @@ export function VideoRow({
           </div>
           <div className="min-w-0">
             <div className={`line-clamp-1 break-all text-[12.5px] font-medium ${selected ? 'text-accent' : 'text-primary'}`} title={video.path}>{video.name}</div>
-            <div className="mt-0.5 truncate text-[10.5px] text-tertiary" title={video.path}>{shortDir(video.path, roots) || '根目录'}</div>
+            {showLocation && <div className="mt-0.5 truncate text-[10.5px] text-tertiary" title={video.path}>{shortDir(video.path, roots) || video.dir}</div>}
           </div>
         </div>
       </td>
