@@ -1,0 +1,33 @@
+src-tauri/src/process_ext.rs
+  s_e78e0118ab4232::t_600c48e6fedffa 1-19
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_813055ec3a4c71 9-12,42-48
+src-tauri/src/media.rs
+  s_e78e0118ab4232::t_600c48e6fedffa 6,39,269,394,430,445
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_813055ec3a4c71 43-45
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_600c48e6fedffa 13
+src-tauri/src/updater.rs
+  s_e78e0118ab4232::t_600c48e6fedffa 3,53,82
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_3b45f7d7b1338c 8,200,224,229,614,1093
+AGENTS.md
+  s_e78e0118ab4232::t_813055ec3a4c71 60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "050d49de7fd08fc8843c8febdc2c69a7dfc9c163",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
