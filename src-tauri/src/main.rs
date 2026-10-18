@@ -13,6 +13,7 @@ mod media;
 mod sampling;
 mod search;
 mod state;
+mod updater;
 mod watcher;
 
 use state::AppState;
@@ -51,6 +52,7 @@ fn main() {
                 logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
             }
             indexer::resume_pending(app.handle().clone());
+            updater::start_if_enabled(app.handle());
             logger::log("启动生命周期初始化完成");
             Ok(())
         })
