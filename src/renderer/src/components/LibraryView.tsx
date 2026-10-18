@@ -85,6 +85,7 @@ export function LibraryView(props: Props) {
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
   const explorerTree = useMemo(() => buildExplorerTree(folders, videos), [folders, videos])
   const filtering = Boolean(query.keyword?.trim()) || (query.status != null && query.status !== 'all')
+  const noMatches = filtering || total > 0
   const rows = useMemo(
     () => treeVisible ? visibleExplorerRows(filtering ? { ...explorerTree, folders: explorerTree.folders.filter((root) => root.count > 0) } : explorerTree, expandedPaths, filtering, closedFilteredPaths) : videos.map((video) => ({ type: 'video' as const, video, depth: 0 })),
     [treeVisible, explorerTree, expandedPaths, filtering, closedFilteredPaths, videos]
@@ -292,9 +293,10 @@ export function LibraryView(props: Props) {
           {rows.length === 0 && (
             <div className="mx-auto flex max-w-sm flex-col items-center px-6 py-20 text-center">
               <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-3 text-xl text-tertiary">▶</div>
-              <div className="mt-4 text-[14px] font-medium text-primary">{total ? '没有符合条件的视频' : '开始建立你的视频库'}</div>
-              <div className="mt-1 text-[11.5px] text-tertiary">{total ? '试试清除搜索或更换筛选条件' : '添加视频或文件夹即可开始索引'}</div>
-              {!total && <div className="mt-4 flex items-center gap-2">
+              <div className="mt-4 text-[14px] font-medium text-primary">{noMatches ? '没有符合条件的视频' : '开始建立你的视频库'}</div>
+              <div className="mt-1 text-[11.5px] text-tertiary">{noMatches ? '试试清除搜索或更换筛选条件' : '添加视频或文件夹即可开始索引'}</div>
+              {filtering && <button className="btn mt-4" onClick={() => onSetQuery({ ...query, keyword: '', status: 'all', offset: 0 })}>清除筛选</button>}
+              {!noMatches && <div className="mt-4 flex items-center gap-2">
                 <button className="btn border-accent-strong bg-accent text-surface-0" onClick={props.onImportFiles}>导入视频</button>
                 <button className="btn" onClick={props.onImportFolder}>导入文件夹</button>
               </div>}

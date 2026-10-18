@@ -151,6 +151,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   }))
   const emptyLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [], videos: [], total: 0, selectedVideoIds: new Set() }))
   check('空库直接提供视频与文件夹两个入口', emptyLibrary.includes('导入视频</button>') && emptyLibrary.includes('导入文件夹</button>'))
+  const emptyFilter = render(jsx(LibraryView, { ...libraryProps, folders: [], videos: [], total: 0, query: { keyword: '不存在' }, selectedVideoIds: new Set() }))
+  check('筛选无结果不误报为空库，并可一键清除筛选', emptyFilter.includes('没有符合条件的视频') && emptyFilter.includes('清除筛选</button>') && !emptyFilter.includes('开始建立你的视频库'))
   check('默认只显示可展开的导入目录，不铺满视频文件', library.includes('Movies') && library.includes('aria-expanded="false"') && !library.includes(`播放 ${video.name}`))
   const pausedFolder = { ...folder, enabled: false, watchState: 'idle' }
   const pausedLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [pausedFolder] }))
