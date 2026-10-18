@@ -665,13 +665,8 @@ pub struct RawFrame {
     pub rgb: Vec<u8>,
 }
 
-/// 检测场景切换时间点（秒，升序）。镜像 detectScenes。
-///
-/// 关键结构：split 两路 + nullsink。
-///   [d] select(场景点) + showinfo → nullsink  ← 只命中场景切换的帧
-///   [p] 全帧 + showinfo → null muxer            ← 进度用（每帧一行）
-/// 这里只取 [d] 路（Parsed_showinfo_0）的 pts_time 作为场景点；[p] 路每帧都报，
-/// 若一并收集会被当成"每 0.5s 一个场景"，彻底破坏场景采样语义。
+/// 检测场景切换时间点（秒，升序）。只有选中的场景帧经过 showinfo；
+/// 不输出全帧进度日志（run_ffmpeg 同步等待退出，无法实时消费该进度）。
 pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String> {
     let args = vec![
         "-hide_banner".to_string(),
@@ -682,13 +677,8 @@ pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String
         "auto".to_string(),
         "-i".to_string(),
         file_path.to_string(),
-        "-filter_complex".to_string(),
-        format!(
-            "[0:v]split=2[d][p];[d]scale=w=160:h=-2,select='gt(scene,{})',showinfo,nullsink;[p]scale=w=160:h=-2,showinfo[prog]",
-            threshold
-        ),
-        "-map".to_string(),
-        "[prog]".to_string(),
+        "-vf".to_string(),
+        format!("scale=w=160:h=-2,select='gt(scene,{threshold})',showinfo"),
         "-an".to_string(),
         "-sn".to_string(),
         "-dn".to_string(),
@@ -703,10 +693,14 @@ pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String
             out.stderr.trim().chars().take(200).collect::<String>()
         ));
     }
+    Ok(parse_scene_times(&out.stderr))
+}
+
+fn parse_scene_times(stderr: &str) -> Vec<f64> {
     let mut times: Vec<f64> = Vec::new();
-    for line in out.stderr.lines() {
-        // 只取场景选择那一路（实例 0）的 showinfo 行
-        if !line.contains("[Parsed_showinfo_0 @") || !line.contains("pts_time:") {
+    for line in stderr.lines() {
+        // FFmpeg 给 showinfo 分配的数字取决于前面的滤镜，不能写死为 0。
+        if !line.contains("[Parsed_showinfo_") || !line.contains("pts_time:") {
             continue;
         }
         if let Some(m) = line.split("pts_time:").nth(1) {
@@ -722,7 +716,7 @@ pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String
         }
     }
     times.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    Ok(times)
+    times
 }
 
 /**
@@ -1037,8 +1031,14 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_showinfo, sha256_of_file};
+    use super::{parse_scene_times, parse_showinfo, sha256_of_file};
     use std::fs;
+
+    #[test]
+    fn scene_times_accept_showinfo_filter_index_other_than_zero() {
+        let stderr = "[Parsed_showinfo_3 @ a] n:0 pts_time:2.5 s:160x90\n[Parsed_showinfo_3 @ a] n:1 pts_time:1.0 s:160x90\nframe=2";
+        assert_eq!(parse_scene_times(stderr), vec![1.0, 2.5]);
+    }
 
     #[test]
     fn file_hash_buffer_is_safe_on_worker_sized_stacks() {
