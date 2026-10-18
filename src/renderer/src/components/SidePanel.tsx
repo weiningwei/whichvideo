@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 interface Props {
   mode: 'folders' | 'settings' | null
@@ -18,10 +18,21 @@ export function SidePanel({
   mode, onClose, onAddFolder, folders, folderDrop, onDragOver, onDragLeave,
   onDrop, settings, folderCount
 }: Props) {
+  useEffect(() => {
+    if (!mode) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [mode, onClose])
+
   if (!mode) return null
   const foldersMode = mode === 'folders'
   return (
-    <div className="absolute inset-0 z-30 bg-surface-0/45" onMouseDown={onClose}>
+    <div className="absolute inset-0 z-30 bg-surface-0/45" onMouseDown={onClose} role="dialog" aria-modal="true" aria-label={foldersMode ? '管理文件夹' : '索引设置'}>
       <aside
         className="absolute inset-y-0 right-0 flex w-[360px] max-w-[85vw] flex-col border-l border-line bg-surface-2 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}

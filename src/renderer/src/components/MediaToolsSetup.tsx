@@ -13,6 +13,17 @@ export function MediaToolsSetup({ status, onSelect }: Props) {
     if (status?.ready) setDismissed(false)
   }, [status?.ready])
 
+  useEffect(() => {
+    if (!status || status.ready || dismissed) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setDismissed(true)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [status, dismissed])
+
   if (!status || status.ready || dismissed) return null
 
   return (

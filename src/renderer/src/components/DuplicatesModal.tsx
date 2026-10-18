@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { DuplicatePair } from '@shared/types'
 import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { formatBytes, formatDuration, formatPercent } from '../lib/format'
@@ -24,10 +24,23 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
   const [keptIds, setKeptIds] = useState<Set<number>>(new Set())
   const [removingGroupId, setRemovingGroupId] = useState<string | null>(null)
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onClose])
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-ink-950/70 p-6 pt-[8vh] backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="库内查重结果"
     >
       <div
         className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-surface-1 p-4"

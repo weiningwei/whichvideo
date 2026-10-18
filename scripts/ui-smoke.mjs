@@ -127,6 +127,11 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const themeSource = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
   const gallerySource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FrameGallery.tsx'), 'utf8')
   check('键盘焦点统一使用主题强调色，预览点击不误显焦点环', themeSource.includes("button:focus-visible") && themeSource.includes('outline: 2px solid var(--color-accent)') && gallerySource.includes('focus-visible:ring-2') && !gallerySource.includes(' focus:ring-2'))
+  const overlayFiles = ['DuplicatesModal.tsx', 'SidePanel.tsx', 'MediaToolsSetup.tsx', 'FrameGallery.tsx', 'ShortcutHelp.tsx']
+  check('所有覆盖层都可用 Esc 关闭并声明对话框语义', overlayFiles.every((name) => {
+    const source = readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
+    return source.includes("event.key !== 'Escape'") || source.includes("e.key === 'Escape'")
+  }) && ['DuplicatesModal.tsx', 'SidePanel.tsx'].every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('aria-modal="true"')))
 
   console.log('\n=== 搜图页 ===')
   const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }
