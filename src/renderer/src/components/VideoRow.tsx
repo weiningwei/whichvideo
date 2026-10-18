@@ -103,7 +103,7 @@ export function VideoRow({
       onClick={(e) => { e.currentTarget.focus({ preventScroll: true }); onRowClick(e.shiftKey, e.ctrlKey || e.metaKey) }}
       onKeyDown={(event) => { if (event.target === event.currentTarget) onNavigateKey(event) }}
       onDoubleClick={() => onOpenDouble(video.id)}
-      className="group cursor-pointer border-b border-line/40"
+      className="group cursor-pointer border-b border-line/40 outline-none"
     >
       <td className={`relative px-3 py-2 transition-colors ${rowBg}`}>
         {(selected || focused) && <span className={`absolute inset-y-0 left-0 w-[2px] ${selected ? 'bg-accent' : 'bg-disabled/60'}`} />}
