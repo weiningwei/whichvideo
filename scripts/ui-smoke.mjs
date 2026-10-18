@@ -148,6 +148,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('未命中态文案简洁', render(jsx(SearchView, { ...searchBase, search: miss })).includes('没有找到相似画面'))
   const searchHookSource = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useSearch.ts'), 'utf8')
   check('搜索清除或新请求不会被旧响应覆盖', searchHookSource.includes('const currentRequest = ++requestId.current') && searchHookSource.includes('requestId.current++') && searchHookSource.includes('if (currentRequest !== requestId.current) return'))
+  check('剪贴板图片解码失败会显示后端返回的错误', searchHookSource.includes('applyResponse(clipboard.response)'))
   check('预览请求失败有回退，帧清单不会无限加载', ['SearchView.tsx', 'VideoRow.tsx'].every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('.catch(() => { if (alive) setThumb(null) })')) && readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FrameGallery.tsx'), 'utf8').includes('读取帧清单失败'))
 
   console.log('\n=== 视频库 ===')

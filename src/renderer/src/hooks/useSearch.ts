@@ -70,7 +70,9 @@ export function useSearch(): UseSearchReturn {
           setSearchError('剪贴板里没有图片，请先复制一张图片再点这个按钮')
           return
         }
-        setSearch(clipboard.response)
+        // 剪贴板解码失败同样由 response.error 返回；沿用其它输入路径的
+        // 统一处理，避免界面把真实错误误显示成“没有匹配”。
+        applyResponse(clipboard.response)
         setQueryImage(clipboard.dataUrl)
         setQueryLabel(input.label ?? '剪贴板图片')
       }
