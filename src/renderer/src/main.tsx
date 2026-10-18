@@ -4,8 +4,7 @@ import App from './App'
 import { tauriApi } from './lib/tauri-api'
 import './index.css'
 
-// Tauri 分支：用 Rust 后端桥接替换 window.whichvideo。
-// （Electron 由 preload 注入；本分支以 Tauri 为主，electron 版完整保留在 electron 分支。）
+// Rust 后端通过 Tauri invoke/listen 暴露为既有 WhichVideoApi 契约。
 window.whichvideo = tauriApi
 
 const container = document.getElementById('root')

@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// 纯渲染端构建（Tauri 用）。Electron 仍走 electron.vite.config.ts，两套共存、互不干扰。
+// Tauri 渲染端构建；所有脚本必须从仓库根目录执行。
 const root = process.cwd()
 
 export default defineConfig({

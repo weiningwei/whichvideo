@@ -10,7 +10,7 @@
  * 与 Header 里的「WV」字母标同色系。不含文字，小尺寸下不会糊。
  *
  * 运行： node scripts/generate-icon.mjs
- * 产物： build/icon.ico（16/24/32/48/64/128/256）、build/icon.png（1024）
+ * 产物：build/ 品牌源、src-tauri/icons/ 安装包图标、renderer favicon。
  */
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -246,14 +246,6 @@ function main() {
   const icoPath = join(buildDir, 'icon.ico')
   writeFileSync(icoPath, encodeICO(images))
 
-  // 另存一份到 out/：electron-builder 的 files 只含 out/**、package.json、LICENSE，
-  // 打包后仓库根的 build/ 在 asar 外不可达。运行期要靠 __dirname/../icon.ico 拿到图标，
-  // 否则绿色版（win-unpacked 直接跑 exe）的任务栏与标题栏会退回 Electron 默认图标。
-  // electron-builder 自己仍从 build/ 读 win.icon，两份内容一致（同一批渲染结果）。
-  const outIco = join(root, 'out', 'icon.ico')
-  mkdirSync(dirname(outIco), { recursive: true })
-  writeFileSync(outIco, encodeICO(images))
-
   // Tauri 的窗口图标与 Windows bundle 也必须使用同一图源，避免迁移后退回默认图标。
   const tauriIconDir = join(root, 'src-tauri', 'icons')
   mkdirSync(tauriIconDir, { recursive: true })
@@ -273,8 +265,7 @@ function main() {
   }
 
   console.log('\n已生成：')
-  console.log('  ' + icoPath + '  （' + ICO_SIZES.join(', ') + '）  打包用（electron-builder win.icon）')
-  console.log('  ' + outIco + '  同上，运行期随包（__dirname/../icon.ico）')
+  console.log('  ' + icoPath + '  （' + ICO_SIZES.join(', ') + '）  品牌图标源')
   console.log('  ' + join(tauriIconDir, 'icon.ico') + ' / icon.png  Tauri 窗口与安装包')
   console.log('  ' + pngPath + '  1024×1024，' + (bigPng.length / 1024).toFixed(1) + ' KB')
   console.log('  ' + join(faviconDir, 'favicon-16.png') + ' / favicon-32.png')
