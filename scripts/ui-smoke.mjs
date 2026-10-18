@@ -135,6 +135,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('搜图结果直接显示视频目录而不重复文件名', hitHtml.includes(`title="${video.dir}">${video.dir}</div>`))
   const miss = { ...hit, matchCount: 0, found: false, matches: [] }
   check('未命中态文案简洁', render(jsx(SearchView, { ...searchBase, search: miss })).includes('没有找到相似画面'))
+  const searchHookSource = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useSearch.ts'), 'utf8')
+  check('搜索清除或新请求不会被旧响应覆盖', searchHookSource.includes('const currentRequest = ++requestId.current') && searchHookSource.includes('requestId.current++') && searchHookSource.includes('if (currentRequest !== requestId.current) return'))
 
   console.log('\n=== 视频库 ===')
   const selected = new Set([video.id])
