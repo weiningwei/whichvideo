@@ -6,7 +6,7 @@ import { blockModifierTextSelection } from '../lib/selection'
 
 export function VideoRow({
   video, roots, focused, depth = 0, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
-  onSamplingChange, isVideoSelected, onRowClick, onToggleCheck, onOpenDouble,
+  onSamplingChange, isVideoSelected, onRowClick, onOpenDouble,
   menuOpen, onToggleMenu, onCloseMenu
 }: {
   video: VideoRecord
@@ -21,7 +21,6 @@ export function VideoRow({
   onSamplingChange: (id: number, mode: 'uniform' | 'scene') => void
   isVideoSelected: (videoId: number) => boolean
   onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
-  onToggleCheck: (id: number) => void
   onOpenDouble: (id: number) => void
   menuOpen: boolean
   onToggleMenu: () => void
@@ -99,15 +98,8 @@ export function VideoRow({
       onDoubleClick={() => onOpenDouble(video.id)}
       className="group cursor-pointer border-b border-line/40"
     >
-      <td className={`relative w-10 px-0 py-2 text-center transition-colors ${rowBg}`}>
+      <td className={`relative px-3 py-2 transition-colors ${rowBg}`}>
         {(selected || focused) && <span className={`absolute inset-y-0 left-0 w-[2px] ${selected ? 'bg-accent' : 'bg-disabled/60'}`} />}
-        <input
-          type="checkbox" checked={selected} onClick={(e) => e.stopPropagation()}
-          onChange={() => onToggleCheck(video.id)} aria-label={`选择 ${video.name}`}
-          className="h-3.5 w-3.5 cursor-pointer accent-accent"
-        />
-      </td>
-      <td className={`px-3 py-2 transition-colors ${rowBg}`}>
         <div className="flex items-center gap-3">
           {depth > 0 && <span className="shrink-0" style={{ width: `${Math.max(0, depth - 1) * 22}px` }} />}
           <div className="h-11 w-[72px] shrink-0 overflow-hidden rounded-md border border-line bg-surface-inset">

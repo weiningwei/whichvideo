@@ -7,6 +7,7 @@ interface ToolbarProps {
   videos: VideoRecord[]
   total: number
   selectedVideoIds: Set<number>
+  onSelectAll: () => void
   treeVisible: boolean
   onToggleTree: () => void
   onImportFiles: () => void
@@ -25,7 +26,7 @@ interface ToolbarProps {
 
 export function Toolbar(props: ToolbarProps) {
   const {
-    query, onSetQuery, videos, total, selectedVideoIds, treeVisible, onToggleTree,
+    query, onSetQuery, videos, total, selectedVideoIds, onSelectAll, treeVisible, onToggleTree,
     onImportFiles, onImportFolder, onWatchFolder, onManageFolders, onOpenSettings,
     onFindDuplicates, onDuplicatesResolved, onReindex, onRescan, onRemoveVideos,
     clearSelection, filterInputRef
@@ -143,6 +144,7 @@ export function Toolbar(props: ToolbarProps) {
               <option value="added">最近添加</option><option value="name">名称</option>
               <option value="size">大小</option><option value="duration">时长</option>
             </select>
+            {videos.length > 0 && <button className="btn px-2.5 py-1.5 text-[11.5px]" onClick={onSelectAll} title="选择当前展开的所有视频">全选</button>}
             {selectedVideoIds.size > 0 ? (
               <div className="flex items-center gap-2 border-l border-line pl-2">
                 <span className="whitespace-nowrap text-[11.5px] font-medium text-accent">已选 {selectedVideoIds.size}</span>

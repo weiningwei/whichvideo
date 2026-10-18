@@ -128,10 +128,8 @@ export function LibraryView(props: Props) {
     }
   }, [openMenuId])
 
-  // 表头全选框状态：可见视频是否全部选中 / 部分选中
+  // 全选仅作用于当前可见的视频，不包含收起文件夹中的视频。
   const visibleIds = useMemo(() => shownVideos.map((v) => v.id), [shownVideos])
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedVideoIds.has(id))
-  const someSelected = visibleIds.some((id) => selectedVideoIds.has(id))
 
   // 键盘导航与快捷操作（光标状态与导航原语在 useVideoCursor 里）
   const {
@@ -153,8 +151,6 @@ export function LibraryView(props: Props) {
     onRemoveVideo: props.onRemoveVideo, onRemoveVideos: props.onRemoveVideos, filterInputRef
   })
 
-  const headerCheckRef = useRef<HTMLInputElement>(null)
-
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -164,6 +160,7 @@ export function LibraryView(props: Props) {
           videos={shownVideos}
           total={total}
           selectedVideoIds={selectedVideoIds}
+          onSelectAll={() => setSelectedIds(visibleIds, true)}
           treeVisible={treeVisible}
           onToggleTree={() => { clearSelection(); setOpenMenuId(null); onToggleTree() }}
           onImportFiles={props.onImportFiles}
@@ -184,20 +181,6 @@ export function LibraryView(props: Props) {
           <table className="w-full min-w-[650px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[10.5px] text-tertiary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
-                <th className="w-9 px-0 py-2 text-center">
-                  <input
-                    ref={(el) => {
-                      headerCheckRef.current = el
-                      if (el) el.indeterminate = someSelected && !allSelected
-                    }}
-                    type="checkbox"
-                    checked={allSelected}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => setSelectedIds(visibleIds, !allSelected)}
-                    aria-label="全选当前视图"
-                    className="h-3.5 w-3.5 cursor-pointer accent-accent"
-                  />
-                </th>
                 <th className="px-3 py-2 font-medium">视频</th>
                 <th className="w-32 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 <th className="w-16 whitespace-nowrap px-2 py-2 font-medium">时长</th>
@@ -208,7 +191,7 @@ export function LibraryView(props: Props) {
             <tbody>
               {rows.map((row) => row.type === 'folder' ? (
                 <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path}>
-                  <td colSpan={5} className="border-b border-line/50 bg-surface-1 p-0">
+                  <td colSpan={4} className="border-b border-line/50 bg-surface-1 p-0">
                     <button
                       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-row-hover focus-visible:outline-accent"
                       style={{ paddingLeft: `${16 + row.depth * 22}px` }}
@@ -252,7 +235,6 @@ export function LibraryView(props: Props) {
                   onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                   isVideoSelected={isVideoSelected}
                   onRowClick={(shiftKey, ctrlKey) => { setOpenMenuId(null); handleRowClick(row.video.id, shiftKey, ctrlKey) }}
-                  onToggleCheck={(id) => { setOpenMenuId(null); toggleVideoSelection(id, false, true) }}
                   onOpenDouble={(id) => props.onOpen(id)}
                   menuOpen={openMenuId === row.video.id}
                   onToggleMenu={() => setOpenMenuId((id) => id === row.video.id ? null : row.video.id)}

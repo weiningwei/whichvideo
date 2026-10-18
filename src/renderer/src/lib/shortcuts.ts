@@ -65,7 +65,7 @@ export const SHORTCUTS: ShortcutDoc[] = [
 
   // ---- 选择 ----
   { group: '选择', keys: 'Space', label: '在光标处切换选中（不移动光标）' },
-  { group: '选择', keys: 'Ctrl+A', label: '全选当前页' },
+  { group: '选择', keys: 'Ctrl+A', label: '全选当前已展开的视频' },
   { group: '选择', keys: 'Escape', label: '取消选择 / 关闭弹层' },
 
   // ---- 已选视频的操作 ----
