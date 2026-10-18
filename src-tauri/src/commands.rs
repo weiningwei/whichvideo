@@ -57,7 +57,8 @@ pub fn folders_add_path(
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     let folder = db::insert_folder(conn, &dir_path, true, true).map_err(|e| e.to_string())?;
-    let _ = watcher::sync_all(&app);
+    drop(guard);
+    watcher::sync_all(&app)?;
     Ok(folder)
 }
 
@@ -98,8 +99,9 @@ pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
-    let _ = watcher::stop(&app, folder_id);
-    let _ = watcher::sync_all(&app);
+    drop(guard);
+    watcher::stop(&app, folder_id)?;
+    watcher::sync_all(&app)?;
     Ok(())
 }
 
@@ -161,7 +163,8 @@ pub fn folders_set_enabled(
     let folder = db::get_folder(conn, folder_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "文件夹不存在".to_string())?;
-    let _ = watcher::sync_all(&app);
+    drop(guard);
+    watcher::sync_all(&app)?;
     Ok(folder)
 }
 

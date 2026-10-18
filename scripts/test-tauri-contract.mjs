@@ -63,6 +63,9 @@ check(
 const importFilesCommand = commandsSource.match(/pub (?:async )?fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
 const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
 const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\/ 启动恢复/)?.[0] ?? ''
+const foldersAddPathCommand = commandsSource.match(/pub fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''
+const foldersRemoveCommand = commandsSource.match(/pub fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
+const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enabled\([\s\S]*?\n}\n\n\/\/\/ 单个视频记录/)?.[0] ?? ''
 check(
   '导入视频不再隐式登记监听目录',
   importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
@@ -78,6 +81,17 @@ check(
   reindexCommand.includes('drop(guard);') &&
     reindexCommand.indexOf('drop(guard);') < reindexCommand.indexOf('enqueue(app.clone(), *id, true)')
 )
+for (const [name, source] of [
+  ['添加监听文件夹', foldersAddPathCommand],
+  ['移除监听文件夹', foldersRemoveCommand],
+  ['启停监听文件夹', foldersSetEnabledCommand]
+]) {
+  check(
+    `${name}在同步监听器前释放数据库锁`,
+    source.includes('drop(guard);') &&
+      source.indexOf('drop(guard);') < source.lastIndexOf('watcher::')
+  )
+}
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(
