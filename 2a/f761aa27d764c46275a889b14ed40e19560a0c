@@ -1,0 +1,66 @@
+src/shared/types.ts
+  s_e78e0118ab4232::t_168634a12dd4cf 96-105,364-366,426-428
+src/renderer/src/components/SettingsPanel.tsx
+  s_e78e0118ab4232::t_f4206d520c4eea 2,8,10-11,19,21-22,31-63
+src-tauri/src/state.rs
+  s_e78e0118ab4232::t_a37c6a50938456 4,25-28,39
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_98706220619330 84,178-182
+  s_e78e0118ab4232::t_839298095f7dd3 128-134,177
+src-tauri/tauri.conf.json
+  s_e78e0118ab4232::t_a91c2e4cf21c6c 33
+README.md
+  s_e78e0118ab4232::t_c300c015eeab1c 61-63,78-81,262-264,296
+src/renderer/src/components/MediaToolsSetup.tsx
+  s_e78e0118ab4232::t_f4206d520c4eea 1-18,20-33,35-39
+  s_e78e0118ab4232::t_37ca5c32d96aa3 19,34
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_218a1194d59190 17,83,273-286,308
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_c300c015eeab1c 36-40,80-81
+src/renderer/src/lib/tauri-api.ts
+  s_e78e0118ab4232::t_168634a12dd4cf 14,35-37
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_1c87f80d6afd53 640-674
+src/renderer/src/hooks/useLibraryCore.ts
+  s_e78e0118ab4232::t_218a1194d59190 8,29,33,48,55,60-61,68,127,130-131
+src/renderer/src/App.tsx
+  s_e78e0118ab4232::t_f4206d520c4eea 10,140,142-143,196
+scripts/fetch-ffmpeg.mjs
+  s_e78e0118ab4232::t_e7e9ff2c7673c2 3
+src-tauri/src/media.rs
+  s_e78e0118ab4232::t_85f57075c76801 203
+  s_e78e0118ab4232::t_a0750e0685dbab 140-150,174-179,187-189,196-198,209-211,221-222,257,259-261
+  s_e78e0118ab4232::t_fc03303fa10dc1 169,204,229-231
+  s_e78e0118ab4232::t_3d6e52acd6d1c5 167-168,182,191,232-236
+  s_e78e0118ab4232::t_aa13a58226aa7e 12,17,19,26-62,118-122,124-139,151-166,170-173,184-186,192-195,200-202,205-208,215-220,226-228,237-256,258,262-284
+scripts/build-tauri-portable.mjs
+  s_e78e0118ab4232::t_a91c2e4cf21c6c 1,95-97
+src-tauri/src/db.rs
+  s_e78e0118ab4232::t_a37c6a50938456 717-745
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_1c87f80d6afd53 74-76
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_f7c1fc4bfcc04c 11-13,47-54,87
+  s_e78e0118ab4232::t_a91c2e4cf21c6c 86
+AGENTS.md
+  s_e78e0118ab4232::t_c300c015eeab1c 18,66-68
+scripts/test-tauri-portable.mjs
+  s_e78e0118ab4232::t_a91c2e4cf21c6c 27,35-36,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2af761aa27d764c46275a889b14ed40e19560a0c",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
