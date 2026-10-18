@@ -858,57 +858,41 @@ fn extract_frames_full_scan(
         return Err(format!("ffmpeg 抽帧失败：{}", out.stderr.trim()));
     }
 
-    // showinfo 行形如：... pts_time:277 ... w:320 h:180 ...（真实输出帧顺序）
-    let mut real_times: Vec<f64> = Vec::new();
-    let mut last_w = 0u32;
-    let mut last_h = 0u32;
-    for line in out.stderr.lines() {
-        if line.contains("pts_time:") {
-            if let Some(m) = line.split("pts_time:").nth(1) {
-                if let Some(v) = m.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()) {
-                    if v.is_finite() {
-                        real_times.push(v);
-                    }
-                }
-            }
-        }
-        if let Some(m) = line.split(" w:").nth(1) {
-            if let Some(rest) = m.split(' ').next() {
-                if let Some(h) = m.split(" h:").nth(1).and_then(|s| s.split(' ').next()) {
-                    if let (Ok(w), Ok(hh)) = (rest.parse::<u32>(), h.parse::<u32>()) {
-                        last_w = w;
-                        last_h = hh;
-                    }
-                }
-            }
-        }
-    }
+    let (real_times, parsed_width, parsed_height) = parse_showinfo(&out.stderr);
 
-    let (mut width, mut height) = (last_w, last_h);
-    if width == 0 || height == 0 {
-        // 回退：所有帧尺寸一致，按 stdout 总字节数反推宽度（上限已知）。
+    let (mut output_width, mut output_height) = (parsed_width, parsed_height);
+    if output_width == 0 || output_height == 0 {
+        // 回退：所有帧尺寸一致，按 stdout 总字节数反推；候选宽度上限必须使用
+        // 调用方给定的抽帧宽度，不能使用解析失败后的 0。
         let total = out.stdout.len();
-        let w0 = (width as usize).max(2);
         let mut found = false;
-        for w in (2..=w0).rev().step_by(2) {
+        for candidate_width in (2..=width.max(2)).rev().step_by(2) {
             let pixels_per_frame = total / 3 / count;
-            let h = pixels_per_frame / w;
-            let hh = (h / 2) * 2;
-            if hh > 0 && w * hh * 3 * count == total {
-                width = w as u32;
-                height = hh as u32;
+            let candidate_height = pixels_per_frame / candidate_width as usize;
+            let even_height = (candidate_height / 2) * 2;
+            if even_height > 0
+                && candidate_width as usize * even_height * 3 * count == total
+            {
+                output_width = candidate_width;
+                output_height = even_height as u32;
                 found = true;
                 break;
             }
         }
         if !found {
-            return Ok(Vec::new());
+            return Err(format!(
+                "ffmpeg 抽帧尺寸无法识别：收到 {} 字节，计划 {} 帧",
+                total, count
+            ));
         }
     }
 
-    let frame_size = (width as usize) * (height as usize) * 3;
-    if frame_size == 0 {
-        return Ok(Vec::new());
+    let frame_size = (output_width as usize) * (output_height as usize) * 3;
+    if frame_size == 0 || out.stdout.len() < frame_size {
+        return Err(format!(
+            "ffmpeg 未输出完整视频帧：收到 {} 字节",
+            out.stdout.len()
+        ));
     }
     let available = (out.stdout.len() / frame_size).min(count);
     let mut frames = Vec::with_capacity(available);
@@ -919,12 +903,43 @@ fn extract_frames_full_scan(
         let time = real_times.get(i).copied().unwrap_or(timestamps[i]);
         frames.push(RawFrame {
             time,
-            width,
-            height,
+            width: output_width,
+            height: output_height,
             rgb,
         });
     }
     Ok(frames)
+}
+
+/// showinfo 的尺寸字段是 `s:320x180`（不是 w:/h:）。返回最后一次看到的
+/// 输出尺寸，以及各输出帧的真实时间戳。
+fn parse_showinfo(stderr: &str) -> (Vec<f64>, u32, u32) {
+    let mut real_times: Vec<f64> = Vec::new();
+    let mut last_width = 0u32;
+    let mut last_height = 0u32;
+    for line in stderr.lines() {
+        if line.contains("pts_time:") {
+            if let Some(m) = line.split("pts_time:").nth(1) {
+                if let Some(v) = m.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()) {
+                    if v.is_finite() {
+                        real_times.push(v);
+                    }
+                }
+            }
+        }
+        if let Some(size) = line
+            .split_whitespace()
+            .find_map(|field| field.strip_prefix("s:"))
+        {
+            if let Some((w, h)) = size.split_once('x') {
+                if let (Ok(w), Ok(h)) = (w.parse::<u32>(), h.parse::<u32>()) {
+                    last_width = w;
+                    last_height = h;
+                }
+            }
+        }
+    }
+    (real_times, last_width, last_height)
 }
 
 /// 按帧数 / 时间点选择抽帧路径并抽取，返回带时间点的 RGB24 帧。
@@ -999,7 +1014,7 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sha256_of_file;
+    use super::{parse_showinfo, sha256_of_file};
     use std::fs;
 
     #[test]
@@ -1020,5 +1035,14 @@ mod tests {
         let hash = handle.join().unwrap().unwrap();
         let _ = fs::remove_file(path);
         assert_eq!(hash, "6ff578d1e1e2346ac4c5da752462d1fa961e099b2e78ab88cb42d497ccc2c7c5");
+    }
+
+    #[test]
+    fn showinfo_parser_reads_standard_size_and_timestamps() {
+        let stderr = "[Parsed_showinfo_0 @ 1] n: 0 pts: 0 pts_time:0 fmt:rgb24 s:320x180 i:P\n\
+[Parsed_showinfo_0 @ 1] n: 1 pts: 1 pts_time:0.04 fmt:rgb24 s:320x180 i:P";
+        let (times, width, height) = parse_showinfo(stderr);
+        assert_eq!(times, vec![0.0, 0.04]);
+        assert_eq!((width, height), (320, 180));
     }
 }
