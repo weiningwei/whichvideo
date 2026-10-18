@@ -9,6 +9,7 @@ use crate::constants;
 use crate::db;
 use crate::events::{ImportResult, LibraryEvent};
 use crate::framepack;
+use crate::frames_store;
 use crate::hash;
 use crate::logger;
 use crate::media;
@@ -385,6 +386,7 @@ fn process_video(app: AppHandle, video_id: i64) {
     }
     // 全新跑才清旧帧图/帧数据，断点续传不清（保留已落库帧）
     if start_index == 0 {
+        frames_store::remove_video(video_id);
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
         if let Some(c) = guard.as_mut() {
@@ -441,13 +443,17 @@ fn process_video(app: AppHandle, video_id: i64) {
                 };
                 let sig = hash::compute_signature(&img);
                 let color = framepack::quantize_color(&sig.color);
+                let time_ms = (fr.time * 1000.0).round() as i64;
+                if settings.keep_frame_images {
+                    frames_store::save(video_id, time_ms, &fr.rgb, fr.width, fr.height);
+                }
                 new_frames.push(db::NewFrame {
                     dhash: sig.dhash as i64,
                     struct_hash: sig.struct_hash,
                     color,
                     spatial: sig.spatial,
                     frame_index: (bi + i) as i64,
-                    time_ms: (fr.time * 1000.0).round() as i64,
+                    time_ms,
                 });
             }
             {
@@ -723,6 +729,7 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
         }
     }
     for id in &targets {
+        frames_store::remove_video(*id);
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
         if let Some(c) = guard.as_mut() {

@@ -5,6 +5,7 @@ mod constants;
 mod db;
 mod events;
 mod framepack;
+mod frames_store;
 mod hash;
 mod indexer;
 mod logger;

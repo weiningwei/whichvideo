@@ -1,6 +1,7 @@
 use crate::db;
 use crate::events;
 use crate::framepack;
+use crate::frames_store;
 use crate::hash;
 use crate::indexer;
 use crate::media;
@@ -178,6 +179,7 @@ pub fn videos_remove(state: State<AppState>, video_id: i64) -> Result<(), String
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::remove_video(conn, video_id).map_err(|e| e.to_string())?;
+    frames_store::remove_video(video_id);
     let rebuilt = search::FrameSearchIndex::rebuild_from_db(conn);
     *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
     Ok(())
@@ -555,15 +557,38 @@ pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, Strin
 
 /// 更新用户设置，返回合并后的完整设置。
 #[tauri::command]
-pub fn library_update_settings(
-    state: State<AppState>,
-    patch: db::SettingsPatch,
-) -> Result<db::AppSettings, String> {
+pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Result<db::AppSettings, String> {
+    let state = app.state::<AppState>();
     let mut guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_mut()
         .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::update_settings(conn, &patch).map_err(|e| e.to_string())
+    let previous = db::get_settings(conn).map_err(|e| e.to_string())?;
+    let updated = db::update_settings(conn, &patch).map_err(|e| e.to_string())?;
+    if let Some(mode) = patch.sampling_mode.as_deref() {
+        if mode != previous.sampling_mode {
+            db::migrate_sampling_on_global_change(conn, &previous.sampling_mode, mode)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    drop(guard);
+    if patch.keep_frame_images == Some(false) && previous.keep_frame_images {
+        if frames_store::remove_all() {
+            let _ = app.emit(
+                "library_event",
+                events::LibraryEvent::Notice {
+                    level: "info".to_string(),
+                    message: "已清空全部索引帧图片".to_string(),
+                },
+            );
+        }
+    }
+    let _ = watcher::sync_all(&app);
+    let _ = app.emit(
+        "library_event",
+        events::LibraryEvent::SettingsUpdated { settings: updated.clone() },
+    );
+    Ok(updated)
 }
 
 /// 重置索引库（清空视频/帧/文件夹，保留设置）。
@@ -574,6 +599,7 @@ pub fn library_reset(state: State<AppState>) -> Result<(), String> {
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::clear_all(conn).map_err(|e| e.to_string())?;
+    frames_store::remove_all();
     *state.search_index.lock().map_err(|e| e.to_string())? = search::FrameSearchIndex::new();
     Ok(())
 }

@@ -6,6 +6,7 @@
 
 use crate::db;
 use crate::events::LibraryEvent;
+use crate::frames_store;
 use crate::indexer;
 use crate::state::AppState;
 use notify::event::{EventKind, RemoveKind};
@@ -135,6 +136,7 @@ fn remove_by_path(app: &AppHandle, path: &str) {
         }
     };
     if let Some(v) = removed {
+        frames_store::remove_video(v.id);
         let _ = app.emit(
             "library_event",
             LibraryEvent::VideoRemoved {
@@ -160,6 +162,7 @@ fn remove_under(app: &AppHandle, dir: &str) {
         }
     };
     for id in ids {
+        frames_store::remove_video(id);
         let _ = app.emit(
             "library_event",
             LibraryEvent::VideoRemoved {

@@ -1023,6 +1023,18 @@ pub fn set_sampling_override(conn: &mut Connection, ids: &[i64], mode: &str) -> 
     Ok(())
 }
 
+/// 全局采样模式变化时，只迁移仍跟随旧全局值的视频；显式覆盖到其他模式的不动。
+pub fn migrate_sampling_on_global_change(
+    conn: &Connection,
+    old_mode: &str,
+    new_mode: &str,
+) -> SqlResult<usize> {
+    conn.execute(
+        "UPDATE videos SET sampling_override = ? WHERE sampling_override = ?",
+        rusqlite::params![new_mode, old_mode],
+    )
+}
+
 /// 清空若干视频的帧（重建索引前调用）。
 pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
     if ids.is_empty() {
@@ -1265,9 +1277,23 @@ mod tests {
 
         assert_eq!(find_identical_file_pairs(&conn).unwrap(), vec![(1, 2), (2, 3)]);
         set_file_hash(&conn, 1, "abc123").unwrap();
+        conn.execute(
+            "UPDATE videos SET sampling_override = 'uniform' WHERE id IN (1, 2)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE videos SET sampling_override = 'scene' WHERE id = 3",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            migrate_sampling_on_global_change(&conn, "uniform", "scene").unwrap(),
+            2
+        );
         let video = get_video(&conn, 1).unwrap().unwrap();
         assert_eq!(video.file_hash.as_deref(), Some("abc123"));
-        assert_eq!(video.sampling_override, None);
+        assert_eq!(video.sampling_override.as_deref(), Some("scene"));
     }
 
     #[test]
