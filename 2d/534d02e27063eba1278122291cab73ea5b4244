@@ -1,0 +1,21 @@
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_892b5ef8c15cea 856-857,859,879,893,900-915,921-926,931,934,943-946,1006,1012
+  s_e78e0118ab4232::t_ef8121b3f8b9b4 1319-1324
+  s_e78e0118ab4232::t_81d84c213c165d 1318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d534d02e27063eba1278122291cab73ea5b4244",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
