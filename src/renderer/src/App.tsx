@@ -73,7 +73,11 @@ export default function App() {
           setTab('library')
         }}
         onImportFolder={() => {
-          void actions.importFolder()
+          void actions.importFolderOnce()
+          setTab('library')
+        }}
+        onWatchFolder={() => {
+          void actions.watchFolder()
           setTab('library')
         }}
         themeMode={themeMode}
@@ -113,7 +117,8 @@ export default function App() {
               total={visibleTotal}
               query={videoQuery}
               onSetQuery={actions.setVideoQuery}
-              onAddFolder={() => void actions.importFolder()}
+              onAddFolder={() => void actions.watchFolder()}
+              onImportFolder={() => void actions.importFolderOnce()}
               onAddFolderPath={(p) => void actions.addFolderPath(p)}
               onImportFiles={() => {
                 void actions.importFiles()

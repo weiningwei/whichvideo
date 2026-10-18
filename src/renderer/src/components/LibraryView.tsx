@@ -20,6 +20,8 @@ interface Props {
   onSetQuery: (query: VideoQuery) => void
   onAddFolder: () => void
   onAddFolderPath: (dirPath: string) => void
+  /** 一次性递归导入目录，不建立监听。 */
+  onImportFolder: () => void
   /** 快捷键 I：导入视频文件（与顶栏「+ 导入视频」同一个动作） */
   onImportFiles: () => void
   onRemoveFolder: (folderId: number) => void
@@ -107,7 +109,7 @@ export function LibraryView(props: Props) {
     moveCursor, jumpCursor, toggleFocusedSelection,
     selectAll, clearSelection, onToggleTree,
     onOpen: props.onOpen, onReveal: props.onReveal, onReindex: props.onReindex,
-    onAddFolder: props.onAddFolder, onImportFiles: props.onImportFiles, onRescan: props.onRescan,
+    onImportFolder: props.onImportFolder, onImportFiles: props.onImportFiles, onRescan: props.onRescan,
     onRemoveVideo: props.onRemoveVideo, onRemoveVideos: props.onRemoveVideos, filterInputRef
   })
 
@@ -229,7 +231,7 @@ export function LibraryView(props: Props) {
           </table>
           {videos.length === 0 && (
             <div className="p-8 text-center text-[12.5px] text-muted">
-              还没有视频。点击右上角「导入视频」选择文件，或「导入文件夹」递归导入整个目录。
+              还没有视频。可一次性「导入视频 / 文件夹」，需要自动同步变化时选择「监视文件夹」。
             </div>
           )}
         </div>

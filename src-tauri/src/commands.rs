@@ -62,7 +62,8 @@ pub fn folders_add_path(
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
 #[tauri::command]
 pub fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
-    let picked = pick_folder_dialog().ok_or_else(|| "未选择文件夹".to_string())?;
+    let picked = pick_folder_dialog("选择要加入资料库并持续监视的文件夹")
+        .ok_or_else(|| "未选择文件夹".to_string())?;
     let mut folders = Vec::new();
     for line in picked.lines() {
         let dir = line.trim();
@@ -499,22 +500,16 @@ pub fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
     if files.is_empty() {
         return Ok(events::ImportResult::default());
     }
-    let result = indexer::import_files(app.clone(), files.clone(), None);
-    // 把所选文件所在目录也纳入监听，保证后续动态更新。
-    let mut dirs: Vec<String> = files
-        .iter()
-        .filter_map(|f| {
-            std::path::Path::new(f)
-                .parent()
-                .map(|p| db::normalize_path(&p.to_string_lossy()))
-        })
-        .collect();
-    dirs.sort();
-    dirs.dedup();
-    for d in dirs {
-        let _ = indexer::import_folder(app.clone(), d, true, true);
-    }
-    Ok(result)
+    Ok(indexer::import_files(app, files, None))
+}
+
+/// 递归导入一个文件夹，但不把它登记为监听目录。
+#[tauri::command]
+pub fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, String> {
+    let Some(dir) = pick_folder_dialog("选择要一次性导入的文件夹（不会持续监视）") else {
+        return Ok(events::ImportResult::default());
+    };
+    Ok(indexer::import_folder_once(app, dir.trim().to_string(), true))
 }
 
 /// 通过系统文件选择对话框选择要搜索的图片，返回归一化路径列表（不入库）。
@@ -1101,12 +1096,14 @@ fn run_powershell(script: &str) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn pick_folder_dialog() -> Option<String> {
-    let script = "Add-Type -AssemblyName System.windows.forms; \
+fn pick_folder_dialog(description: &str) -> Option<String> {
+    let script = format!("Add-Type -AssemblyName System.windows.forms; \
         $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-        $d.Description = '选择要导入并持续监听的文件夹'; \
-        if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }";
-    run_powershell(script)
+        $d.Description = '{}'; \
+        if ($d.ShowDialog() -eq 'OK') {{ $d.SelectedPath }}",
+        description.replace('\'', "''")
+    );
+    run_powershell(&script)
 }
 
 #[cfg(windows)]
@@ -1138,7 +1135,7 @@ fn pick_files_dialog(title: &str, filter_name: &str, exts: &[&str]) -> Vec<Strin
 }
 
 #[cfg(not(windows))]
-fn pick_folder_dialog() -> Option<String> {
+fn pick_folder_dialog(_description: &str) -> Option<String> {
     None
 }
 

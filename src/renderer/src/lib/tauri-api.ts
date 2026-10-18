@@ -51,6 +51,7 @@ export const tauriApi: WhichVideoApi = {
     findDuplicates: (minScore) =>
       invoke<DuplicatePair[]>(IPC.videosFindDuplicates, { minScore }),
     importFiles: () => invoke<ImportResult>(IPC.videosImport),
+    importFolderOnce: () => invoke<ImportResult>(IPC.videosImportFolderOnce),
     importImages: () => invoke<string[]>(IPC.videosImportImages),
     openFile: (videoId, atSeconds) => invoke<void>(IPC.videosOpen, { videoId, atSeconds }),
     revealFile: (videoId) => invoke<void>(IPC.videosReveal, { videoId }),

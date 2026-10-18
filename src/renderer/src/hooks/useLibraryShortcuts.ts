@@ -22,7 +22,7 @@ export interface LibraryShortcutsArgs {
   onOpen: (videoId: number, atSeconds?: number) => void
   onReveal: (videoId: number) => void
   onReindex: (videoIds?: number[], mode?: SamplingMode) => void
-  onAddFolder: () => void
+  onImportFolder: () => void
   onImportFiles: () => void
   onRescan: (folderId?: number) => void
   onRemoveVideo: (videoId: number) => void
@@ -42,7 +42,7 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
     videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
     moveCursor, jumpCursor, toggleFocusedSelection,
     selectAll, clearSelection, onToggleTree,
-    onOpen, onReveal, onReindex, onAddFolder, onImportFiles, onRescan,
+    onOpen, onReveal, onReindex, onImportFolder, onImportFiles, onRescan,
     onRemoveVideo, onRemoveVideos, filterInputRef
   } = args
 
@@ -148,7 +148,7 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
         case 'I':
           if (mod && e.shiftKey) {
             e.preventDefault()
-            onAddFolder()
+            onImportFolder()
           } else if (!mod) {
             e.preventDefault()
             onImportFiles()
@@ -201,7 +201,7 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
     videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
     moveCursor, jumpCursor, toggleFocusedSelection,
     selectAll, clearSelection, onToggleTree,
-    onOpen, onReveal, onReindex, onAddFolder, onImportFiles, onRescan,
+    onOpen, onReveal, onReindex, onImportFolder, onImportFiles, onRescan,
     onRemoveVideo, onRemoveVideos, filterInputRef
   ])
 }

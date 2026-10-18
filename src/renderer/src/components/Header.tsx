@@ -21,6 +21,7 @@ interface Props {
   onTab: (tab: 'search' | 'library') => void
   onImportFiles: () => void
   onImportFolder: () => void
+  onWatchFolder: () => void
   busy: string | null
   themeMode: ThemeMode
   /** system 模式解析后的实际主题，仅用于提示文案 */
@@ -36,6 +37,7 @@ export function Header({
   onTab,
   onImportFiles,
   onImportFolder,
+  onWatchFolder,
   busy,
   themeMode,
   themeResolved,
@@ -84,11 +86,20 @@ export function Header({
           + 导入视频
         </button>
         <button
-          className="btn border-accent-strong/60 bg-accent/15 text-accent hover:bg-accent/25"
+          className="btn hover:bg-ink-700/70"
           onClick={onImportFolder}
           disabled={!!busy}
+          title="递归导入当前已有视频，不持续监视后续变化"
         >
           + 导入文件夹
+        </button>
+        <button
+          className="btn border-accent-strong/60 bg-accent/15 text-accent hover:bg-accent/25"
+          onClick={onWatchFolder}
+          disabled={!!busy}
+          title="加入资料库并持续监视新增、修改和删除"
+        >
+          + 监视文件夹
         </button>
         <button
           className="btn px-2 hover:bg-ink-700/70"

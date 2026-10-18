@@ -6,6 +6,8 @@ const shared = readFileSync(join(root, 'src', 'shared', 'types.ts'), 'utf8')
 const bridge = readFileSync(join(root, 'src', 'renderer', 'src', 'lib', 'tauri-api.ts'), 'utf8')
 const rendererMain = readFileSync(join(root, 'src', 'renderer', 'src', 'main.tsx'), 'utf8')
 const rustMain = readFileSync(join(root, 'src-tauri', 'src', 'main.rs'), 'utf8')
+const commandsSource = readFileSync(join(root, 'src-tauri', 'src', 'commands.rs'), 'utf8')
+const indexerSource = readFileSync(join(root, 'src-tauri', 'src', 'indexer.rs'), 'utf8')
 const processExt = readFileSync(join(root, 'src-tauri', 'src', 'process_ext.rs'), 'utf8')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readFileSync(join(root, 'src-tauri', 'src', name), 'utf8'))
@@ -39,6 +41,18 @@ check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.i
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
+const importFilesCommand = commandsSource.match(/pub fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
+const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
+check(
+  '导入视频不再隐式登记监听目录',
+  importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
+)
+check(
+  '一次性导入文件夹只扫描文件、不登记监听目录',
+  importFolderOnce.includes('scan_video_files') &&
+    importFolderOnce.includes('import_files') &&
+    !importFolderOnce.includes('insert_folder')
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(

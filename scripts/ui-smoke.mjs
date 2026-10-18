@@ -265,6 +265,7 @@ export default mod
     onTab: noop,
     onImportFiles: noop,
     onImportFolder: noop,
+    onWatchFolder: noop,
     busy: null
   }
   const headerHtml = render(jsx(Header, { ...headerBase, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop }))
@@ -291,7 +292,10 @@ export default mod
   )
   check('顶栏渲染统计（监听 1/1）', /1\/1/.test(headerHtml), headerHtml.match(/监听[\s\S]{0,40}/)?.[0] ?? '')
   check('顶栏渲染帧指纹数量', headerHtml.includes('16'))
-  check('顶栏渲染导入按钮', headerHtml.includes('导入视频') && headerHtml.includes('导入文件夹'))
+  check(
+    '顶栏区分一次性导入与持续监视',
+    headerHtml.includes('导入视频') && headerHtml.includes('导入文件夹') && headerHtml.includes('监视文件夹')
+  )
 
   // ---- 主题切换 ----
   check('顶栏有主题切换按钮', headerHtml.includes('切换主题') && /aria-label="切换主题"/.test(headerHtml))
@@ -478,6 +482,7 @@ export default mod
       onSetQuery: noop,
       onAddFolder: noop,
       onAddFolderPath: noop,
+      onImportFolder: noop,
       onRemoveFolder: noop,
       onRescan: noop,
       onToggleFolder: noop,
@@ -516,6 +521,7 @@ export default mod
           onSetQuery: noop,
           onAddFolder: noop,
           onAddFolderPath: noop,
+          onImportFolder: noop,
           onRemoveFolder: noop,
           onRescan: noop,
           onToggleFolder: noop,

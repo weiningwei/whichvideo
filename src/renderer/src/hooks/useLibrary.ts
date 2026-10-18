@@ -152,7 +152,18 @@ export function useLibrary() {
           return result
         })
       },
-      async importFolder(): Promise<void> {
+      async importFolderOnce(): Promise<ImportResult | null> {
+        return withBusy('正在一次性导入文件夹…', async () => {
+          const result = await window.whichvideo.videos.importFolderOnce()
+          notices.pushNotice(
+            'info',
+            `导入完成（未监视）：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}`
+          )
+          await refreshAll()
+          return result
+        })
+      },
+      async watchFolder(): Promise<void> {
         await withBusy('正在扫描文件夹…', async () => {
           const added = await window.whichvideo.folders.addFromDialog()
           notices.pushNotice(

@@ -77,7 +77,7 @@ export const SHORTCUTS: ShortcutDoc[] = [
   // ---- 视频库 ----
   { group: '视频库', keys: 'G', label: '分组 / 平铺切换' },
   { group: '视频库', keys: 'I', label: '导入视频文件' },
-  { group: '视频库', keys: 'Ctrl+Shift+I', label: '导入文件夹' },
+  { group: '视频库', keys: 'Ctrl+Shift+I', label: '一次性导入文件夹（不监视）' },
   { group: '视频库', keys: 'S', label: '重新扫描监听目录' },
   { group: '视频库', keys: 'B', label: '重建全部索引' }
 ]

@@ -87,6 +87,7 @@ fn main() {
             commands::folders_rescan,
             commands::folders_add_dialog,
             commands::videos_import,
+            commands::videos_import_folder_once,
             commands::videos_import_images,
             commands::videos_reindex,
             commands::videos_find_duplicates,

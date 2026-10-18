@@ -651,6 +651,12 @@ pub fn import_files(app: AppHandle, files: Vec<String>, folder_id: Option<i64>) 
     result
 }
 
+/// 递归导入目录内的视频，但不登记目录、不启动文件系统监听。
+pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> ImportResult {
+    let files = scan_video_files(&dir_path, recursive);
+    import_files(app, files, None)
+}
+
 /// 导入并持续监听一个目录（递归扫描视频文件）。
 pub fn import_folder(
     app: AppHandle,
