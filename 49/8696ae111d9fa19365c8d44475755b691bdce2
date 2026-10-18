@@ -1,0 +1,23 @@
+scripts/generate-icon.mjs
+  s_e78e0118ab4232::t_89c11a2ecfc0ff 257-261,266,278
+src-tauri/tauri.conf.json
+  s_e78e0118ab4232::t_89c11a2ecfc0ff 32-36
+src-tauri/src/media.rs
+  s_e78e0118ab4232::t_89c11a2ecfc0ff 85,88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "498696ae111d9fa19365c8d44475755b691bdce2",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
