@@ -1,0 +1,21 @@
+src/renderer/src/components/VideoRow.tsx
+  s_e78e0118ab4232::t_3c4447e6a6b0a9 66-72,116-117
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_3c4447e6a6b0a9 155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5097bc281a5104fa2836409b7233d898271d4d11",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
