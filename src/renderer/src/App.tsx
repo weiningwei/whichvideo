@@ -65,10 +65,8 @@ export default function App() {
     <div className="relative flex h-full flex-col">
       <Header
         stats={state.stats}
-        status={state.status}
         tab={tab}
         onTab={setTab}
-        busy={state.busy}
         themeMode={themeMode}
         themeResolved={themeResolved}
         onCycleTheme={cycleTheme}

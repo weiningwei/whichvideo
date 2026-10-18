@@ -1,4 +1,4 @@
-import type { LibraryStats, IndexerStatus } from '@shared/types'
+import type { LibraryStats } from '@shared/types'
 import type { ResolvedTheme, ThemeMode } from '../hooks/useTheme'
 
 const THEME_ICON: Record<ThemeMode, string> = { dark: '◐', light: '◑', system: '◒' }
@@ -6,19 +6,16 @@ const THEME_LABEL: Record<ThemeMode, string> = { dark: '深色', light: '浅色'
 
 interface Props {
   stats: LibraryStats
-  status: IndexerStatus | null
   tab: 'search' | 'library'
   onTab: (tab: 'search' | 'library') => void
-  busy: string | null
   themeMode: ThemeMode
   themeResolved: ResolvedTheme
   onCycleTheme: () => void
   onShowShortcuts: () => void
 }
 
-/** 全局栏只负责品牌、页面导航与全局状态；页面动作留在对应页面内。 */
-export function Header({ stats, status, tab, onTab, busy, themeMode, themeResolved, onCycleTheme, onShowShortcuts }: Props) {
-  const running = status?.running ?? false
+/** 顶栏只负责品牌、导航与静态概览；持续任务状态统一交由底部状态栏。 */
+export function Header({ stats, tab, onTab, themeMode, themeResolved, onCycleTheme, onShowShortcuts }: Props) {
   return (
     <header className="flex h-14 shrink-0 items-center border-b border-line bg-surface-1 px-4">
       <div className="flex items-center gap-2.5 pr-8">
@@ -30,13 +27,7 @@ export function Header({ stats, status, tab, onTab, busy, themeMode, themeResolv
         <NavButton active={tab === 'library'} onClick={() => onTab('library')}>视频库</NavButton>
       </nav>
       <div className="ml-auto flex items-center gap-1.5">
-        {(running || busy) && (
-          <span className="mr-2 flex items-center gap-2 text-[11.5px] text-secondary">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            {busy ?? `正在索引 ${status?.active ?? 0} 个视频`}
-          </span>
-        )}
-        {!running && !busy && stats.videos > 0 && (
+        {stats.videos > 0 && (
           <span className="mr-2 text-[11px] tabular-nums text-tertiary">{stats.videos} 个视频</span>
         )}
         <button

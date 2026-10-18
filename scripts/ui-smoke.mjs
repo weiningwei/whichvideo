@@ -116,7 +116,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('查重失败不打开空结果并有错误通知', duplicateScanSource.includes('if (pairs !== null) onDuplicatesResolved(pairs)') && readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8').includes("withBusy('正在查找相似视频…'"))
 
   console.log('\n=== 全局框架 ===')
-  const header = render(jsx(Header, { stats, status, tab: 'search', onTab: noop, busy: null, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop, onShowShortcuts: noop }))
+  const header = render(jsx(Header, { stats, tab: 'search', onTab: noop, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop, onShowShortcuts: noop }))
   check('顶栏展示品牌与两个简短导航', header.includes('WhichVideo') && header.includes('搜图') && header.includes('视频库'))
   check('顶栏不再堆放导入按钮和五项统计', !header.includes('导入视频') && !header.includes('帧指纹') && !header.includes('监听 1/1'))
   check('顶栏保留主题和快捷键入口', header.includes('切换主题') && header.includes('键盘快捷键'))
