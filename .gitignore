@@ -8,6 +8,7 @@ release/
 *.tsbuildinfo
 .vite/
 src-tauri/target/
+src-tauri/target-fast/
 src-tauri/gen/
 
 # ---- 运行时数据（索引库、日志、测试素材）----

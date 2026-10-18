@@ -74,10 +74,19 @@ pnpm dev
 
 # 4. 打包
 pnpm build:portable            # Windows 绿色版目录（推荐，无需安装）
+pnpm build:portable:fast       # Windows 本机快速绿色版（不用于正式发行）
 pnpm build:win                 # Windows NSIS 安装包
 pnpm build:mac                 # macOS .app
 pnpm build:linux               # Linux AppImage
 ```
+
+`pnpm build:portable:fast` 专供 Windows 本机反复验证：它把 Rust 构建缓存放进
+`src-tauri/target-fast`，使用 Thin LTO、较多 codegen 单元和 release 增量编译。首次运行仍需
+编译依赖；之后只改少量 Rust 代码时通常会明显更快。它与正式 `build:portable` 的
+`src-tauri/target/release` 缓存完全隔离，产物目录和 `data\` 保留规则相同。
+
+正式测试、提交发布以及 GitHub Actions 仍使用 `pnpm build:portable` 或各平台标准构建命令，
+以保持体积优先的完整 LTO 发行配置。Cargo 默认会使用可用 CPU，无需额外设置并行数。
 
 `pnpm fetch:ffmpeg` 下载不动时（`gyan.dev` 与 GitHub 在不同网络下差异很大），
 脚本已做多源自动回退、有进度与超时、缓存续跑。走代理需要显式设 `HTTPS_PROXY`，
@@ -239,9 +248,9 @@ macOS/Linux 请用系统包管理器安装 FFmpeg，或在软件中手动指定�
 
 ### 通知
 
-- **状态栏**（底部）显示最近的操作反馈，几秒后自动消失
-- 需要留意的问题（**索引失败、后端异常**等）在**右下角**弹出，按重要程度
-  停留 8~12 秒；鼠标**悬停可暂停倒计时**，点击立即关闭
+- **状态栏**（底部）持续显示当前任务状态：空闲、索引进度、正在处理的文件，或最近一次索引失败
+- **右下角通知**用于一次性结果和需要留意的问题（导入完成、保存设置、索引失败、后端异常等）；
+  会按重要程度停留 5~12 秒，鼠标**悬停可暂停倒计时**，点击立即关闭
 
 ---
 

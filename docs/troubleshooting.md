@@ -68,6 +68,22 @@ cargo check --manifest-path src-tauri/Cargo.toml
   资源管理器，再重试。Rust 编译目录是 `src-tauri/target`。
 - crate 或 npm 包下载超时：确认 Cargo registry、npm registry 和代理设置；依赖已缓存后可离线构建。
 
+## 本机反复构建很慢
+
+`pnpm build:portable` 是正式发行配置：它使用完整 LTO 和单一 codegen 单元，以较长编译时间换取
+更小的发布文件。Vite 一般只需数秒；数分钟通常来自 Rust 的链接与 LTO，不是前端没有缓存。
+
+本机反复验证绿色版可使用：
+
+```powershell
+pnpm build:portable:fast
+```
+
+该命令仍会做类型检查和图标生成，但 Rust 产物写入 `src-tauri/target-fast`，并只对这套缓存启用
+Thin LTO、16 个 codegen 单元和 release 增量编译。第一次构建仍可能较慢；之后小改动会复用缓存。
+它不改动正式 `src-tauri/target/release`，也不应作为发布或 CI 的构建命令。Cargo 会自动使用可用 CPU，
+不需要为了“多线程”再设置 `CARGO_BUILD_JOBS`。
+
 ## `pnpm build:win` 的 NSIS 问题
 
 Tauri CLI 会把 NSIS 工具缓存到用户缓存目录。下载中断或缓存损坏时，删除对应的单个 NSIS

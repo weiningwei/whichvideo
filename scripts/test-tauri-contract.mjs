@@ -12,6 +12,8 @@ const indexerSource = readSource('src-tauri', 'src', 'indexer.rs')
 const mediaSource = readSource('src-tauri', 'src', 'media.rs')
 const dbSource = readSource('src-tauri', 'src', 'db.rs')
 const portableSource = readSource('scripts', 'build-tauri-portable.mjs')
+const fastBuildSource = readSource('scripts', 'build-tauri-fast.mjs')
+const iconSource = readSource('scripts', 'generate-icon.mjs')
 const processExt = readSource('src-tauri', 'src', 'process_ext.rs')
 const platformOpen = readSource('src-tauri', 'src', 'platform_open.rs')
 const watcherSource = readSource('src-tauri', 'src', 'watcher.rs')
@@ -19,6 +21,7 @@ const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readSource('src-tauri', 'src', name))
   .join('\n')
 const config = JSON.parse(readFileSync(join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 let failed = 0
 function check(name, condition, detail = '') {
@@ -169,6 +172,22 @@ const resources = config.bundle?.resources ?? {}
 check('bundle 目标可按平台选择', config.bundle?.targets === 'all')
 check('bundle 不再内置 ffmpeg', !Object.keys(resources).some((key) => /ffmpeg|ffprobe/i.test(key)))
 check('便携目录不再复制 ffmpeg', !portableSource.includes("for (const name of ['ffmpeg.exe', 'ffprobe.exe'])"))
+check(
+  '快速便携构建隔离缓存且不降低正式发行配置',
+  pkg.scripts?.['build:portable:fast']?.includes('node scripts/build-tauri-fast.mjs') &&
+    fastBuildSource.includes("CARGO_TARGET_DIR: targetDir") &&
+    fastBuildSource.includes("CARGO_PROFILE_RELEASE_LTO: 'thin'") &&
+    fastBuildSource.includes("CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'") &&
+    fastBuildSource.includes("CARGO_PROFILE_RELEASE_INCREMENTAL: 'true'") &&
+    fastBuildSource.includes("process.env.npm_execpath ||") &&
+    fastBuildSource.includes('WHICHVIDEO_TAURI_EXE: sourceExe')
+)
+check(
+  '未变图标不会触发 Rust 资源重编译',
+  iconSource.includes('function writeIfChanged') &&
+    iconSource.includes('readFileSync(path).equals(data)') &&
+    (iconSource.match(/writeIfChanged\(/g) ?? []).length >= 6
+)
 check('ICO 与 PNG 已配置', config.bundle?.icon?.includes('icons/icon.ico') && config.bundle?.icon?.includes('icons/icon.png'))
 
 const buildIco = readFileSync(join(root, 'build', 'icon.ico'))

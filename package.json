@@ -19,6 +19,7 @@
     "build:mac": "npm run typecheck && npm run icon && pnpm tauri icon build/icon.png && pnpm tauri build --bundles app",
     "build:linux": "npm run typecheck && npm run icon && pnpm tauri build --bundles appimage",
     "build:portable": "npm run typecheck && npm run icon && pnpm tauri build --no-bundle && node scripts/build-tauri-portable.mjs",
+    "build:portable:fast": "npm run typecheck && npm run icon && node scripts/build-tauri-fast.mjs",
     "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "test:portable": "node scripts/test-tauri-portable.mjs",
     "test:release": "node scripts/check-release.mjs",

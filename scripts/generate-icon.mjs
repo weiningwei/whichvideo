@@ -13,7 +13,7 @@
  * 产物：build/ 品牌源、src-tauri/icons/ 安装包图标、renderer favicon。
  */
 import { deflateSync } from 'node:zlib'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -232,6 +232,13 @@ function encodeICO(images) {
 
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
+/** 内容未变时不重写，避免 Tauri 因资源时间戳变化而重新链接 Rust 二进制。 */
+function writeIfChanged(path, data) {
+  if (existsSync(path) && readFileSync(path).equals(data)) return false
+  writeFileSync(path, data)
+  return true
+}
+
 function main() {
   mkdirSync(buildDir, { recursive: true })
 
@@ -244,24 +251,25 @@ function main() {
   }
 
   const icoPath = join(buildDir, 'icon.ico')
-  writeFileSync(icoPath, encodeICO(images))
+  const ico = encodeICO(images)
+  writeIfChanged(icoPath, ico)
 
   // Tauri 的窗口图标与 Windows bundle 也必须使用同一图源，避免迁移后退回默认图标。
   const tauriIconDir = join(root, 'src-tauri', 'icons')
   mkdirSync(tauriIconDir, { recursive: true })
-  writeFileSync(join(tauriIconDir, 'icon.ico'), encodeICO(images))
+  writeIfChanged(join(tauriIconDir, 'icon.ico'), ico)
 
   // 单独存一份 1024 的 PNG：README / 应用商店 / 文档插图用
   const bigPng = encodePNG(renderRGBA(1024), 1024)
   const pngPath = join(buildDir, 'icon.png')
-  writeFileSync(pngPath, bigPng)
-  writeFileSync(join(tauriIconDir, 'icon.png'), bigPng)
+  writeIfChanged(pngPath, bigPng)
+  writeIfChanged(join(tauriIconDir, 'icon.png'), bigPng)
 
   // favicon 从同一批渲染结果里切出来，避免"改了 build/ 忘了改 favicon"导致两边不一致
   const faviconDir = join(root, 'src', 'renderer', 'public')
   mkdirSync(faviconDir, { recursive: true })
   for (const size of [16, 32]) {
-    writeFileSync(join(faviconDir, `favicon-${size}.png`), encodePNG(renderRGBA(size), size))
+    writeIfChanged(join(faviconDir, `favicon-${size}.png`), encodePNG(renderRGBA(size), size))
   }
 
   console.log('\n已生成：')
