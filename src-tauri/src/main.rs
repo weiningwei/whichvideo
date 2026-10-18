@@ -3,6 +3,7 @@
 mod commands;
 mod constants;
 mod db;
+mod diagnostics;
 mod events;
 mod framepack;
 mod frames_store;
@@ -73,6 +74,7 @@ fn main() {
             commands::library_settings,
             commands::library_update_settings,
             commands::library_open_database_folder,
+            commands::library_export_diagnostics,
             commands::library_data_dir,
             commands::library_media_tools,
             commands::library_select_media_tools_dir,

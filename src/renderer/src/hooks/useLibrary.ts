@@ -238,6 +238,12 @@ export function useLibrary() {
         const dir = await window.whichvideo.library.openDatabaseFolder()
         notices.pushNotice('info', `索引库位置：${dir}`)
       },
+      async exportDiagnostics(): Promise<void> {
+        await withBusy('正在导出诊断包…', async () => {
+          const path = await window.whichvideo.library.exportDiagnostics()
+          if (path) notices.pushNotice('info', '诊断包已导出，可在反馈问题时附上该文件。')
+        })
+      },
       async selectMediaToolsDir(): Promise<void> {
         await withBusy('正在检测 FFmpeg…', async () => {
           const status = await window.whichvideo.library.selectMediaToolsDir()

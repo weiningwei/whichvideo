@@ -369,6 +369,8 @@ export interface WhichVideoApi {
     selectMediaToolsDir(): Promise<MediaToolsStatus>
     clearMediaToolsDir(): Promise<MediaToolsStatus>
     openDatabaseFolder(): Promise<string>
+    /** 导出脱敏诊断 ZIP；用户取消保存时返回 null。 */
+    exportDiagnostics(): Promise<string | null>
     reset(): Promise<void>
   }
   folders: {
@@ -432,6 +434,7 @@ export const IPC = {
   libraryClearMediaToolsDir: 'library_clear_media_tools_dir',
   libraryUpdateSettings: 'library_update_settings',
   libraryOpenDb: 'library_open_database_folder',
+  libraryExportDiagnostics: 'library_export_diagnostics',
   libraryReset: 'library_reset',
   foldersList: 'folders_list',
   foldersAddDialog: 'folders_add_dialog',

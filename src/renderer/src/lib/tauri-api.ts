@@ -36,6 +36,7 @@ export const tauriApi: WhichVideoApi = {
     selectMediaToolsDir: () => invoke<MediaToolsStatus>(IPC.librarySelectMediaToolsDir),
     clearMediaToolsDir: () => invoke<MediaToolsStatus>(IPC.libraryClearMediaToolsDir),
     openDatabaseFolder: () => invoke<string>(IPC.libraryOpenDb),
+    exportDiagnostics: () => invoke<string | null>(IPC.libraryExportDiagnostics),
     reset: () => invoke<void>(IPC.libraryReset),
   },
   folders: {

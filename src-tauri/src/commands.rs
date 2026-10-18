@@ -678,6 +678,16 @@ pub fn library_open_database_folder() -> Result<String, String> {
     Ok(dir_str)
 }
 
+/// 导出可分享的本地诊断包；只包含脱敏后的运行状态与日志末尾，不含视频或路径清单。
+#[tauri::command]
+pub fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, String> {
+    let Some(path) = native_diagnostic_save_dialog(&app) else {
+        return Ok(None);
+    };
+    crate::diagnostics::write_archive(&app, &path)?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
 /// 运行时数据目录信息（toolsReady 由媒体探测结果决定）。
 #[tauri::command]
 pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
@@ -1264,6 +1274,19 @@ fn native_folder_dialog(app: &AppHandle, title: &str) -> Option<Vec<String>> {
     }
     let path = dialog.blocking_pick_folder()?.into_path().ok()?;
     Some(vec![db::normalize_path(&path.to_string_lossy())])
+}
+
+fn native_diagnostic_save_dialog(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("导出诊断包")
+        .set_file_name(format!("whichvideo-diagnostics-{}.zip", db::now_ms()))
+        .add_filter("ZIP 诊断包", &["zip"]);
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    dialog.blocking_save_file()?.into_path().ok()
 }
 
 /* ================================================================== */

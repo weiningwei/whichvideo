@@ -31,6 +31,11 @@ pub fn init(data_dir: &Path) -> PathBuf {
     path
 }
 
+/// 当前日志文件路径；诊断导出时仅读取末尾并脱敏，不会把此路径写入诊断包。
+pub fn path() -> Option<PathBuf> {
+    LOG_FILE.get().cloned()
+}
+
 fn stamped(message: &str) -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)

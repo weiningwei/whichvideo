@@ -147,7 +147,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     dataDir: { dir: 'E:\\WhichVideo\\data', source: 'install', toolsReady: true },
     mediaTools: { ready: true, source: 'path', directory: 'D:\\ffmpeg\\bin', ffmpeg: 'D:\\ffmpeg\\bin\\ffmpeg.exe', ffprobe: 'D:\\ffmpeg\\bin\\ffprobe.exe', message: '使用系统 PATH 中的 FFmpeg' },
     onChange: noop, onSelectMediaTools: noop, onClearMediaTools: noop,
-    onReset: noop, onOpenDatabaseFolder: noop
+    onReset: noop, onOpenDatabaseFolder: noop, onExportDiagnostics: noop
   })
   const libraryProps = {
     folders: [folder], videos: [video], total: 1, query: {}, onSetQuery: noop,
@@ -226,7 +226,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('设置按质量、监视与存储分组', settingsHtml.includes('索引质量') && settingsHtml.includes('监视与存储'))
   check('五个滑块仍完整保留', (settingsHtml.match(/type="range"/g) ?? []).length === 5)
   check('说明改为悬停提示而非大段常驻文字', settingsHtml.includes('title="实际帧数') && !settingsHtml.includes('适合镜头切换密集'))
-  check('数据目录与危险操作仍可访问', settingsHtml.includes('数据目录') && settingsHtml.includes('打开索引库位置') && settingsHtml.includes('清空索引库'))
+  check('数据目录、诊断导出与危险操作仍可访问', settingsHtml.includes('数据目录') && settingsHtml.includes('打开索引库位置') && settingsHtml.includes('导出诊断包') && settingsHtml.includes('清空索引库'))
   check('FFmpeg 状态与手动目录入口可访问', settingsHtml.includes('FFmpeg 可用') && settingsHtml.includes('更换目录'))
   const missingTools = render(jsx(MediaToolsSetup, {
     status: { ready: false, source: 'missing', directory: null, ffmpeg: null, ffprobe: null, message: '未找到 FFmpeg' },

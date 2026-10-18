@@ -140,6 +140,7 @@ export default function App() {
                   onClearMediaTools={() => void actions.clearMediaToolsDir()}
                   onReset={() => void actions.resetLibrary()}
                   onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}
+                  onExportDiagnostics={() => void actions.exportDiagnostics()}
                 />
               }
             />

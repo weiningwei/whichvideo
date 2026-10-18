@@ -11,6 +11,7 @@ interface Props {
   onClearMediaTools: () => void
   onReset: () => void
   onOpenDatabaseFolder: () => void
+  onExportDiagnostics: () => void
 }
 
 export function SettingsPanel({
@@ -21,7 +22,8 @@ export function SettingsPanel({
   onSelectMediaTools,
   onClearMediaTools,
   onReset,
-  onOpenDatabaseFolder
+  onOpenDatabaseFolder,
+  onExportDiagnostics
 }: Props) {
   const [confirmReset, setConfirmReset] = useState(false)
   const value = settings ?? DEFAULT_SETTINGS
@@ -165,6 +167,9 @@ export function SettingsPanel({
         <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={onOpenDatabaseFolder}>
           打开索引库位置
         </button>
+        <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={onExportDiagnostics}>
+          导出诊断包
+        </button>
         {confirmReset ? (
           <>
             <button
@@ -189,7 +194,7 @@ export function SettingsPanel({
           </button>
         )}
       </div>
-      <p className="text-[10.5px] text-tertiary">清空索引库不会删除视频文件。</p>
+      <p className="text-[10.5px] text-tertiary">诊断包不含视频、缩略图或文件路径；清空索引库不会删除视频文件。</p>
     </div>
   )
 }
