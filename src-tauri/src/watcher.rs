@@ -36,7 +36,7 @@ fn watcher_settings(app: &AppHandle) -> db::AppSettings {
 }
 
 fn forget_pending(path: &str) {
-    let key = db::normalize_path(path).to_lowercase();
+    let key = db::path_key(path);
     if let Ok(mut pending) = pending_changes().lock() {
         pending.remove(&key);
     }
@@ -45,7 +45,7 @@ fn forget_pending(path: &str) {
 /// notify 在文件复制期间会连续发送 Create/Modify。只让最后一个事件在用户配置的
 /// 稳定等待期后触发导入，避免对尚未写完的大文件反复 probe/hash。
 fn schedule_import(app: &AppHandle, folder_id: i64, path: String) {
-    let key = db::normalize_path(&path).to_lowercase();
+    let key = db::path_key(&path);
     let ticket = CHANGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut pending) = pending_changes().lock() {
         pending.insert(key.clone(), ticket);

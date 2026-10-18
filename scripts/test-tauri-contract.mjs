@@ -12,6 +12,7 @@ const mediaSource = readFileSync(join(root, 'src-tauri', 'src', 'media.rs'), 'ut
 const dbSource = readFileSync(join(root, 'src-tauri', 'src', 'db.rs'), 'utf8')
 const portableSource = readFileSync(join(root, 'scripts', 'build-tauri-portable.mjs'), 'utf8')
 const processExt = readFileSync(join(root, 'src-tauri', 'src', 'process_ext.rs'), 'utf8')
+const platformOpen = readFileSync(join(root, 'src-tauri', 'src', 'platform_open.rs'), 'utf8')
 const watcherSource = readFileSync(join(root, 'src-tauri', 'src', 'watcher.rs'), 'utf8')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readFileSync(join(root, 'src-tauri', 'src', name), 'utf8'))
@@ -160,10 +161,11 @@ check(
   commandStarts > 0 && commandStarts === hiddenStarts && processExt.includes('CREATE_NO_WINDOW'),
   `${hiddenStarts}/${commandStarts}`
 )
+check('文件管理器与播放器按平台启动', platformOpen.includes('target_os = "macos"') && platformOpen.includes('xdg-open') && platformOpen.includes('explorer.exe') && platformOpen.includes('.no_window()'))
 
 console.log('\n=== Tauri bundle 资源 ===')
 const resources = config.bundle?.resources ?? {}
-check('bundle 目标为 NSIS', config.bundle?.targets === 'nsis')
+check('bundle 目标可按平台选择', config.bundle?.targets === 'all')
 check('bundle 不再内置 ffmpeg', !Object.keys(resources).some((key) => /ffmpeg|ffprobe/i.test(key)))
 check('便携目录不再复制 ffmpeg', !portableSource.includes("for (const name of ['ffmpeg.exe', 'ffprobe.exe'])"))
 check('ICO 与 PNG 已配置', config.bundle?.icon?.includes('icons/icon.ico') && config.bundle?.icon?.includes('icons/icon.png'))
@@ -172,6 +174,9 @@ const buildIco = readFileSync(join(root, 'build', 'icon.ico'))
 const tauriIco = readFileSync(join(root, 'src-tauri', 'icons', 'icon.ico'))
 check('Tauri ICO 与品牌 ICO 字节一致', buildIco.equals(tauriIco), `${tauriIco.length} B`)
 check('Tauri PNG 存在', existsSync(join(root, 'src-tauri', 'icons', 'icon.png')))
+const macConfig = JSON.parse(readFileSync(join(root, 'src-tauri', 'tauri.macos.conf.json'), 'utf8'))
+const macIcon = readFileSync(join(root, 'src-tauri', 'icons', 'icon.icns'))
+check('macOS ICNS 已配置且包含有效容器头', macConfig.bundle?.icon?.includes('icons/icon.icns') && macIcon.subarray(0, 4).toString('ascii') === 'icns')
 
 console.log(`\nTauri 契约自检：${failed ? `失败 ${failed} 项` : `${commands.length} 个命令全部通过`}`)
 process.exit(failed ? 1 : 0)

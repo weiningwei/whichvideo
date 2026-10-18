@@ -88,11 +88,6 @@ fn reg_query_string(key: &str, value_name: Option<&str>) -> Option<String> {
     if m.is_empty() { None } else { Some(m) }
 }
 
-#[cfg(not(windows))]
-fn reg_query_string(_key: &str, _value_name: Option<&str>) -> Option<String> {
-    None
-}
-
 /// 在 PATH 中查找可执行文件（Windows 下尝试 .exe/.cmd/.bat 后缀）。
 fn which(name: &str) -> Option<String> {
     let path_env = std::env::var("PATH").unwrap_or_default();
@@ -212,6 +207,16 @@ fn detect_tools(configured_dir: Option<&std::path::Path>) -> (Option<ToolPaths>,
         }
     }
 
+    // Finder 启动的 macOS GUI 应用通常不继承 shell 的 Homebrew PATH。
+    #[cfg(target_os = "macos")]
+    for directory in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        if let Some(tools) = paths_in_dir(std::path::Path::new(directory)) {
+            if tools_are_usable(&tools) {
+                return status_for(tools, "system", "使用常见安装位置中的 FFmpeg");
+            }
+        }
+    }
+
     // 开发与测试环境允许复用仓库 resources/bin；release 包不会走此分支，也不再携带它们。
     #[cfg(debug_assertions)]
     if let Ok(exe) = std::env::current_exe() {
@@ -255,7 +260,8 @@ pub fn configure_dir(configured_dir: Option<String>) -> Result<MediaToolsStatus,
     let requested = configured_dir.filter(|s| !s.trim().is_empty()).map(PathBuf::from);
     if let Some(dir) = requested.as_deref() {
         let Some(tools) = paths_in_dir(dir) else {
-            return Err("所选目录中未同时找到 ffmpeg.exe 和 ffprobe.exe，请选择 FFmpeg 的 bin 目录。".to_string());
+            let (ffmpeg, ffprobe) = tool_names();
+            return Err(format!("所选目录中未同时找到 {ffmpeg} 和 {ffprobe}，请选择 FFmpeg 的 bin 目录。"));
         };
         if !tools_are_usable(&tools) {
             return Err("所选目录中的 ffmpeg 或 ffprobe 无法运行，请检查文件版本和系统权限。".to_string());
@@ -374,6 +380,7 @@ fn player_from_default_association(video_ext: &str) -> Option<SeekablePlayer> {
     })
 }
 
+#[cfg(windows)]
 fn pick_existing(candidates: &[&str]) -> Option<String> {
     for c in candidates {
         if !c.is_empty() && PathBuf::from(c).exists() {
@@ -383,6 +390,7 @@ fn pick_existing(candidates: &[&str]) -> Option<String> {
     None
 }
 
+#[cfg(windows)]
 fn find_potplayer_from_registry() -> Option<String> {
     let keys = [
         "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PotPlayer64bit",
@@ -431,6 +439,7 @@ fn find_potplayer_from_registry() -> Option<String> {
 /// 找一个支持时间点起播的本地播放器：默认关联 > PATH > 常见安装位置。
 /// 都找不到返回 None（调用方退化为系统默认播放器）。
 pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
+    #[cfg(windows)]
     let ext = video_path
         .rsplit('.')
         .next()
@@ -444,8 +453,15 @@ pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
         }
     }
 
-    if let Some(mpv) =
-        which("mpv").or(pick_existing(&["C:\\Program Files\\mpv\\mpv.exe", "C:\\Program Files (x86)\\mpv\\mpv.exe"]))
+    #[cfg(not(windows))]
+    let _ = video_path;
+
+    if let Some(mpv) = which("mpv").or_else(|| {
+        #[cfg(windows)]
+        { pick_existing(&["C:\\Program Files\\mpv\\mpv.exe", "C:\\Program Files (x86)\\mpv\\mpv.exe"]) }
+        #[cfg(not(windows))]
+        { None }
+    })
     {
         return Some(SeekablePlayer {
             exe: mpv,
@@ -454,12 +470,14 @@ pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
         });
     }
 
+    #[cfg(windows)]
     let potplayer = pick_existing(&[
         "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe",
         "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini.exe",
         "C:\\Program Files (x86)\\DAUM\\PotPlayer\\PotPlayerMini.exe",
     ])
     .or_else(find_potplayer_from_registry);
+    #[cfg(windows)]
     if let Some(p) = potplayer {
         return Some(SeekablePlayer {
             exe: p,
@@ -468,10 +486,15 @@ pub fn find_seekable_player(video_path: &str) -> Option<SeekablePlayer> {
         });
     }
 
-    if let Some(vlc) = which("vlc").or(pick_existing(&[
+    if let Some(vlc) = which("vlc").or_else(|| {
+        #[cfg(windows)]
+        { pick_existing(&[
         "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
         "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
-    ])) {
+        ]) }
+        #[cfg(not(windows))]
+        { None }
+    }) {
         return Some(SeekablePlayer {
             exe: vlc,
             name: "VLC".to_string(),

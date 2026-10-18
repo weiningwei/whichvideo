@@ -1,30 +1,27 @@
-# Windows 发行流程
+# 多平台发行流程
 
-当前只发布 Windows x64。Tauri 框架本身跨平台，但本项目的路径规范化、资源管理器/播放器调用、剪贴板和网页取图仍依赖 Windows；macOS/Linux 不能仅靠增加构建矩阵就视为支持。
+目标产物：Windows x64 NSIS + 便携 ZIP、macOS Apple Silicon / Intel 两种 `.app` ZIP、Linux x64 AppImage。每个平台都由 GitHub Actions 对应的原生 runner 编译，不能用本地旧产物替代。Tauri 的打包目标由各平台脚本显式指定。
 
-## 版本与变更说明
+## 版本与发布
 
-每次发布都同步修改 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 中的版本号，并新增 `docs/releases/vX.Y.Z.md`。`pnpm test:release` 检查三处版本、NSIS 目标和版本说明；推送 `vX.Y.Z` 标签后，工作流还会检查标签与版本一致。
+每次发布同步修改 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本号，并新增 `docs/releases/vX.Y.Z.md`。`pnpm test:release` 检查三处版本和说明；推送 `vX.Y.Z` 标签后流水线还会校验标签一致。版本说明应人工归纳功能、修复和限制；GitHub 自动说明只补充 PR 变更，直接提交的改动须用 `git log` 核对。
 
-版本说明先人工归纳用户看得懂的新增功能、修复、兼容性与已知限制。GitHub 会在此基础上追加自动生成的发布说明；`.github/release.yml` 按 PR 标签分类。自动部分主要依赖合并的 PR，**直接提交的改动不能只依赖它**；整理人工说明时，可用 `git log --oneline <上个标签>..HEAD` 核对遗漏。第一个版本没有上个标签，直接核对本版功能清单和测试记录。
+1. 合并代码并等待 `Desktop checks` 在 Windows、macOS、Linux 三个 runner 上全部通过。
+2. 在各平台做下面的手动验收，尤其检查原生窗口、文件对话框、FFmpeg 探测与安装目录写权限。
+3. 推送版本标签。`Desktop release draft` 重新运行测试和原生构建，收集三个平台的资产，生成 `SHA256SUMS.txt`，创建 GitHub Release 草稿。不要使用本地 `dist`。
+4. 核对资产名、校验和、版本说明和签名状态；全部通过后人工发布草稿。任一平台未验收不得标为稳定支持，可先标记为预览版并明确限制。
 
-## 自动构建与草稿
+## 手动验收
 
-1. 合并代码后等待 `Windows checks` 通过，在独立、可写的 Windows 10/11 x64 环境做基础体验检查。
-2. 从准备发布的提交创建并推送标签，例如 `git tag v0.1.0`、`git push origin v0.1.0`。标签是发布入口，不要上传本机 `dist` 或 `target` 里的旧产物。
-3. `Windows release draft` 在 GitHub 的 Windows runner 上重新安装锁定依赖、运行完整测试、构建 NSIS 安装包，并用同一次构建的 exe 打便携版；校验版本和发布目录不含 `data`，生成 SHA-256 清单。
-4. 工作流把安装包、便携 ZIP、`SHA256SUMS.txt` 上传到 GitHub Release **草稿**，不会自动公开。失败时不要发布旧的本机安装包；修复后重新触发构建。
-5. 下载草稿资产，在未配置 FFmpeg 的干净机器上完成下面的验收，再人工发布草稿。公开后不要覆盖同名资产，下一次修复应升版本号。
+- 从发行资产解压或安装到**可写目录**，首次启动后确认同级 `data` 中产生数据库、日志、缓存；关闭重启后数据保留。
+- 导入单视频和嵌套文件夹，等待建索引；重建索引、搜索截图和网页图片、粘贴剪贴板截图、查重、播放定位、在文件管理器中定位。
+- 未安装 FFmpeg 时出现提示；手动指定 `ffmpeg`/`ffprobe` 目录后能索引；清除设置后按环境变量与 PATH 重新探测。
+- 监听文件夹的新增/删除同步；移动整个便携目录后索引数据保留；升级覆盖程序文件但保留 `data` 后正常启动。
+- Windows 在干净的 Windows 10/11 x64 上测 NSIS 和便携 ZIP；macOS 分别在 Apple Silicon 和 Intel Mac 上测各自 `.app` ZIP；Linux 在 x64 桌面上测 AppImage（含 X11/Wayland）。
+- ZIP 不含测试者的 `data`、FFmpeg 或构建机绝对路径；比对 `SHA256SUMS.txt`。
 
-如果想做预览版，可在发布草稿时标为 pre-release，并在版本说明中明确限制。当前没有代码签名证书，生成的 exe 和 NSIS 都未签名；公开下载可能触发 SmartScreen。签名证书与签名步骤应在正式稳定版前补齐，不能把证书或密码写进仓库。
+## 安装目录数据与分发限制
 
-## 人工验收（下载 CI 资产，不使用本机旧包）
+所有平台都将数据保存在程序旁的 `data`，或由 `WHICHVIDEO_DATA_DIR` 显式覆盖。Windows NSIS 默认安装到当前用户可写位置。macOS `.app` **应放在可写目录**，数据位于 `.app` 同级；`/Applications` 通常不可写，不能直接套用系统常规安装流程。Linux AppImage 使用 `APPIMAGE` 所指文件的同级目录，不写入临时挂载镜像。以上限制应在下载说明中清楚告知。
 
-- 安装版与便携版分别测试首次启动、单实例、关闭后再打开；验证 `data` 位于 exe 同级且可写。
-- 无 FFmpeg 时出现设置引导；手动指定 `ffmpeg.exe`/`ffprobe.exe` 所在目录后能导入视频、建立索引并搜图；再测试系统 PATH 自动探测。
-- 导入单个视频、一次性文件夹和监视文件夹，检查文件夹展开、暂停监听、重新扫描与重建索引。
-- 用不同目录的同名视频测试查重结果和搜图结果，检查目录可见、移除只影响索引库。
-- 用已有 `data` 升级便携版，确认数据库、设置和索引保留；安装版也要单独验证升级及卸载后的数据处理。
-- 校验 ZIP 内只有程序和说明文件，**不含测试者的 `data`、FFmpeg 或构建机绝对路径**；比对 `SHA256SUMS.txt`。
-
-NSIS 默认按当前用户安装到可写位置；若未来改为全用户安装到 `Program Files`，必须先解决 exe 同级 `data` 的写入权限问题。默认安装包在系统缺少 WebView2 时会下载引导程序，完全离线安装需要另行配置并测试 WebView2 离线安装模式。
+当前没有 Windows 代码签名证书，也没有 Apple Developer 签名/公证。Windows 可能触发 SmartScreen，macOS 可能因 Gatekeeper 阻止打开；正式稳定发行前应增加受保护的签名密钥和原生签名步骤。不要在仓库中保存证书或密码。发布草稿不等于已通过实机验收。

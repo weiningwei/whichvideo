@@ -95,7 +95,7 @@ export interface DataDirInfo {
 
 export interface MediaToolsStatus {
   ready: boolean
-  source: 'environment' | 'configured' | 'path' | 'development' | 'missing'
+  source: 'environment' | 'configured' | 'path' | 'system' | 'development' | 'missing'
   /** ffmpeg 与 ffprobe 所在目录 */
   directory: string | null
   ffmpeg: string | null
@@ -345,15 +345,17 @@ export function isImageFile(filePath: string): boolean {
   return (IMAGE_EXTENSIONS as readonly string[]).includes(filePath.slice(dot).toLowerCase())
 }
 
-/** 把路径统一成 Windows 原生形式并生成比较用的 key */
+  /** 按路径自身风格规范化；Unix 路径大小写敏感，Windows 路径大小写不敏感。 */
 export function normalizePath(p: string): string {
+    if (p.startsWith('/')) return p.replace(/\/+$/, '') || '/'
   const normalized = p.replace(/\//g, '\\')
   if (/^[a-z]:\\+$/i.test(normalized)) return normalized.slice(0, 3)
   return normalized.replace(/\\+$/, '')
 }
 
 export function pathKeyOf(p: string): string {
-  return normalizePath(p).toLowerCase()
+    const normalized = normalizePath(p)
+    return normalized.startsWith('/') ? normalized : normalized.toLowerCase()
 }
 
 export interface WhichVideoApi {

@@ -367,6 +367,10 @@ async function main() {
     }
   }
 
+  if (process.platform !== 'win32' && !options.url) {
+    throw new Error('内置下载源仅提供 Windows 二进制；macOS/Linux 请用系统包管理器安装 ffmpeg 与 ffprobe，或使用 --from 指定本机目录。')
+  }
+
   // 3) 下载：按顺序试各个源
   const sources = options.url
     ? [{ id: 'custom', label: '自定义地址', url: async () => options.url }]
@@ -427,7 +431,7 @@ async function main() {
   rmSync(unpacked, { recursive: true, force: true })
 
   console.log(`\n完成，产物在 ${outDir}${sep}`)
-  console.log('打包时 Tauri 会把它们作为资源复制到安装目录。')
+  console.log('resources/bin 仅供本地开发与测试，正式发布包不会内置媒体工具。')
 }
 
 try {

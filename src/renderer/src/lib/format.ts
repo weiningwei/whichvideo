@@ -39,6 +39,7 @@ export function fileNameOf(path: string): string {
 
 export function dirNameOf(path: string): string {
   const idx = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
+  if (idx === 0 && path.startsWith('/')) return '/'
   return idx > 0 ? path.slice(0, idx) : path
 }
 
@@ -54,9 +55,11 @@ export function shortPath(path: string, roots: string[]): string {
  * （旧实现如此，"剧名.mkv" 会连着出现两遍）。这里单独提供目录形式。
  */
 export function shortDir(path: string, roots: string[]): string {
-  const lower = path.toLowerCase()
+  const unix = path.startsWith('/')
+  const separator = unix ? '/' : '\\'
+  const lower = unix ? path : path.toLowerCase()
   for (const root of roots) {
-    const r = root.toLowerCase()
+    const r = unix ? root : root.toLowerCase()
     // 目录名只是前缀不代表归属：Movies2 不能被 Movies 当作子目录。
     if (lower.startsWith(r) && (/[\\/]$/.test(root) || /[\\/]/.test(path.charAt(root.length)))) {
       const cut = path.slice(root.length).replace(/^[\\/]+/, '')
@@ -64,12 +67,13 @@ export function shortDir(path: string, roots: string[]): string {
       // 文件直接位于根目录时（cut 里没有分隔符）必须走这个分支。
       const idx = Math.max(cut.lastIndexOf('\\'), cut.lastIndexOf('/'))
       if (idx < 0) return ''
-      return cut.slice(0, idx) + '\\'
+      return cut.slice(0, idx) + separator
     }
   }
   const dir = dirNameOf(path)
+  if (dir === '/') return '/'
   const parts = dir.split(/[\\/]/)
-  return parts.length > 2 ? `…\\${parts.slice(-2).join('\\')}\\` : dir ? dir + '\\' : ''
+  return parts.length > 2 ? `…${separator}${parts.slice(-2).join(separator)}${separator}` : dir ? dir + separator : ''
 }
 
 export function scoreColor(score: number): string {

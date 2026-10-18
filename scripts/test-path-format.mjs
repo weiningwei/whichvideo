@@ -52,7 +52,7 @@ async function loadFormat() {
 
 async function main() {
   console.log('  转译渲染端（tsc）…')
-  const { shortDir, shortPath, fileNameOf } = await loadFormat()
+  const { shortDir, shortPath, fileNameOf, dirNameOf } = await loadFormat()
   rmSync(js, { recursive: true, force: true })
 
   console.log('=== 目录与文件名的职责划分 ===')
@@ -124,6 +124,9 @@ async function main() {
   check('正斜杠路径也支持', shortDir('/media/movies/x.mkv', ['/media/movies']) === '', JSON.stringify(shortDir('/media/movies/x.mkv', ['/media/movies'])))
   check('大小写不敏感匹配', shortDir('e:\\MEDIA\\MOVIES\\x.mkv', roots) === '', JSON.stringify(shortDir('e:\\MEDIA\\MOVIES\\x.mkv', roots)))
   check('相似前缀的兄弟目录不被误认为监听根目录', shortDir('E:\\Media\\Movies2\\x.mkv', roots) === '…\\Media\\Movies2\\')
+  check('Unix 根目录文件的目录为 /', dirNameOf('/video.mp4') === '/')
+  check('Unix 子目录沿用正斜杠', shortDir('/media/Films/S01/a.mp4', ['/media/Films']) === 'S01/')
+  check('Unix 路径大小写敏感', shortDir('/media/Films/a.mp4', ['/media/films']) !== '')
 
   console.log(`\n=== 路径格式化：${passed}/${passed + failed} 通过 ===`)
   if (failed) process.exit(1)

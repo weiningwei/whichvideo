@@ -17,7 +17,9 @@ pnpm test             # Rust、桥接契约、便携构建和 UI 回归门禁
 pnpm build            # 类型检查 + 图标 + release exe（不生成安装包）
 pnpm build:portable   # 轻量 release exe → dist/WhichVideo-portable（不内置 FFmpeg）
 pnpm build:win        # Tauri NSIS 安装包
-pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin
+pnpm build:mac        # macOS .app（Apple Silicon / Intel 原生 runner）
+pnpm build:linux      # Linux AppImage（x64 runner）
+pnpm fetch:ffmpeg     # Windows 下载 ffmpeg/ffprobe 到 resources/bin；其他平台用系统包管理器
 ```
 
 提交前至少运行与改动相关的测试；跨前后端、打包或迁移类改动运行完整 `pnpm test`。
@@ -31,6 +33,8 @@ src-tauri/src/db.rs           SQLite 持久层与数据目录判定（rusqlite�
 src-tauri/src/indexer.rs      抽帧与索引队列
 src-tauri/src/search.rs       常驻内存帧索引、检索与时间纠偏
 src-tauri/src/media.rs        ffmpeg/ffprobe 调用
+src-tauri/src/platform_open.rs 原生打开文件、定位和发布页
+src-tauri/src/url_image.rs    跨平台网页取图
 src-tauri/src/sampling.rs     场景采样计划
 src-tauri/src/watcher.rs      目录监听与变更同步
 src-tauri/src/logger.rs       文件日志与 panic 记录
@@ -45,7 +49,7 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 
 ## 后端关键约束
 
-- 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到 exe 同级 `data`。
+- 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到程序同级 `data`（macOS `.app` 和 Linux AppImage 取包文件同级）。
   `WHICHVIDEO_DATA_DIR` 可显式覆盖；目标不可写时启动失败，不得回退到用户目录。
 - SQLite 使用 WAL。改变表结构时必须保留已有库的迁移路径，不能靠删库升级。
 - 帧指纹固定为 16×16 灰度（256 字节）；查询图和视频帧必须使用相同的缩放、
@@ -57,12 +61,14 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 - 核心功能默认离线。只有用户主动粘贴网页地址或启用版本检查时才允许联网。
 - 启动时先确定数据目录并初始化日志，再打开数据库、恢复目录监听和未完成任务。
   panic 信息也要写入同一日志。
-- Windows GUI 进程启动 PowerShell、ffmpeg、ffprobe、reg、资源管理器或播放器时，必须通过
+- Windows GUI 进程启动 ffmpeg、ffprobe、reg、资源管理器或播放器时，必须通过
   `CommandNoWindow::no_window()` 创建，防止 release 应用闪出控制台窗口。
+- 路径比较按平台处理：Windows 统一反斜杠并忽略大小写，macOS/Linux 保留斜杠和大小写；监听器去重键必须与数据库一致。
 
 ## 打包约束
 
-- `src-tauri/tauri.conf.json` 是唯一桌面打包配置；`build/icon.ico` 是 Windows 图标源。
+- `src-tauri/tauri.conf.json` 是主打包配置；macOS 有图标覆盖配置 `tauri.macos.conf.json`；`build/icon.ico` 是 Windows 图标源。
+- `src-tauri/icons/icon.icns` 随仓库保留供 macOS 开发模式使用；更换图形后要从新生成的 `build/icon.png` 同步更新 ICNS。`build:mac` 会自动重新生成发布用 ICNS。
 - 发布包不得包含 `ffmpeg` / `ffprobe`。启动探测顺序为显式环境变量、用户手动目录、系统 PATH；
   缺失时必须提示用户，并允许在设置中选择同时包含两个工具的 `bin` 目录。
 - `build:portable` 生成 `dist/WhichVideo-portable`，包含 exe 和说明文件。
@@ -75,7 +81,7 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 pnpm test:rust        # Rust 单元与模块测试
 pnpm test:contract    # 前端桥接、命令实现和注册表一致性
 pnpm test:portable    # 便携目录结构、资源和 data 保留
-pnpm test:release     # 三处版本号、Windows 打包目标与版本说明
+pnpm test:release     # 三处版本号、跨平台构建脚本与版本说明
 pnpm test:theme       # 语义色 token
 pnpm test:cursor      # 列表光标行为
 pnpm test:range       # Shift/Ctrl 连选
@@ -89,10 +95,10 @@ Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，�
 
 ## 发行边界
 
-- 目前只支持 Windows x64。后端路径规范化、资源管理器/播放器、剪贴板及网页取图仍有 Windows 专用实现，不能直接增加 macOS/Linux 发布矩阵。
-- GitHub Actions 在推送 `vX.Y.Z` 标签后从该提交重新构建 NSIS 与便携 ZIP，生成校验和并创建发行草稿；不上传本机 `dist` 或 `target` 产物。
+- 源码已适配 Windows x64、macOS Apple Silicon / Intel 与 Linux x64；非 Windows 平台必须通过 CI 原生构建和实机验收后才能称为稳定支持。
+- GitHub Actions 在推送 `vX.Y.Z` 标签后从该提交分别构建 NSIS、便携 ZIP、`.app` ZIP、AppImage，生成校验和并创建发行草稿；不上传本机 `dist` 或 `target` 产物。
 - 每版同步三个版本号和 `docs/releases/vX.Y.Z.md`，运行 `pnpm test:release`；发布说明的人工作者摘要与 PR 自动分类互补。
-- 草稿需经过干净 Windows 机器的手动验收后才公开。当前产物未签名，SmartScreen 风险须在首版说明中写清楚。完整流程见 `docs/releasing.md`。
+- 草稿需经过三个系统的手动验收后才公开。Windows/Apple 均未签名，SmartScreen/Gatekeeper 风险须在首版说明中写清楚。完整流程见 `docs/releasing.md`。
 
 ## UI 约束
 

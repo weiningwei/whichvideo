@@ -197,6 +197,11 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const legacyRoots = explorer.buildExplorerTree([], [{ ...video, folderId: null }])
   const directInWatchedDir = explorer.buildExplorerTree([folder], [{ ...video, folderId: null }])
   check('一次性导入保留文件夹，单独导入视频留在顶层', importedRoots.folders.length === 1 && importedRoots.folders[0].folder?.id === 2 && importedRoots.folders[0].count === 1 && legacyRoots.looseVideos[0]?.id === video.id && directInWatchedDir.looseVideos[0]?.id === video.id)
+  const unixFolder = { ...folder, id: 10, path: '/media/Movies', pathKey: '/media/Movies' }
+  const unixVideo = { ...video, id: 11, path: '/media/Movies/A/clip.mp4', dir: '/media/Movies/A', folderId: 10 }
+  const unixTree = explorer.buildExplorerTree([unixFolder], [unixVideo])
+  check('Unix 文件夹保持正斜杠并按层级显示', unixTree.folders[0].children[0]?.path === '/media/Movies/A' && unixTree.folders[0].children[0]?.videos[0]?.id === 11)
+  check('Unix 路径大小写不同不误归入文件夹', explorer.buildExplorerTree([unixFolder], [{ ...unixVideo, path: '/media/movies/a.mp4', dir: '/media/movies' }]).looseVideos.length === 1)
 
   const source = (name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
   const toolbarSource = source('Toolbar.tsx')

@@ -1,4 +1,4 @@
-name: Windows release draft
+name: Desktop release draft
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,22 +24,33 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
       - run: node scripts/check-release.mjs
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-      - run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
-      - run: pnpm test
 
   build:
     needs: verify
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+          - os: macos-15
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux WebKit dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -52,12 +63,21 @@ jobs:
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
+      - run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+      - run: pnpm test
       # 一次 release 编译同时得到 NSIS 与原始 exe；便携版直接复用此 exe。
       - run: pnpm build:win
+        if: runner.os == 'Windows'
       - run: node scripts/build-tauri-portable.mjs
+        if: runner.os == 'Windows'
         env:
           WHICHVIDEO_SKIP_OUTSIDE_COPY: '1'
+      - run: pnpm build:mac
+        if: runner.os == 'macOS'
+      - run: pnpm build:linux
+        if: runner.os == 'Linux'
       - name: Package and checksum fresh CI outputs
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -73,14 +93,40 @@ jobs:
           $zipName = "WhichVideo-${version}-windows-x64-portable.zip"
           Copy-Item -LiteralPath $installer -Destination (Join-Path release $setupName)
           Compress-Archive -Path 'dist/WhichVideo-portable' -DestinationPath (Join-Path release $zipName) -CompressionLevel Optimal
-          @($setupName, $zipName) | ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath (Join-Path release $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $_"
-          } | Set-Content -LiteralPath 'release/SHA256SUMS.txt' -Encoding ascii
           Get-ChildItem -LiteralPath release | Select-Object Name, Length
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_PLATFORM" == macos-arm64 ]]; then
+            test "$(uname -m)" = arm64
+          else
+            test "$(uname -m)" = x86_64
+          fi
+          app='src-tauri/target/release/bundle/macos/WhichVideo.app'
+          test -d "$app"
+          mkdir -p release
+          ditto -c -k --keepParent "$app" "release/WhichVideo-${RELEASE_TAG#v}-${RELEASE_PLATFORM}-portable.zip"
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          shopt -s nullglob
+          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          test "${#appimages[@]}" -eq 1
+          mkdir -p release
+          cp "${appimages[0]}" "release/WhichVideo-${RELEASE_TAG#v}-linux-x64.AppImage"
       - uses: actions/upload-artifact@v4
         with:
-          name: whichvideo-${{ github.ref_name }}-windows-x64
+          name: whichvideo-${{ github.ref_name }}-${{ matrix.platform }}
           path: release/*
           if-no-files-found: error
           retention-days: 14
@@ -94,8 +140,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: whichvideo-${{ github.ref_name }}-windows-x64
+          pattern: whichvideo-${{ github.ref_name }}-*
+          merge-multiple: true
           path: release
+      - name: Check all platforms and generate checksums
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          test -f "release/WhichVideo-${version}-windows-x64-setup.exe"
+          test -f "release/WhichVideo-${version}-windows-x64-portable.zip"
+          test -f "release/WhichVideo-${version}-macos-arm64-portable.zip"
+          test -f "release/WhichVideo-${version}-macos-x64-portable.zip"
+          test -f "release/WhichVideo-${version}-linux-x64.AppImage"
+          (cd release && sha256sum WhichVideo-* > SHA256SUMS.txt)
       - name: Create or update release draft
         shell: bash
         env:

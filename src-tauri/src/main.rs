@@ -10,11 +10,13 @@ mod hash;
 mod indexer;
 mod logger;
 mod media;
+mod platform_open;
 mod process_ext;
 mod sampling;
 mod search;
 mod state;
 mod updater;
+mod url_image;
 mod watcher;
 
 use state::AppState;
@@ -23,6 +25,7 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();

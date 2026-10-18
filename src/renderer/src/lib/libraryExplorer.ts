@@ -1,10 +1,8 @@
-import type { VideoRecord, WatchedFolder } from '@shared/types'
+import { normalizePath, pathKeyOf, type VideoRecord, type WatchedFolder } from '@shared/types'
 
 /** 统一分隔符并保留 Windows 盘符根目录。 */
 export function normalizeDirPath(path: string): string {
-  const normalized = path.replace(/\//g, '\\')
-  if (/^[A-Za-z]:\\+$/.test(normalized)) return normalized.slice(0, 2) + '\\'
-  return normalized.replace(/\\+$/, '')
+  return normalizePath(path)
 }
 
 export interface ExplorerNode {
@@ -26,11 +24,12 @@ export type ExplorerRow =
   | { type: 'video'; video: VideoRecord; depth: number }
   | { type: 'empty'; path: string; depth: number }
 
-function key(path: string): string { return normalizeDirPath(path).toLocaleLowerCase() }
+function key(path: string): string { return pathKeyOf(path) }
 function contains(root: string, dir: string): boolean {
   const a = key(root)
   const b = key(dir)
-  return b === a || b.startsWith(a.endsWith('\\') ? a : a + '\\')
+  const separator = a.startsWith('/') ? '/' : '\\'
+  return b === a || b.startsWith(a.endsWith(separator) ? a : a + separator)
 }
 /** 只有明确导入的文件夹形成目录节点；单独导入的视频留在顶层。 */
 export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[]): ExplorerTree {
@@ -52,7 +51,8 @@ export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[
     let node = root
     const relative = dir.slice(root.path.length).replace(/^[\\/]/, '')
     for (const part of relative ? relative.split(/[\\/]/).filter(Boolean) : []) {
-      const path = node.path.replace(/[\\/]$/, '') + '\\' + part
+      const separator = node.path.startsWith('/') ? '/' : '\\'
+      const path = node.path.replace(/[\\/]$/, '') + separator + part
       let child = node.children.find((item) => key(item.path) === key(path))
       if (!child) {
         child = { path, name: part, folder: null, children: [], videos: [], count: 0 }

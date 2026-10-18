@@ -4,13 +4,13 @@
 
 **看到一张截图，想确认这个画面是不是自己下过的某一集。**
 
-当前发布目标为 **Windows 10/11 x64**；macOS/Linux 还未完成适配与测试。
+当前源码适配 **Windows x64、macOS（Apple Silicon / Intel）、Linux x64**；正式发布需等待各系统的 CI 构建和实机验收。
 
 WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任何一张图（截图 /
 海报 / 缩略图 / 屏摄），它会回答三件事：
 
 1. **出自哪个视频** —— 命中的是哪个文件、相似度多少；
-2. **出现在第几分几秒** —— 命中时间点精确到秒，**可一键从该位置起播**，直接核对画面；
+2. **出现在第几分几秒** —— 命中时间点精确到秒；检测到 mpv/VLC 等支持定位的播放器时，可从该位置起播，直接核对画面；
 3. **这个视频是否已在你的库里** —— 命中即说明已下载；此外还能**查重**：
    库里是否已经存了多份相同或高度相似的副本。
 
@@ -54,12 +54,11 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ## 快速开始
 
-普通用户可从 [GitHub Releases](https://github.com/weiningwei/whichvideo/releases) 下载 Windows x64
-安装包，或下载便携 ZIP 后解压运行 `WhichVideo.exe`；无需安装 Node、pnpm 或 Rust。
+普通用户可从 [GitHub Releases](https://github.com/weiningwei/whichvideo/releases) 下载对应平台的产物：Windows 安装包或便携 ZIP、macOS Apple Silicon / Intel `.app` ZIP、Linux x64 AppImage；无需安装 Node、pnpm 或 Rust。
 正式发行资产由 GitHub Actions 从版本标签重新构建，不使用开发者本机的旧产物。
 两个版本都不内置 FFmpeg，首次启动可在软件中指定其 `bin` 目录。
 
-如需从源码构建，则需要 Node >= 22、pnpm >= 10、Rust stable、Windows C++ 构建工具，
+如需从源码构建，则需要 Node >= 22、pnpm >= 10、Rust stable、对应平台的 Tauri 系统依赖，
 以及 **ffmpeg**（抽帧用，见下）。
 
 ```bash
@@ -67,24 +66,27 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 pnpm install
 
 # 2. 开发环境准备 ffmpeg（二选一；发布包不内置）
-pnpm fetch:ffmpeg              # 下载到 resources/bin，仅供开发与测试
+pnpm fetch:ffmpeg              # Windows：下载到 resources/bin，仅供开发与测试
 # 或：把 ffmpeg/ffprobe 加入系统 PATH
 
 # 3. 开发模式运行
 pnpm dev
 
 # 4. 打包
-pnpm build:portable            # 绿色版目录（推荐，无需安装）
-pnpm build:win                 # NSIS 安装包
+pnpm build:portable            # Windows 绿色版目录（推荐，无需安装）
+pnpm build:win                 # Windows NSIS 安装包
+pnpm build:mac                 # macOS .app
+pnpm build:linux               # Linux AppImage
 ```
 
 `pnpm fetch:ffmpeg` 下载不动时（`gyan.dev` 与 GitHub 在不同网络下差异很大），
 脚本已做多源自动回退、有进度与超时、缓存续跑。走代理需要显式设 `HTTPS_PROXY`，
 且 Node 24 要加 `NODE_USE_ENV_PROXY=1`；实在不行就用浏览器下好 zip 再
 `--from "<zip 路径>"`。完整参数见 [docs/troubleshooting.md](docs/troubleshooting.md)。
+macOS/Linux 请用系统包管理器安装 FFmpeg，或在软件中手动指定其 `bin` 目录；内置下载源只有 Windows 版本。
 
 正式版不内置 FFmpeg。首次启动会依次检查环境变量、上次手动设置的目录和系统 PATH；
-仍未找到时会提示选择同时包含 `ffmpeg.exe` 与 `ffprobe.exe` 的 `bin` 目录。选择结果保存在
+仍未找到时会提示选择同时包含 `ffmpeg` 与 `ffprobe`（Windows 为 `.exe`）的 `bin` 目录。选择结果保存在
 应用数据目录中，也可随时在「索引设置 → 媒体工具」里更换。
 
 ---
@@ -245,23 +247,23 @@ pnpm build:win                 # NSIS 安装包
 
 ## 数据目录与便携（绿色）模式
 
-`build:portable` 产出两份目录：`dist\WhichVideo-portable\`（仓库内）与
+Windows 的 `build:portable` 产出两份目录：`dist\WhichVideo-portable\`（仓库内）与
 **仓库上一级目录**下的同名文件夹。外面那份是给用户直接双击运行的。
 
 重新打包时，仓库外那份**会保留已有的 `data\`**，索引库不用重建。
 
-**安装版和绿色版一律**把数据写在 `exe 同级\data\`：
+**所有版本**把数据写在程序同级的 `data` 目录（Windows 是 exe 同级，macOS 是 `.app` 同级，Linux 是 AppImage 同级）：
 
 ```
 data\
 ├─ whichvideo.db      索引库（SQLite）
 ├─ whichvideo.log     运行日志
 ├─ frames\            索引帧
-└─ session\           WebView2 缓存
+└─ session\           WebView 缓存
 ```
 
-整个安装目录拷走即可迁移。程序不会回退到用户目录；如果安装目录不可写，启动会明确失败，
-因此请安装到当前用户可写的位置。卸载程序默认保留未知的 `data\` 目录，但卸载或手工删除前仍建议备份。
+整个程序目录拷走即可迁移。程序不会回退到用户目录；如果程序目录不可写，启动会明确失败，
+因此请安装到当前用户可写的位置。macOS 不要直接放在普通用户无写权限的 `/Applications`；Linux AppImage 也请放在可写目录。Windows 卸载程序默认保留未知的 `data\` 目录，但卸载或手工删除前仍建议备份。
 从旧版本首次启动时，如果新目录还没有对应文件，会把原用户目录中的索引库和索引帧复制进来。
 
 可用的环境变量：
@@ -273,7 +275,7 @@ data\
 | `WHICHVIDEO_BIN_DIR` | 指定包含二进制的目录 |
 
 FFmpeg 探测优先级：`WHICHVIDEO_FFMPEG` + `WHICHVIDEO_FFPROBE` → `WHICHVIDEO_BIN_DIR`
-→ 软件内手动设置的目录 → 系统 `PATH`。显式路径必须同时提供 `ffmpeg` 与 `ffprobe`，避免混用不同版本。
+→ 软件内手动设置的目录 → 系统 `PATH` → macOS 常见 Homebrew 目录。显式路径必须同时提供 `ffmpeg` 与 `ffprobe`，避免混用不同版本。
 
 ---
 
@@ -379,7 +381,7 @@ EPERM、Rust/NSIS 工具下载）见 [docs/troubleshooting.md](docs/troubleshoot
 
 - [docs/how-search-works.md](docs/how-search-works.md) —— 检索原理、算法来源与实测数据
 - [docs/troubleshooting.md](docs/troubleshooting.md) —— 打包与运行排障
-- [docs/releasing.md](docs/releasing.md) —— Windows 发行流程与验收清单
+- [docs/releasing.md](docs/releasing.md) —— 多平台发行流程与验收清单
 - [AGENTS.md](AGENTS.md) —— 架构约束与自检清单
 
 ---

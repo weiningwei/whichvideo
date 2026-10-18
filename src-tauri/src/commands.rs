@@ -6,6 +6,7 @@ use crate::hash;
 use crate::indexer;
 use crate::logger;
 use crate::media;
+use crate::platform_open;
 use crate::process_ext::CommandNoWindow;
 use crate::search;
 use crate::state::AppState;
@@ -16,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// 库统计：视频/帧/文件夹计数。复用现有 whichvideo.db。
 #[tauri::command]
@@ -232,11 +234,7 @@ pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String
     let video = db::get_video(conn, video_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "视频不存在".to_string())?;
-    let _ = Command::new("explorer.exe")
-        .no_window()
-        .arg(format!("/select,\"{}\"", video.path))
-        .spawn();
-    Ok(())
+    platform_open::reveal(std::path::Path::new(&video.path))
 }
 
 /// 打开视频文件；带时间戳时优先用支持定位起播的播放器（mpv/PotPlayer/VLC）。
@@ -257,13 +255,12 @@ pub fn videos_open(
         if t > 0.0 {
             if let Some(player) = media::find_seekable_player(&video.path) {
                 let args = (player.args)(&video.path, t);
-                let _ = Command::new(&player.exe).no_window().args(&args).spawn();
-                return Ok(());
+                return Command::new(&player.exe).no_window().args(&args).spawn()
+                    .map(|_| ()).map_err(|e| e.to_string());
             }
         }
     }
-    let _ = Command::new("explorer.exe").no_window().arg(&video.path).spawn();
-    Ok(())
+    platform_open::open(std::path::Path::new(&video.path))
 }
 
 #[derive(Serialize)]
@@ -667,7 +664,7 @@ pub fn library_reset(app: AppHandle) -> Result<(), String> {
 pub fn library_open_database_folder() -> Result<String, String> {
     let dir = db::data_dir();
     let dir_str = dir.to_string_lossy().to_string();
-    let _ = Command::new("explorer.exe").no_window().arg(&dir_str).spawn();
+    platform_open::open(&dir)?;
     Ok(dir_str)
 }
 
@@ -1116,7 +1113,7 @@ pub async fn search_clipboard(app: AppHandle) -> Result<Option<ClipboardSearchRe
 }
 
 fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult>, String> {
-    let png = match read_clipboard_image_png() {
+    let png = match read_clipboard_image_png(app) {
         Some(p) => p,
         None => return Ok(None),
     };
@@ -1241,140 +1238,28 @@ fn native_folder_dialog(app: &AppHandle, title: &str) -> Option<Vec<String>> {
     Some(vec![db::normalize_path(&path.to_string_lossy())])
 }
 
-#[cfg(windows)]
-fn run_powershell(script: &str) -> Option<String> {
-    let out = Command::new("powershell")
-        .no_window()
-        .args(["-NoProfile", "-STA", "-Command", script])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
 /* ================================================================== */
-/* 剪贴板 / 网络图片取图（依赖 PowerShell，Windows 平台）              */
+/* 跨平台剪贴板与网络图片取图                                           */
 /* ================================================================== */
 
-/// 读取系统剪贴板里的图片，返回 PNG 字节（base64 解码后）。无图片返回 None。
-#[cfg(windows)]
-fn read_clipboard_image_png() -> Option<Vec<u8>> {
-    let script = "Add-Type -AssemblyName System.Windows.Forms; \
-        Add-Type -AssemblyName System.Drawing; \
-        if ([System.Windows.Forms.Clipboard]::ContainsImage()) { \
-            $img = [System.Windows.Forms.Clipboard]::GetImage(); \
-            $ms = New-Object System.IO.MemoryStream; \
-            $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); \
-            [System.Convert]::ToBase64String($ms.ToArray()) \
-        } else { 'NONE' }";
-    let out = run_powershell(script)?;
-    let trimmed = out.trim();
-    if trimmed.is_empty() || trimmed == "NONE" {
-        return None;
-    }
-    base64::engine::general_purpose::STANDARD
-        .decode(trimmed)
-        .ok()
-}
-
-#[cfg(not(windows))]
-fn read_clipboard_image_png() -> Option<Vec<u8>> {
-    None
+/// 读取系统剪贴板里的图片，编码为 PNG。无图片返回 None。
+fn read_clipboard_image_png(app: &AppHandle) -> Option<Vec<u8>> {
+    // 插件读取必须在工作线程中运行；search_clipboard 已通过 spawn_blocking 隔离。
+    let clipboard = app.clipboard().read_image().ok()?;
+    let rgba = image::RgbaImage::from_raw(
+        clipboard.width(), clipboard.height(), clipboard.rgba().to_vec()
+    )?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
 }
 
 /// 从 http(s) 链接取图：直链直接下载；普通网页依次尝试 og:image / twitter:image /
 /// image_src / 首个 <img>。成功返回 (图片字节, 最终取图地址)；失败返回 (错误码, 文案)。
-/// 为避免大体积 base64 走 stdout，PowerShell 把图片落到临时文件，Rust 读出后删除。
-#[cfg(windows)]
+/// 所有平台都使用同一个有超时和大小限制的实现。
 fn fetch_image_from_url(url: &str) -> Result<(Vec<u8>, String), (String, String)> {
-    const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-    let input = url.trim();
-    if input.is_empty() {
-        return Err(("invalid-input".to_string(), "请输入图片链接".to_string()));
-    }
-    let lower = input.to_ascii_lowercase();
-    if !lower.starts_with("http://") && !lower.starts_with("https://") {
-        return Err((
-            "unsupported-protocol".to_string(),
-            "只支持 http / https 开头的链接".to_string(),
-        ));
-    }
-    let b64 = base64::engine::general_purpose::STANDARD.encode(input.as_bytes());
-    let template = " \
-        $ErrorActionPreference = 'Stop'; \
-        $b = [System.Convert]::FromBase64String('__B64__'); \
-        $url = [System.Text.Encoding]::UTF8.GetString($b); \
-        $tmpHtml = Join-Path $env:TEMP ('wv_html_' + [guid]::NewGuid().ToString('N') + '.bin'); \
-        $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15 -MaximumRedirection 5 -UserAgent 'WhichVideo/0.1 (local image search)' -OutFile $tmpHtml; \
-        $final = if ($r.BaseResponse -and $r.BaseResponse.ResponseUri) { $r.BaseResponse.ResponseUri.AbsoluteUri } else { $url }; \
-        $ct = $r.Headers['Content-Type']; \
-        if ($ct -match 'image/') { \
-            'OK|' + $tmpHtml + '|' + $final \
-        } else { \
-            $html = [System.IO.File]::ReadAllText($tmpHtml); \
-            $imgUrl = $null; \
-            if ($html -match 'property=\"og:image\" content=\"([^\"]+)\"') { $imgUrl = $matches[1] } \
-            elseif ($html -match 'property=\"twitter:image\" content=\"([^\"]+)\"') { $imgUrl = $matches[1] } \
-            elseif ($html -match 'name=\"image_src\" content=\"([^\"]+)\"') { $imgUrl = $matches[1] } \
-            elseif ($html -match '<img[^>]+src=\"([^\"]+)\"') { $imgUrl = $matches[1] } \
-            if ($imgUrl) { \
-                if ($imgUrl.StartsWith('//')) { $u = [System.Uri]$url; $imgUrl = $u.Scheme + ':' + $imgUrl } \
-                elseif ($imgUrl.StartsWith('/')) { $u = [System.Uri]$url; $imgUrl = $u.Scheme + '://' + $u.Host + $imgUrl } \
-                $tmpImg = Join-Path $env:TEMP ('wv_img_' + [guid]::NewGuid().ToString('N') + '.bin'); \
-                try { Invoke-WebRequest -Uri $imgUrl -UseBasicParsing -TimeoutSec 15 -MaximumRedirection 5 -UserAgent 'WhichVideo/0.1 (local image search)' -OutFile $tmpImg; 'OK|' + $tmpImg + '|' + $imgUrl } \
-                catch { 'ERR|no-image|无法下载网页中的图片' }; \
-                Remove-Item $tmpHtml -ErrorAction SilentlyContinue \
-            } else { \
-                Remove-Item $tmpHtml -ErrorAction SilentlyContinue; \
-                'ERR|no-image|网页里没找到图片' \
-            } \
-        }";
-    let script = template.replace("__B64__", &b64);
-    let out = match run_powershell(&script) {
-        Some(o) => o,
-        None => return Err(("network".to_string(), "无法执行网络请求".to_string())),
-    };
-    let line = out.trim();
-    if let Some(rest) = line.strip_prefix("OK|") {
-        let mut parts = rest.splitn(3, '|');
-        let path = parts.next().unwrap_or("").to_string();
-        let final_url = parts.next().unwrap_or("").to_string();
-        if std::fs::metadata(&path)
-            .map(|m| m.len() > MAX_IMAGE_BYTES)
-            .unwrap_or(false)
-        {
-            let _ = std::fs::remove_file(&path);
-            return Err((
-                "too-large".to_string(),
-                "图片过大（超过 10 MB 上限）".to_string(),
-            ));
-        }
-        let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) => {
-                return Err(("decode-failed".to_string(), format!("读取下载图片失败：{e}")))
-            }
-        };
-        let _ = std::fs::remove_file(&path);
-        Ok((bytes, final_url))
-    } else if let Some(rest) = line.strip_prefix("ERR|") {
-        let mut parts = rest.splitn(2, '|');
-        let code = parts.next().unwrap_or("internal").to_string();
-        let msg = parts.next().unwrap_or("").to_string();
-        Err((code, msg))
-    } else {
-        Err(("internal".to_string(), "未知响应".to_string()))
-    }
-}
-
-#[cfg(not(windows))]
-fn fetch_image_from_url(_url: &str) -> Result<(Vec<u8>, String), (String, String)> {
-    Err((
-        "unsupported-protocol".to_string(),
-        "当前平台不支持链接检索".to_string(),
-    ))
+    crate::url_image::fetch(url)
 }
 
 #[cfg(test)]
@@ -1395,7 +1280,6 @@ mod tests {
         assert_eq!(pixels.len(), width as usize * height as usize * 3);
     }
 
-    #[cfg(windows)]
     #[test]
     fn url_search_rejects_empty_and_non_http_inputs_before_fetching() {
         assert_eq!(fetch_image_from_url("  ").unwrap_err().0, "invalid-input");

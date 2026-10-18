@@ -132,6 +132,28 @@ pub fn resolve_data_dir(env_dir: Option<String>, exe_dir: &Path) -> DataDirResol
     }
 }
 
+fn installation_dir() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    if let Some(app_image) = env::var_os("APPIMAGE") {
+        if let Some(parent) = Path::new(&app_image).parent() {
+            return parent.to_path_buf();
+        }
+    }
+    let exe_dir = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+    #[cfg(target_os = "macos")]
+    if exe_dir.file_name().is_some_and(|name| name == "MacOS")
+        && exe_dir.parent().and_then(Path::file_name).is_some_and(|name| name == "Contents")
+    {
+        if let Some(parent) = exe_dir.parent().and_then(Path::parent).and_then(Path::parent) {
+            return parent.to_path_buf();
+        }
+    }
+    exe_dir
+}
+
 fn copy_tree_missing(source: &Path, target: &Path) -> io::Result<()> {
     if !source.is_dir() {
         return Ok(());
@@ -167,10 +189,7 @@ fn migrate_legacy_data(target: &Path, legacy: &Path) {
 /// 在 Tauri setup 阶段调用一次，之后所有模块共享同一个最终目录。
 /// legacy_dir 只用于把旧版本数据库迁入程序目录，不会成为运行时回退位置。
 pub fn initialize_data_dir(legacy_dir: PathBuf) -> io::Result<DataDirResolution> {
-    let exe_dir = env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| PathBuf::from("."));
+    let exe_dir = installation_dir();
     let resolution = resolve_data_dir(env::var("WHICHVIDEO_DATA_DIR").ok(), &exe_dir);
     fs::create_dir_all(&resolution.dir)?;
     migrate_legacy_data(&resolution.dir, &legacy_dir);
@@ -247,22 +266,30 @@ pub fn stats(conn: &Connection) -> SqlResult<LibraryStats> {
     })
 }
 
-/// 路径规范化：统一成 Windows 反斜杠并去掉尾部反斜杠（镜像 types.ts::normalizePath）。
+/// 路径规范化：保留当前系统的原生分隔符与根目录。
 pub fn normalize_path(p: &str) -> String {
-    let normalized = p.replace('/', "\\");
-    let bytes = normalized.as_bytes();
-    if bytes.len() >= 3
-        && bytes[1] == b':'
-        && bytes[2..].iter().all(|byte| *byte == b'\\')
+    #[cfg(windows)]
     {
-        return normalized[..3].to_string();
+        let normalized = p.replace('/', "\\");
+        let bytes = normalized.as_bytes();
+        if bytes.len() >= 3 && bytes[1] == b':' && bytes[2..].iter().all(|b| *b == b'\\') {
+            return normalized[..3].to_string();
+        }
+        normalized.trim_end_matches('\\').to_string()
     }
-    normalized.trim_end_matches('\\').to_string()
+    #[cfg(not(windows))]
+    {
+        if p.bytes().all(|b| b == b'/') && !p.is_empty() {
+            return "/".to_string();
+        }
+        p.trim_end_matches('/').to_string()
+    }
 }
 
 /// 比较用 key（镜像 types.ts::pathKeyOf）。
-fn path_key(p: &str) -> String {
-    normalize_path(p).to_lowercase()
+pub(crate) fn path_key(p: &str) -> String {
+    let normalized = normalize_path(p);
+    if cfg!(windows) { normalized.to_lowercase() } else { normalized }
 }
 
 /// 当前毫秒时间戳（避免引入 chrono 依赖）。
@@ -1193,10 +1220,11 @@ pub fn load_frame_matrix(conn: &Connection) -> SqlResult<FrameMatrix> {
 
 fn path_is_under(path: &str, directory: &str) -> bool {
     path.strip_prefix(directory).is_some_and(|suffix| {
-        if directory.ends_with('\\') {
+        let separator = std::path::MAIN_SEPARATOR;
+        if directory.ends_with(separator) {
             !suffix.is_empty()
         } else {
-            suffix.starts_with('\\')
+            suffix.starts_with(separator)
         }
     })
 }
@@ -1255,11 +1283,22 @@ mod tests {
         assert_eq!(installed.source, "install");
     }
 
+    #[cfg(windows)]
     #[test]
     fn path_normalization_preserves_windows_drive_roots() {
         assert_eq!(normalize_path("C:\\"), "C:\\");
         assert_eq!(normalize_path("D:////"), "D:\\");
         assert_eq!(normalize_path("C:\\Media\\\\"), "C:\\Media");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_paths_keep_case_and_root() {
+        assert_eq!(normalize_path("///"), "/");
+        assert_eq!(normalize_path("/Media/Films///"), "/Media/Films");
+        assert_ne!(path_key("/Media/Film.mp4"), path_key("/media/Film.mp4"));
+        assert!(path_is_under("/Media/Films/a.mp4", "/Media"));
+        assert!(!path_is_under("/Media2/a.mp4", "/Media"));
     }
 
     #[test]
@@ -1299,6 +1338,7 @@ mod tests {
         assert!(linked[0].1.ends_with("linked.mp4"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn removing_a_directory_does_not_remove_similarly_prefixed_siblings() {
         let conn = Connection::open_in_memory().unwrap();
@@ -1327,6 +1367,21 @@ mod tests {
         assert!(get_video(&conn, 1).unwrap().is_none());
         assert!(get_video(&conn, 3).unwrap().is_none());
         assert!(get_video(&conn, 2).unwrap().is_some());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn removing_unix_directory_respects_case_and_boundaries() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        for path in ["/Media/a.mp4", "/Media2/b.mp4", "/media/c.mp4", "/Media/Sub/d.mp4"] {
+            upsert_video(&conn, &UpsertVideoInput {
+                path: path.to_string(), size: 1, mtime_ms: 1, duration: None,
+                width: None, height: None, video_codec: None, folder_id: None, file_hash: None,
+            }).unwrap();
+        }
+        assert_eq!(remove_videos_under(&conn, "/Media").unwrap(), vec![1, 4]);
+        assert_eq!(normalize_path("/Media/a\\b.mp4"), "/Media/a\\b.mp4");
     }
 
     #[test]

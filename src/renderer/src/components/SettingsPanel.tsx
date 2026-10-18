@@ -41,6 +41,8 @@ export function SettingsPanel({
                 ? '手动目录'
                 : mediaTools?.source === 'path'
                   ? '系统 PATH'
+                  : mediaTools?.source === 'system'
+                    ? '常见安装位置'
                   : mediaTools?.source === 'development'
                     ? '开发目录'
                     : '未检测到'}
