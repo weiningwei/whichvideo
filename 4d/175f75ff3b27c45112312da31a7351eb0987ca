@@ -1,0 +1,24 @@
+docs/releasing.md
+  s_e78e0118ab4232::t_db42fbe343f5b1 18
+docs/releases/v0.1.0.md
+  s_e78e0118ab4232::t_bd56b25ffb2c37 19
+docs/how-search-works.md
+  s_e78e0118ab4232::t_aed5e4a3b2c515 40
+  s_e78e0118ab4232::t_e7a74b194ae280 39,44-46,149-152,164-165,167-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d175f75ff3b27c45112312da31a7351eb0987ca",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
