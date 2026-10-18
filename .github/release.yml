@@ -1,0 +1,11 @@
+# GitHub 自动生成的部分按 PR 标签分类；手工整理的版本亮点放在 docs/releases/vX.Y.Z.md。
+changelog:
+  categories:
+    - title: 新功能
+      labels: [feature, enhancement]
+    - title: 问题修复
+      labels: [bug, fix]
+    - title: 文档与维护
+      labels: [documentation, maintenance]
+    - title: 其他变更
+      labels: ['*']

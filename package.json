@@ -19,6 +19,7 @@
     "build:portable": "npm run typecheck && npm run icon && pnpm tauri build --no-bundle && node scripts/build-tauri-portable.mjs",
     "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "test:portable": "node scripts/test-tauri-portable.mjs",
+    "test:release": "node scripts/check-release.mjs",
     "test:rust": "node scripts/test-rust.mjs",
     "test:contract": "node scripts/test-tauri-contract.mjs",
     "test:path": "node scripts/test-path-format.mjs",
@@ -26,7 +27,7 @@
     "test:cursor": "node scripts/test-cursor.mjs",
     "test:range": "node scripts/test-range-select.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run typecheck && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
+    "test": "npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "test:events": "node scripts/test-video-events.mjs"
   },
   "dependencies": {

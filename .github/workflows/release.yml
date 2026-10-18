@@ -1,0 +1,117 @@
+name: Windows release draft
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-release.mjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+      - run: pnpm test
+
+  build:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      # 一次 release 编译同时得到 NSIS 与原始 exe；便携版直接复用此 exe。
+      - run: pnpm build:win
+      - run: node scripts/build-tauri-portable.mjs
+        env:
+          WHICHVIDEO_SKIP_OUTSIDE_COPY: '1'
+      - name: Package and checksum fresh CI outputs
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG.Substring(1)
+          $expected = "WhichVideo_${version}_x64-setup.exe"
+          $installer = Join-Path 'src-tauri/target/release/bundle/nsis' $expected
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "缺少本次构建的安装包：$installer" }
+          if (Test-Path -LiteralPath 'dist/WhichVideo-portable/data') { throw '发布物不能包含用户 data 目录' }
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          $setupName = "WhichVideo-${version}-windows-x64-setup.exe"
+          $zipName = "WhichVideo-${version}-windows-x64-portable.zip"
+          Copy-Item -LiteralPath $installer -Destination (Join-Path release $setupName)
+          Compress-Archive -Path 'dist/WhichVideo-portable' -DestinationPath (Join-Path release $zipName) -CompressionLevel Optimal
+          @($setupName, $zipName) | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath (Join-Path release $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $_"
+          } | Set-Content -LiteralPath 'release/SHA256SUMS.txt' -Encoding ascii
+          Get-ChildItem -LiteralPath release | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whichvideo-${{ github.ref_name }}-windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: whichvideo-${{ github.ref_name }}-windows-x64
+          path: release
+      - name: Create or update release draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="$(cat "docs/releases/${RELEASE_TAG}.md")"
+          draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [[ "$draft" == "true" ]]; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          elif [[ "$draft" == "false" ]]; then
+            echo '发行版已公开，拒绝覆盖资产' >&2
+            exit 1
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --draft --verify-tag --title "WhichVideo $RELEASE_TAG" \
+              --generate-notes --notes "$notes"
+          fi
