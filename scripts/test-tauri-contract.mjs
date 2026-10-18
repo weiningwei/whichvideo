@@ -92,7 +92,6 @@ check(
     indexerSource.includes('process_video(app2, id, reset_before_run)')
 )
 for (const [name, source] of [
-  ['添加监听文件夹', foldersAddPathCommand],
   ['移除监听文件夹', foldersRemoveCommand],
   ['启停监听文件夹', foldersSetEnabledCommand]
 ]) {
@@ -102,6 +101,11 @@ for (const [name, source] of [
       source.indexOf('drop(guard);') < source.lastIndexOf('watcher::')
   )
 }
+check(
+  '拖放添加监听文件夹会立即扫描已有视频',
+  foldersAddPathCommand.includes('indexer::import_folder') &&
+    foldersAddPathCommand.includes('watcher::sync_all(&app)?')
+)
 check(
   '删除视频会取消后台索引并广播删除事件',
   videosRemoveCommand.includes('indexer::cancel(&app, video_id)') &&

@@ -45,21 +45,22 @@ pub fn folders_list(state: State<AppState>) -> Result<Vec<db::WatchedFolder>, St
     db::list_folders(conn).map_err(|e| e.to_string())
 }
 
-/// 登记一个被监听的文件夹（仅入库，扫描/索引由 indexer 模块完成）。
+/// 登记一个被监听的文件夹，并立即扫描其中已有的视频。
 #[tauri::command]
 pub fn folders_add_path(
     app: AppHandle,
     dir_path: String,
 ) -> Result<db::WatchedFolder, String> {
+    let (_, folder_id) = indexer::import_folder(app.clone(), dir_path, true, true)?;
+    watcher::sync_all(&app)?;
     let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
-    let folder = db::insert_folder(conn, &dir_path, true, true).map_err(|e| e.to_string())?;
-    drop(guard);
-    watcher::sync_all(&app)?;
-    Ok(folder)
+    db::get_folder(conn, folder_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "文件夹登记后无法读取".to_string())
 }
 
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
