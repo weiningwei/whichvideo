@@ -1,0 +1,22 @@
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_2e15c80073e9d4 138-139
+src/renderer/src/hooks/useSearch.ts
+  s_e78e0118ab4232::t_9098005565c173 1,29-30,33-34,36,43,50,56,62,68,78,80,85-86,91,96-97,110
+  s_e78e0118ab4232::t_276d24cbae4c47 38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b6ce4ea0cead2df31ffe13dcc9c272cb977f852",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
