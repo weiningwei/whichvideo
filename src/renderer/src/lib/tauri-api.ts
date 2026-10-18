@@ -16,6 +16,7 @@ import type {
   FrameProgress,
   SearchResponse,
   ClipboardSearchResult,
+  DuplicatePair,
 } from '@shared/types'
 
 /**
@@ -23,13 +24,7 @@ import type {
  *
  * 保持与 Electron preload 暴露的 WhichVideoApi 同一契约，渲染端现有的
  * `window.whichvideo.*` 调用无需感知后端已切换为 Rust。
- * 当前仅视频查重仍由后续迁移阶段补齐。
  */
-const notImpl =
-  (name: string) =>
-  (..._args: unknown[]): Promise<never> =>
-    Promise.reject(new Error(`[tauri-skeleton] ${name} 尚未实现`))
-
 export const tauriApi: WhichVideoApi = {
   library: {
     stats: () => invoke<LibraryStats>(IPC.libraryStats),
@@ -54,7 +49,8 @@ export const tauriApi: WhichVideoApi = {
     get: (videoId) => invoke<VideoRecord | null>(IPC.videosGet, { videoId }),
     remove: (videoId) => invoke<void>(IPC.videosRemove, { videoId }),
     reindex: (videoIds, mode) => invoke<{ count: number }>(IPC.videosReindex, { videoIds, mode }),
-    findDuplicates: notImpl('videos.findDuplicates'),
+    findDuplicates: (minScore) =>
+      invoke<DuplicatePair[]>(IPC.videosFindDuplicates, { minScore }),
     importFiles: () => invoke<ImportResult>(IPC.videosImport),
     importImages: () => invoke<string[]>(IPC.videosImportImages),
     openFile: (videoId, atSeconds) => invoke<void>(IPC.videosOpen, { videoId, atSeconds }),

@@ -44,6 +44,7 @@ fn main() {
             commands::videos_import,
             commands::videos_import_images,
             commands::videos_reindex,
+            commands::videos_find_duplicates,
             commands::watcher_sync,
             commands::search_path,
             commands::search_data_url,

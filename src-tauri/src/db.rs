@@ -421,7 +421,7 @@ pub fn default_settings() -> AppSettings {
 /// 列表/单条取视频时选取的列（刻意排除 thumbnail BLOB，避免列表被大字段拖慢）。
 const VIDEO_COLUMNS: &str = "id, path, path_key, name, dir, ext, size, mtime_ms, duration, \
     width, height, video_codec, frame_count, status, error, added_at, indexed_at, folder_id, \
-    processed_timestamps, processed_ms";
+    processed_timestamps, processed_ms, sampling_override, file_hash";
 
 fn row_to_video(row: &rusqlite::Row) -> rusqlite::Result<VideoRecord> {
     let processed_timestamps: String = row.get("processed_timestamps")?;
@@ -460,6 +460,24 @@ pub fn get_video(conn: &Connection, id: i64) -> SqlResult<Option<VideoRecord>> {
         Some(r) => Ok(Some(r?)),
         None => Ok(None),
     }
+}
+
+/// size 与时长一致的视频对只是 bit 级副本候选，调用方还须以 SHA-256 确认。
+pub fn find_identical_file_pairs(conn: &Connection) -> SqlResult<Vec<(i64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, b.id FROM videos a JOIN videos b
+         ON a.id < b.id AND a.size = b.size AND ABS(a.duration - b.duration) < 0.5",
+    )?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
+}
+
+pub fn set_file_hash(conn: &Connection, id: i64, hash: &str) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE videos SET file_hash = ? WHERE id = ?",
+        rusqlite::params![hash, id],
+    )?;
+    Ok(())
 }
 
 /// 删除视频记录（frames 经 ON DELETE CASCADE 一并删除）。返回删除前的记录，
@@ -1076,6 +1094,40 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_candidates_require_matching_size_and_near_duration() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        for (id, size, duration) in [
+            (1_i64, 100_i64, 10.0_f64),
+            (2, 100, 10.4),
+            (3, 100, 10.6),
+            (4, 101, 10.0),
+        ] {
+            conn.execute(
+                "INSERT INTO videos
+                 (id, path, path_key, name, dir, ext, size, mtime_ms, duration, added_at)
+                 VALUES (?, ?, ?, ?, ?, '.mp4', ?, 0, ?, 0)",
+                rusqlite::params![
+                    id,
+                    format!("C:\\\\{id}.mp4"),
+                    format!("c:\\\\{id}.mp4"),
+                    format!("{id}.mp4"),
+                    "C:\\",
+                    size,
+                    duration,
+                ],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(find_identical_file_pairs(&conn).unwrap(), vec![(1, 2), (2, 3)]);
+        set_file_hash(&conn, 1, "abc123").unwrap();
+        let video = get_video(&conn, 1).unwrap().unwrap();
+        assert_eq!(video.file_hash.as_deref(), Some("abc123"));
+        assert_eq!(video.sampling_override, None);
+    }
 
     #[test]
     fn frame_matrix_keeps_each_frame_in_its_own_stride() {

@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::watcher;
 use base64::Engine;
 use rusqlite::Connection;
+use serde::Serialize;
+use std::collections::HashSet;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -222,6 +224,199 @@ pub fn videos_open(
     }
     let _ = Command::new("explorer.exe").arg(&video.path).spawn();
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicatePair {
+    pub video_a: db::VideoRecord,
+    pub video_b: db::VideoRecord,
+    pub score: f64,
+    pub hash_score: f64,
+    pub color_score: f64,
+    pub time_seconds: f64,
+    pub identical_file: bool,
+}
+
+struct RoughDuplicateHit {
+    id_a: i64,
+    id_b: i64,
+    hash_score: f64,
+    color_score: f64,
+    time_seconds: f64,
+    score: f64,
+}
+
+fn pair_key(a: i64, b: i64) -> (i64, i64) {
+    if a < b { (a, b) } else { (b, a) }
+}
+
+fn ensure_file_hash(app: &AppHandle, video_id: i64) -> Result<Option<String>, String> {
+    let video = {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_video(conn, video_id).map_err(|e| e.to_string())?
+    };
+    let Some(video) = video else { return Ok(None) };
+    if let Some(hash) = video.file_hash {
+        return Ok(Some(hash));
+    }
+    let hash = media::sha256_of_file(&video.path)?;
+    let state = app.state::<AppState>();
+    let guard = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+    db::set_file_hash(conn, video_id, &hash).map_err(|e| e.to_string())?;
+    Ok(Some(hash))
+}
+
+fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<DuplicatePair>, String> {
+    let threshold = min_score.filter(|v| *v > 0.0).unwrap_or(0.88);
+    let identical_candidates = {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        db::find_identical_file_pairs(conn).map_err(|e| e.to_string())?
+    };
+    let mut pairs = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (id_a, id_b) in identical_candidates {
+        let hashes = ensure_file_hash(app, id_a).and_then(|a| {
+            ensure_file_hash(app, id_b).map(|b| (a, b))
+        });
+        let (hash_a, hash_b) = match hashes {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = app.emit(
+                    "library_event",
+                    events::LibraryEvent::Notice {
+                        level: "warn".to_string(),
+                        message: format!("文件指纹计算失败：{error}"),
+                    },
+                );
+                continue;
+            }
+        };
+        if hash_a.is_none() || hash_a != hash_b {
+            continue;
+        }
+        let key = pair_key(id_a, id_b);
+        seen.insert(key);
+        let videos = {
+            let state = app.state::<AppState>();
+            let guard = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+            (
+                db::get_video(conn, id_a).map_err(|e| e.to_string())?,
+                db::get_video(conn, id_b).map_err(|e| e.to_string())?,
+            )
+        };
+        if let (Some(video_a), Some(video_b)) = videos {
+            pairs.push(DuplicatePair {
+                video_a,
+                video_b,
+                score: 1.0,
+                hash_score: 1.0,
+                color_score: 1.0,
+                time_seconds: 0.0,
+                identical_file: true,
+            });
+        }
+    }
+
+    let rough_hits = {
+        let state = app.state::<AppState>();
+        let index = state.search_index.lock().map_err(|e| e.to_string())?;
+        let ids = index.list_video_ids();
+        let total = ids.len() as i64;
+        let mut rough = Vec::new();
+        for (position, id) in ids.into_iter().enumerate() {
+            if let Some(vector) = index.video_query_vector(id) {
+                let (results, _) = index.search(
+                    &vector,
+                    &search::SearchOptions { min_hash_score: threshold, max_results: 8 },
+                );
+                if let Some(hit) = results.into_iter().find(|result| result.video_id != id) {
+                    let key = pair_key(id, hit.video_id);
+                    if seen.insert(key) {
+                        let vectors = index.video_frame_vectors(id, 8);
+                        let mut matched = 0usize;
+                        let mut sum = 0.0;
+                        for frame in &vectors {
+                            let (deep, _) = index.search(
+                                frame,
+                                &search::SearchOptions { min_hash_score: threshold, max_results: 50 },
+                            );
+                            if let Some(to_b) = deep.into_iter().find(|item| item.video_id == hit.video_id) {
+                                matched += 1;
+                                sum += to_b.score;
+                            }
+                        }
+                        let coverage = if vectors.is_empty() { 0.0 } else { matched as f64 / vectors.len() as f64 };
+                        let average = if matched == 0 { 0.0 } else { sum / matched as f64 };
+                        rough.push(RoughDuplicateHit {
+                            id_a: id,
+                            id_b: hit.video_id,
+                            hash_score: hit.hash_score,
+                            color_score: hit.color_score,
+                            time_seconds: hit.time_seconds,
+                            score: average * (0.5 + 0.5 * coverage),
+                        });
+                    }
+                }
+            }
+            let done = position as i64 + 1;
+            if done % 16 == 0 || done == total {
+                let _ = app.emit(
+                    "library_event",
+                    events::LibraryEvent::DuplicateScanProgress { done, total },
+                );
+            }
+        }
+        if total == 0 {
+            let _ = app.emit(
+                "library_event",
+                events::LibraryEvent::DuplicateScanProgress { done: 0, total: 0 },
+            );
+        }
+        rough
+    };
+
+    {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        for hit in rough_hits {
+            if let (Some(video_a), Some(video_b)) = (
+                db::get_video(conn, hit.id_a).map_err(|e| e.to_string())?,
+                db::get_video(conn, hit.id_b).map_err(|e| e.to_string())?,
+            ) {
+                pairs.push(DuplicatePair {
+                    video_a,
+                    video_b,
+                    score: hit.score,
+                    hash_score: hit.hash_score,
+                    color_score: hit.color_score,
+                    time_seconds: hit.time_seconds,
+                    identical_file: false,
+                });
+            }
+        }
+    }
+    pairs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(pairs)
+}
+
+/// 库内查重：先以 size/duration + SHA-256 确认 bit 级副本，再以帧覆盖率筛相似视频。
+#[tauri::command]
+pub async fn videos_find_duplicates(
+    app: AppHandle,
+    min_score: Option<f64>,
+) -> Result<Vec<DuplicatePair>, String> {
+    tauri::async_runtime::spawn_blocking(move || find_duplicates_sync(&app, min_score))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 命中时间点预览：现场解码一帧 JPEG dataUrl。失败返回 null（调用方回退缩略图）。
@@ -1049,6 +1244,12 @@ fn fetch_image_from_url(_url: &str) -> Result<(Vec<u8>, String), (String, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_pair_key_is_order_independent() {
+        assert_eq!(pair_key(7, 3), (3, 7));
+        assert_eq!(pair_key(3, 7), (3, 7));
+    }
 
     #[test]
     fn query_image_is_resized_to_exact_ffmpeg_dimensions() {
