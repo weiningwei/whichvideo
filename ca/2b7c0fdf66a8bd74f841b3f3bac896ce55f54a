@@ -1,0 +1,21 @@
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_bdb28547d79c2b 88,296-299
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_bdb28547d79c2b 154-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca2b7c0fdf66a8bd74f841b3f3bac896ce55f54a",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
