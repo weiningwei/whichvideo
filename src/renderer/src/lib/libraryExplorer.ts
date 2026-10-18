@@ -24,6 +24,7 @@ export interface ExplorerTree {
 export type ExplorerRow =
   | { type: 'folder'; node: ExplorerNode; depth: number }
   | { type: 'video'; video: VideoRecord; depth: number }
+  | { type: 'empty'; path: string; depth: number }
 
 function key(path: string): string { return normalizeDirPath(path).toLocaleLowerCase() }
 function contains(root: string, dir: string): boolean {
@@ -77,6 +78,7 @@ export function visibleExplorerRows(tree: ExplorerTree, expanded: Set<string>, r
     if (forcedClosed.has(key(node.path)) || (!revealAll && !expanded.has(key(node.path)))) return
     node.children.forEach((child) => visit(child, depth + 1))
     node.videos.forEach((video) => rows.push({ type: 'video', video, depth: depth + 1 }))
+    if (node.count === 0) rows.push({ type: 'empty', path: node.path, depth: depth + 1 })
   }
   tree.folders.forEach((root) => visit(root, 0))
   tree.looseVideos.forEach((video) => rows.push({ type: 'video', video, depth: 0 }))

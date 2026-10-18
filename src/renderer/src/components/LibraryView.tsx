@@ -228,6 +228,12 @@ export function LibraryView(props: Props) {
                         : ''}
                   </td>
                 </tr>
+              ) : row.type === 'empty' ? (
+                <tr key={`empty:${row.path}`}>
+                  <td colSpan={5} className="border-b border-line/40 bg-surface-1 py-3 text-[11.5px] text-tertiary" style={{ paddingLeft: `${36 + row.depth * 22}px` }}>
+                    暂无已入库视频
+                  </td>
+                </tr>
               ) : (
                 <VideoRow
                   key={row.video.id}
