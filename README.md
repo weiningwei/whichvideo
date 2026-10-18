@@ -4,7 +4,7 @@
 
 **看到一张截图，想确认这个画面是不是自己下过的某一集。**
 
-当前源码适配 **Windows x64、macOS（Apple Silicon / Intel）、Linux x64**；正式发布需等待各系统的 CI 构建和实机验收。
+已发布 [**v0.1.0 公开预览版**](https://github.com/weiningwei/whichvideo/releases/tag/v0.1.0)，提供 **Windows x64、macOS（Apple Silicon / Intel）和 Linux x64** 发行资产。当前尚未配置 Windows 代码签名或 Apple 签名/公证，系统可能拦截下载的程序；请从 Releases 下载并在可写目录中运行。
 
 WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任何一张图（截图 /
 海报 / 缩略图 / 屏摄），它会回答三件事：
@@ -54,7 +54,7 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ## 快速开始
 
-普通用户可从 [GitHub Releases](https://github.com/weiningwei/whichvideo/releases) 下载对应平台的产物：Windows 安装包或便携 ZIP、macOS Apple Silicon / Intel `.app` ZIP、Linux x64 AppImage；无需安装 Node、pnpm 或 Rust。
+普通用户可从 [v0.1.0 Releases](https://github.com/weiningwei/whichvideo/releases/tag/v0.1.0) 下载对应平台的产物：Windows 安装包或便携 ZIP、macOS Apple Silicon / Intel `.app` ZIP、Linux x64 AppImage；无需安装 Node、pnpm 或 Rust。
 正式发行资产由 GitHub Actions 从版本标签重新构建，不使用开发者本机的旧产物。
 两个版本都不内置 FFmpeg，首次启动可在软件中指定其 `bin` 目录。
 
