@@ -19,7 +19,7 @@ interface ToolbarProps {
   onDuplicatesResolved: (pairs: DuplicatePair[]) => void
   onReindex: (videoIds?: number[], mode?: SamplingMode) => void
   onRescan: (folderId?: number) => void
-  onRemoveVideos: (videoIds: number[]) => void
+  onRemoveVideos: (videoIds: number[]) => Promise<number[]>
   clearSelection: () => void
   filterInputRef: React.RefObject<HTMLInputElement | null>
 }
@@ -34,6 +34,7 @@ export function Toolbar(props: ToolbarProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
+  const [removingVideos, setRemovingVideos] = useState(false)
   useEffect(() => { setAddOpen(false); setMoreOpen(false) }, [selectedVideoIds])
   useEffect(() => {
     if (!addOpen && !moreOpen) return
@@ -151,11 +152,16 @@ export function Toolbar(props: ToolbarProps) {
               <div className="flex items-center gap-2 border-l border-line pl-2">
                 <span className="whitespace-nowrap text-[11.5px] font-medium text-accent">已选 {selectedVideoIds.size}</span>
                 <button className="btn py-1.5 text-[11.5px]" onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
-                <button className="btn btn-danger py-1.5 text-[11.5px]" onClick={() => {
+                <button className="btn btn-danger py-1.5 text-[11.5px]" disabled={removingVideos} onClick={async () => {
                   const ids = [...selectedVideoIds]
                   if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件）`)) return
-                  onRemoveVideos(ids)
-                  clearSelection()
+                  setRemovingVideos(true)
+                  try {
+                    const removedIds = await onRemoveVideos(ids)
+                    if (removedIds.length === ids.length) clearSelection()
+                  } finally {
+                    setRemovingVideos(false)
+                  }
                 }}>移除</button>
                 <button className="text-[11.5px] text-tertiary hover:text-primary" onClick={clearSelection}>取消</button>
               </div>

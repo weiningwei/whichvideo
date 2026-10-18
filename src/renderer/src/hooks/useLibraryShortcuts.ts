@@ -26,7 +26,7 @@ export interface LibraryShortcutsArgs {
   onImportFiles: () => void
   onRescan: (folderId?: number) => void
   onRemoveVideo: (videoId: number) => void
-  onRemoveVideos: (videoIds: number[]) => void
+  onRemoveVideos: (videoIds: number[]) => Promise<number[]>
   filterInputRef: React.RefObject<HTMLInputElement | null>
 }
 
@@ -173,8 +173,10 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
             return
           }
           if (selectedVideoIds.size > 0) {
-            onRemoveVideos([...selectedVideoIds])
-            clearSelection()
+            const ids = [...selectedVideoIds]
+            void onRemoveVideos(ids).then((removedIds) => {
+              if (removedIds.length === ids.length) clearSelection()
+            })
           } else {
             const target = getTargetVideo()
             if (target) onRemoveVideo(target.id)

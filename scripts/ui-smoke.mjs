@@ -111,6 +111,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('查重结果中同名文件显示各自目录', duplicateHtml.includes(video.dir) && duplicateHtml.includes(sameNameVideo.dir))
   const duplicatesSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'DuplicatesModal.tsx'), 'utf8')
   check('查重移除等待后端成功后才更新结果', duplicatesSource.includes('const removedIds = await onRemoveVideos(ids)') && duplicatesSource.includes('onPrune(removedIds)'))
+  check('批量移除失败时不会提前清空选中项', readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8').includes('const removedIds = await onRemoveVideos(ids)') && readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryShortcuts.ts'), 'utf8').includes('if (removedIds.length === ids.length) clearSelection()'))
   const duplicateScanSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8')
   check('查重失败不打开空结果并有错误通知', duplicateScanSource.includes('if (pairs !== null) onDuplicatesResolved(pairs)') && readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8').includes("withBusy('正在查找相似视频…'"))
 
