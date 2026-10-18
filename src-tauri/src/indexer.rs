@@ -347,8 +347,24 @@ fn rebuild_search_index(app: &AppHandle) {
     }
 }
 
+fn update_search_index_for_video(app: &AppHandle, video_id: i64) {
+    let state = app.state::<AppState>();
+    let frames = {
+        let guard = state.db.lock().unwrap();
+        guard
+            .as_ref()
+            .and_then(|conn| db::load_video_frame_matrix(conn, video_id).ok())
+    };
+    if let Some(frames) = frames {
+        state.search_index.lock().unwrap().replace_video_frames(video_id, frames);
+    } else {
+        // 读取增量帧失败时回退全量重建，优先保持搜索结果与数据库一致。
+        rebuild_search_index(app);
+    }
+}
+
 fn finish_ready(app: AppHandle, video_id: i64) {
-    rebuild_search_index(&app);
+    update_search_index_for_video(&app, video_id);
     emit_video_updated(&app, video_id);
     finish(app, video_id, Some(true));
 }

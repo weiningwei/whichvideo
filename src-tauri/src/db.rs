@@ -1188,11 +1188,30 @@ pub struct FrameMatrix {
 /// 与索引侧 ffmpeg scale=w=320:h=-2 的 rgb24 帧哈希路径完全对称。struct/color/spatial
 /// 为 BLOB，按各自长度拷贝（不足按 0 填充，防御性）。
 pub fn load_frame_matrix(conn: &Connection) -> SqlResult<FrameMatrix> {
-    let mut stmt = conn.prepare(
+    load_frame_matrix_query(
+        conn,
         "SELECT video_id, dhash, struct, color, spatial, frame_index, time_ms \
          FROM frames ORDER BY video_id, frame_index",
-    )?;
-    let rows = stmt.query_map([], |row| {
+        [],
+    )
+}
+
+/// 只读出一个视频的帧指纹，供索引完成后的内存索引增量更新使用。
+pub fn load_video_frame_matrix(conn: &Connection, video_id: i64) -> SqlResult<FrameMatrix> {
+    load_frame_matrix_query(
+        conn,
+        "SELECT video_id, dhash, struct, color, spatial, frame_index, time_ms \
+         FROM frames WHERE video_id = ? ORDER BY frame_index",
+        [video_id],
+    )
+}
+
+fn load_frame_matrix_query<P>(conn: &Connection, sql: &str, params: P) -> SqlResult<FrameMatrix>
+where
+    P: rusqlite::Params,
+{
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map(params, |row| {
         Ok((
             row.get::<_, i64>(0)?,              // video_id
             row.get::<_, i64>(1)?,              // dhash (i64)
@@ -1528,6 +1547,10 @@ mod tests {
         let matrix = load_frame_matrix(&conn).unwrap();
         assert_eq!(matrix.video_ids, vec![11, 22]);
         assert_eq!(matrix.buffer.len(), 2 * framepack::FRAME_STRIDE);
+
+        let one_video = load_video_frame_matrix(&conn, 22).unwrap();
+        assert_eq!(one_video.video_ids, vec![22]);
+        assert_eq!(one_video.buffer.len(), framepack::FRAME_STRIDE);
 
         for (index, marker, frame_index, time_ms) in
             [(0_usize, 0x11_u8, 3_u32, 1250_u32), (1, 0x22, 7, 9876)]

@@ -181,7 +181,7 @@ impl FrameSearchIndex {
         }
     }
 
-    /// 全量重建（导入 / 删除 / 重索引之后调用）。
+    /// 全量重建（启动、删除或增量更新失败时调用）。
     pub fn rebuild_from_db(conn: &Connection) -> Self {
         let (buffer, video_ids) = match db::load_frame_matrix(conn) {
             Ok(m) => (m.buffer, m.video_ids),
@@ -197,6 +197,53 @@ impl FrameSearchIndex {
             words,
             built_at: db::now_ms(),
         }
+    }
+
+    /// 索引完成时只更新对应视频的帧，避免批量导入中反复从 SQLite 重建全库索引。
+    /// 新视频直接追加；重建已有视频时才压实移除旧帧。
+    pub fn replace_video_frames(&mut self, video_id: i64, frames: db::FrameMatrix) {
+        if !self.video_ids.contains(&video_id) {
+            self.append_frames(frames);
+            return;
+        }
+
+        let retained = self.video_ids.iter().filter(|&&id| id != video_id).count();
+        let mut buffer = Vec::with_capacity(retained * framepack::FRAME_STRIDE + frames.buffer.len());
+        let mut video_ids = Vec::with_capacity(retained + frames.video_ids.len());
+        for (index, &id) in self.video_ids.iter().enumerate() {
+            if id == video_id {
+                continue;
+            }
+            let offset = index * framepack::FRAME_STRIDE;
+            buffer.extend_from_slice(&self.buffer[offset..offset + framepack::FRAME_STRIDE]);
+            video_ids.push(id);
+        }
+        buffer.extend_from_slice(&frames.buffer);
+        video_ids.extend(frames.video_ids);
+        self.buffer = buffer;
+        self.video_ids = video_ids;
+        self.rebuild_words();
+    }
+
+    fn append_frames(&mut self, frames: db::FrameMatrix) {
+        self.words.extend(
+            frames
+                .buffer
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+        );
+        self.buffer.extend(frames.buffer);
+        self.video_ids.extend(frames.video_ids);
+        self.built_at = db::now_ms();
+    }
+
+    fn rebuild_words(&mut self) {
+        self.words = self
+            .buffer
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        self.built_at = db::now_ms();
     }
 
     /// 索引元信息。
@@ -439,6 +486,52 @@ mod tests {
         buffer[off + framepack::META_OFFSET + 4..off + framepack::META_OFFSET + 8]
             .copy_from_slice(&time_ms.to_le_bytes());
         video_ids.push(video_id);
+    }
+
+    #[test]
+    fn replacing_video_frames_keeps_other_videos_and_removes_stale_frames() {
+        let struct_hash = vec![0_u8; framepack::STRUCT_BYTES];
+        let color = vec![0_u8; framepack::COLOR_BYTES];
+        let spatial = vec![0_u8; framepack::SPATIAL_BYTES];
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        append_frame(&mut buffer, &mut video_ids, 1, 0, 1000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 2, 0, 2000, &struct_hash, &color, &spatial);
+        let mut index = FrameSearchIndex {
+            words: buffer
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+            buffer,
+            video_ids,
+            built_at: 0,
+        };
+
+        let mut replacement = Vec::new();
+        let mut replacement_ids = Vec::new();
+        append_frame(
+            &mut replacement,
+            &mut replacement_ids,
+            1,
+            9,
+            9000,
+            &struct_hash,
+            &color,
+            &spatial,
+        );
+        index.replace_video_frames(1, db::FrameMatrix {
+            buffer: replacement,
+            video_ids: replacement_ids,
+        });
+
+        assert_eq!(index.video_ids, vec![2, 1]);
+        assert_eq!(index.buffer.len(), 2 * framepack::FRAME_STRIDE);
+        assert_eq!(index.words.len(), index.buffer.len() / 4);
+        let replacement_offset = framepack::FRAME_STRIDE + framepack::META_OFFSET;
+        assert_eq!(
+            u32::from_le_bytes(index.buffer[replacement_offset..replacement_offset + 4].try_into().unwrap()),
+            9
+        );
     }
 
     #[test]
