@@ -67,6 +67,7 @@ export function LibraryView(props: Props) {
   } = props
 
   const [folderDrop, setFolderDrop] = useState(false)
+  const [drawer, setDrawer] = useState<'folders' | 'settings' | null>(null)
   // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
@@ -116,18 +117,16 @@ export function LibraryView(props: Props) {
   const headerCheckRef = useRef<HTMLInputElement>(null)
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <div className="relative flex min-h-0 min-w-0 flex-1">
       {treeVisible && (
         <FolderTree
           folders={folders}
           videos={videos}
           selectedDir={selectedDir}
           onSelectDir={onSelectDir}
-          selectedVideoIds={selectedVideoIds}
-          onSetDirSelection={(ids, selected) => setSelectedIds(ids, selected)}
         />
       )}
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-line/70">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar
           query={query}
           onSetQuery={onSetQuery}
@@ -136,6 +135,11 @@ export function LibraryView(props: Props) {
           selectedVideoIds={selectedVideoIds}
           treeVisible={treeVisible}
           onToggleTree={onToggleTree}
+          onImportFiles={props.onImportFiles}
+          onImportFolder={props.onImportFolder}
+          onWatchFolder={props.onAddFolder}
+          onManageFolders={() => setDrawer('folders')}
+          onOpenSettings={() => setDrawer('settings')}
           onFindDuplicates={props.onFindDuplicates}
           onDuplicatesResolved={(pairs) => setDuplicates(pairs)}
           onReindex={props.onReindex}
@@ -146,11 +150,8 @@ export function LibraryView(props: Props) {
         />
 
         {/* 地址栏（面包屑）：当前所在目录，点段回跳；非整库时提供「整库」入口 */}
-        <div className="flex min-w-0 items-center gap-1 border-b border-line/70 bg-surface-1 px-3 py-1.5 text-[11.5px]">
-          {selectedDir === null ? (
-            <span className="font-medium text-accent">全部视频</span>
-          ) : (
-            <>
+        {selectedDir !== null && (
+          <div className="flex min-w-0 items-center gap-1 border-b border-line/70 bg-surface-1 px-4 py-1.5 text-[11px]">
               <button
                 className="rounded px-1 text-secondary hover:bg-ink-700/70 hover:text-primary"
                 onClick={() => onSelectDir(null)}
@@ -172,15 +173,12 @@ export function LibraryView(props: Props) {
                   </button>
                 </span>
               ))}
-            </>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-ink-900">
-          {/* min-w 是"低于这个宽度才允许横向滚动"的阈值，取各列下限之和：
-              复选框 36 + 视频 220 + 状态 128 + 时长 64 + 大小 72 + 采样 80 + 操作 180。 */}
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[12px]">
-            <thead className="sticky top-0 z-10 bg-ink-900/95 text-left text-[11px] uppercase tracking-wide text-tertiary backdrop-blur">
+        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface-1">
+          <table className="w-full min-w-[650px] border-separate border-spacing-0 text-[12px]">
+            <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[10.5px] text-tertiary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
                 <th className="w-9 px-0 py-2 text-center">
                   <input
@@ -200,12 +198,7 @@ export function LibraryView(props: Props) {
                 <th className="w-32 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 <th className="w-16 whitespace-nowrap px-2 py-2 font-medium">时长</th>
                 <th className="w-[72px] whitespace-nowrap px-2 py-2 font-medium">大小</th>
-                <th className="w-20 whitespace-nowrap px-2 py-2 font-medium">采样</th>
-                {/* 操作列吸附右侧：窗口窄到表格要横向滚动时，四个按钮仍贴在视野内。
-                    左侧那条线标示"这里是浮在内容之上的固定区"。 */}
-                <th className="sticky right-0 w-[210px] border-l border-line/70 bg-ink-900 px-3 py-2 text-right font-medium">
-                  操作
-                </th>
+                <th className="sticky right-0 w-28 bg-surface-1 px-3 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -230,14 +223,19 @@ export function LibraryView(props: Props) {
             </tbody>
           </table>
           {videos.length === 0 && (
-            <div className="p-8 text-center text-[12.5px] text-muted">
-              还没有视频。可一次性「导入视频 / 文件夹」，需要自动同步变化时选择「监视文件夹」。
+            <div className="mx-auto flex max-w-sm flex-col items-center px-6 py-20 text-center">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-3 text-xl text-tertiary">▶</div>
+              <div className="mt-4 text-[14px] font-medium text-primary">{total ? '没有符合条件的视频' : '开始建立你的视频库'}</div>
+              <div className="mt-1 text-[11.5px] text-tertiary">{total ? '试试清除搜索或更换筛选条件' : '添加视频或文件夹即可开始索引'}</div>
+              {!total && <button className="btn mt-4 border-accent-strong bg-accent text-surface-0" onClick={props.onImportFiles}>＋ 添加视频</button>}
             </div>
           )}
         </div>
       </section>
 
       <SidePanel
+        mode={drawer}
+        onClose={() => setDrawer(null)}
         onAddFolder={props.onAddFolder}
         folderCount={folders.length}
         folderDrop={folderDrop}
@@ -255,10 +253,8 @@ export function LibraryView(props: Props) {
         folders={
           <>
             {folders.length === 0 && (
-              <div className="rounded-xl border border-dashed border-line/80 p-4 text-center text-[11.5px] text-muted">
-                还没有监听目录。
-                <br />
-                可以点「+ 添加」，也可以把文件夹直接拖到这里。
+              <div className="rounded-xl border border-dashed border-line p-6 text-center text-[11.5px] text-tertiary">
+                将文件夹拖到这里，或点击添加
               </div>
             )}
             <div className="flex flex-col gap-2">
@@ -318,16 +314,13 @@ function FolderCard({
 }) {
   const style = STATE_STYLE[folder.watchState] ?? STATE_STYLE.idle
   return (
-    <div className="card p-3">
+    <div className="rounded-xl border border-line bg-surface-1 p-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-[12.5px] font-medium text-primary" title={folder.path}>
               {folder.name}
             </span>
-            {folder.pinned && (
-              <span className="rounded bg-ink-700/60 px-1 text-[9.5px] text-secondary">手动</span>
-            )}
           </div>
           <div className="mt-0.5 truncate text-[10.5px] text-muted" title={folder.path}>
             {folder.path}
@@ -344,27 +337,23 @@ function FolderCard({
         </div>
       )}
 
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-1">
         <button
-          className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70"
+          className="btn px-2 py-1 text-[11px]"
           onClick={() => onToggle(folder.id, !folder.enabled)}
         >
           {folder.enabled ? '暂停监听' : '恢复监听'}
         </button>
-        <button className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70" onClick={() => onRescan(folder.id)}>
-          重新扫描
+        <button className="btn px-2 py-1 text-[11px]" onClick={() => onRescan(folder.id)}>
+          扫描
         </button>
         <button
-          className="btn btn-danger ml-auto px-2 py-1 text-[11px] hover:bg-bad/10"
+          className="ml-auto rounded-lg px-2 py-1 text-[11px] text-bad hover:bg-bad/10"
           onClick={() => onRemove(folder.id)}
           title="只停止监听该目录，已入库的视频记录保留"
         >
-          停止监听
+          移除
         </button>
-      </div>
-      <div className="mt-1.5 text-[10px] text-tertiary">
-        {folder.recursive ? '包含子目录' : '仅当前目录'}
-        {folder.lastScanAt ? ` · 上次扫描 ${new Date(folder.lastScanAt).toLocaleString('zh-CN')}` : ''}
       </div>
     </div>
   )

@@ -198,17 +198,17 @@ console.log('=== 实现与 useSelection 的算法保持一致 ===')
   const viewCode = viewSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
   check(
     '选中时文件名染强调色（单选多选共用同一个 selected 条件）',
-    /line-clamp-2 break-all \$\{selected \? 'text-accent' : 'text-primary'\}/.test(viewSrc),
+    /line-clamp-1 break-all[^\n]*\$\{selected \? 'text-accent' : 'text-primary'\}/.test(viewSrc),
     '标题条件染色，不分档'
   )
   check(
-    '选中行的操作按钮用不透明底色（阻止半透明 btn-bg 透出行底色）',
-    (viewSrc.match(/bg-surface-2/g) ?? []).length === 5,
-    '五个按钮：播放 / 定位 / 帧 / 索引 / 移除'
+    '操作列吸附且沿用不透明行底色（避免滚动内容透出）',
+    viewSrc.includes('sticky right-0') && viewSrc.includes('${rowBg}'),
+    '操作单元格沿用 row-* 实色'
   )
   check(
     '选中提示单选多选一致：rowBg 直接用 selected',
-    /const rowBg = selected\s*\n(\s*)\? 'bg-row-selected'/.test(viewSrc),
+    /const rowBg = selected \? 'bg-row-selected'/.test(viewSrc),
     '选中即铺底色'
   )
   check(

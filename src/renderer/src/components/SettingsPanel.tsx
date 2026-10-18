@@ -20,12 +20,11 @@ export function SettingsPanel({
   const [confirmReset, setConfirmReset] = useState(false)
   const value = settings ?? DEFAULT_SETTINGS
 
-  // 参数一律直接展开，不再有「展开 / 收起」二级操作：
-  // 侧栏本就常驻，藏起来只让参数更难找到，而参数数量不多（5 个滑块 + 1 个开关）。
   return (
-    <div className="flex flex-col gap-3 px-4 py-3 text-[11.5px]">
+    <div className="flex flex-col gap-4 px-4 py-4 text-[11.5px]">
+      <SectionTitle>索引质量</SectionTitle>
       <Field
-        label="每个视频抽帧数（上限）"
+        label="抽帧上限"
         hint="实际帧数按时长自动分档，这里是封顶值。超过约 48 帧后会自动改用更快的抽帧方式，调大不会明显变慢。"
         value={value.framesPerVideo}
         min={8}
@@ -34,7 +33,7 @@ export function SettingsPanel({
         onChange={(v) => onChange({ framesPerVideo: v })}
       />
       <Field
-        label="并发解码数"
+        label="并发任务"
         hint="机械硬盘建议 1~2，固态可以 3~4。"
         value={value.concurrency}
         min={1}
@@ -42,7 +41,7 @@ export function SettingsPanel({
         onChange={(v) => onChange({ concurrency: v })}
       />
       <Field
-        label="匹配阈值（%）"
+        label="匹配阈值"
         hint="低于该结构相似度的帧会被直接丢弃，调低可召回更多弱匹配。"
         value={Math.round(value.minHashScore * 100)}
         min={50}
@@ -50,15 +49,16 @@ export function SettingsPanel({
         onChange={(v) => onChange({ minHashScore: v / 100 })}
       />
       <Field
-        label="最多返回结果"
+        label="结果数量"
         hint="搜索结果条数上限。"
         value={value.maxResults}
         min={5}
         max={200}
         onChange={(v) => onChange({ maxResults: v })}
       />
+      <SectionTitle>监视与存储</SectionTitle>
       <Field
-        label="新文件稳定等待（毫秒）"
+        label="新文件等待"
         hint="避免把还在复制/下载中的文件入库。"
         value={value.awaitWriteMs}
         min={300}
@@ -83,12 +83,7 @@ export function SettingsPanel({
             checked={value.keepFrameImages}
             onChange={(e) => onChange({ keepFrameImages: e.target.checked })}
           />
-          建索引时保留帧图片（可用行内「帧」按钮查看）
-        </span>
-        <span className="text-[10.5px] leading-snug text-muted">
-          把每个索引帧的缩略图存到数据目录 frames\ 下，供「查看索引帧」浏览；
-          磁盘占用约 4MB/视频（240 帧）。只对之后新建/重建的索引生效；
-          关闭开关会自动清空已保存的帧图。
+          保留索引帧图片
         </span>
       </label>
 
@@ -99,14 +94,9 @@ export function SettingsPanel({
           value={value.samplingMode}
           onChange={(e) => onChange({ samplingMode: e.target.value as 'uniform' | 'scene' })}
         >
-          <option value="uniform">均匀采样（索引快，短镜头可能漏采）</option>
-          <option value="scene">场景检测（召回高，索引更慢）</option>
+          <option value="uniform">均匀采样 · 更快</option>
+          <option value="scene">场景检测 · 更准</option>
         </select>
-        <span className="text-[10.5px] text-muted">
-          均匀：按固定间隔取帧，长视频走单次全片解码，速度快。
-          场景：先检测镜头切换点、每个镜头至少一帧，长镜头内部再补充 —— 
-          适合镜头切换密集的内容。更改后需「重建全部索引」才对已索引视频生效。
-        </span>
       </label>
 
       <label className="flex items-center gap-2 text-secondary">
@@ -115,7 +105,7 @@ export function SettingsPanel({
           checked={value.updateCheck}
           onChange={(e) => onChange({ updateCheck: e.target.checked })}
         />
-        启动时检查新版本（仅查询 GitHub Releases，不上传任何数据）
+        启动时检查更新
       </label>
 
       <div className="rounded-lg border border-line/70 bg-ink-900/60 px-2.5 py-2 text-[10.5px] leading-relaxed">
@@ -127,11 +117,6 @@ export function SettingsPanel({
         </div>
         <div className="mt-1 break-all font-mono text-[10px] text-secondary" title={dataDir?.dir}>
           {dataDir?.dir ?? '（读取中）'}
-        </div>
-        <div className="mt-1 text-tertiary">
-          所有版本的索引库、日志与缓存都写在程序同级 data 目录，整个安装文件夹拷走即可迁移；也可用环境变量
-          <span className="font-mono"> WHICHVIDEO_DATA_DIR </span>
-          指定其他位置。
         </div>
       </div>
 
@@ -163,9 +148,7 @@ export function SettingsPanel({
           </button>
         )}
       </div>
-      <p className="text-[10.5px] leading-relaxed text-tertiary">
-        清空只删除索引数据（数据库文件），不会动你的视频文件。修改设置后，重建索引才会生效。
-      </p>
+      <p className="text-[10.5px] text-tertiary">清空索引库不会删除视频文件。</p>
     </div>
   )
 }
@@ -188,7 +171,7 @@ function Field({
   onChange: (value: number) => void
 }) {
   return (
-    <div>
+    <div title={hint}>
       <div className="flex items-center justify-between">
         <span className="text-secondary">{label}</span>
         <span className="font-mono text-accent">{value}</span>
@@ -202,7 +185,10 @@ function Field({
         onChange={(e) => onChange(Number(e.target.value))}
         className="mt-1 w-full accent-accent"
       />
-      <div className="text-[10px] leading-snug text-tertiary">{hint}</div>
     </div>
   )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div className="border-b border-line pb-1.5 text-[10.5px] font-medium uppercase tracking-wider text-tertiary">{children}</div>
 }

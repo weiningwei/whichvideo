@@ -1,5 +1,4 @@
 import type { IndexerStatus } from '@shared/types'
-import { formatClock } from '../lib/format'
 
 interface Props {
   status: IndexerStatus | null
@@ -14,35 +13,32 @@ export function StatusBar({ status, busy, notice }: Props) {
   const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
 
   return (
-    <footer className="flex items-center gap-3 border-t border-line/80 bg-ink-900/80 px-5 py-2 text-[11.5px] text-muted">
+    <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-line bg-surface-1 px-4 text-[10.5px] text-tertiary">
       <span className={`flex items-center gap-1.5 ${running ? 'text-accent' : 'text-tertiary'}`}>
         <span
           className={`h-1.5 w-1.5 rounded-full ${running ? 'animate-pulse bg-accent' : 'bg-disabled'}`}
         />
-        {running ? '索引进行中' : status?.finishedAt ? '索引空闲' : '待机'}
+        {running ? '正在索引' : '就绪'}
       </span>
 
       {running && (
         <>
-          <div className="h-1.5 w-40 overflow-hidden rounded-full bg-ink-700">
+          <div className="h-1 w-32 overflow-hidden rounded-full bg-surface-4">
             <div
               className="h-full rounded-full bg-gradient-to-r from-accent to-accent-strong transition-all"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <span>
-            {done}/{total} · 并发 {status?.active} · 队列 {status?.queued}
-          </span>
+          <span>{done}/{total}</span>
         </>
       )}
 
       {status?.currentPath && (
         <span className="max-w-[38ch] truncate text-secondary" title={status.currentPath}>
-          正在处理 {status.currentPath}
+          {status.currentPath}
         </span>
       )}
 
-      {!running && status?.finishedAt && <span>完成于 {formatClock(status.finishedAt)}</span>}
       {status?.lastError && (
         <span className="max-w-[32ch] truncate text-bad" title={status.lastError}>
           {status.lastError}
@@ -64,11 +60,7 @@ export function StatusBar({ status, busy, notice }: Props) {
           >
             {notice.message}
           </span>
-        ) : (
-          <span className="text-tertiary">
-            拖入图片 / Ctrl+V 粘贴 / 选择图片文件，即可查询视频是否已在库中
-          </span>
-        )}
+        ) : null}
       </span>
     </footer>
   )

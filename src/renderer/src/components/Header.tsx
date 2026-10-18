@@ -1,154 +1,66 @@
 import type { LibraryStats, IndexerStatus } from '@shared/types'
 import type { ResolvedTheme, ThemeMode } from '../hooks/useTheme'
-import { formatBytes } from '../lib/format'
 
-/** 三档主题的按钮文案与图标。用几何字符而非 emoji，保证在所有字体下都渲染正常。 */
-const THEME_ICON: Record<ThemeMode, string> = {
-  dark: '◐',
-  light: '◑',
-  system: '◒'
-}
-const THEME_LABEL: Record<ThemeMode, string> = {
-  dark: '深色',
-  light: '浅色',
-  system: '跟随系统'
-}
+const THEME_ICON: Record<ThemeMode, string> = { dark: '◐', light: '◑', system: '◒' }
+const THEME_LABEL: Record<ThemeMode, string> = { dark: '深色', light: '浅色', system: '跟随系统' }
 
 interface Props {
   stats: LibraryStats
   status: IndexerStatus | null
   tab: 'search' | 'library'
   onTab: (tab: 'search' | 'library') => void
-  onImportFiles: () => void
-  onImportFolder: () => void
-  onWatchFolder: () => void
   busy: string | null
   themeMode: ThemeMode
-  /** system 模式解析后的实际主题，仅用于提示文案 */
   themeResolved: ResolvedTheme
   onCycleTheme: () => void
   onShowShortcuts: () => void
 }
 
-export function Header({
-  stats,
-  status,
-  tab,
-  onTab,
-  onImportFiles,
-  onImportFolder,
-  onWatchFolder,
-  busy,
-  themeMode,
-  themeResolved,
-  onCycleTheme,
-  onShowShortcuts
-}: Props) {
+/** 全局栏只负责品牌、页面导航与全局状态；页面动作留在对应页面内。 */
+export function Header({ stats, status, tab, onTab, busy, themeMode, themeResolved, onCycleTheme, onShowShortcuts }: Props) {
   const running = status?.running ?? false
   return (
-    <header className="flex items-center gap-4 border-b border-line/80 bg-ink-900/70 px-5 py-3 backdrop-blur">
-      {/* 顶栏左侧直接是页签，不再放品牌标识。
-          试过三级精简：产品名（重复标题栏）→ tagline（重复页签）→ 字母标。
-          字母标最终也去掉了：「WV」只是内部才懂的缩写，陌生用户看到不会有任何
-          联想，不传达信息也不建立识别，白占 36px + 间距。产品名在标题栏与任务栏，
-          功能由页签自己说，顶栏左侧完全交给导航。
-
-          注意：这不影响应用图标——exe、快捷方式、任务栏仍用 build/icon.ico，
-          那才是品牌露出该待的地方（壳层），界内不需要再重复一次。 */}
-      <div className="flex items-center gap-1 rounded-xl border border-line/80 bg-ink-850/60 p-1">
-        <TabButton active={tab === 'search'} onClick={() => onTab('search')}>
-          图片搜索
-        </TabButton>
-        <TabButton active={tab === 'library'} onClick={() => onTab('library')}>
-          视频库与监听
-        </TabButton>
+    <header className="flex h-14 shrink-0 items-center border-b border-line bg-surface-1 px-4">
+      <div className="flex items-center gap-2.5 pr-8">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-[13px] font-bold text-surface-0">▶</span>
+        <span className="text-[14px] font-semibold tracking-tight text-primary">WhichVideo</span>
       </div>
-
-      <div className="ml-auto flex items-center gap-2">
-        <div className="mr-2 hidden items-center gap-3 text-[11px] text-muted lg:flex">
-          <Metric label="视频" value={String(stats.videos)} />
-          <Metric label="已索引" value={String(stats.indexedVideos)} />
-          <Metric label="帧指纹" value={stats.frames.toLocaleString('zh-CN')} />
-          <Metric label="体积" value={formatBytes(stats.totalBytes)} />
-          <Metric
-            label="监听"
-            value={`${stats.watching}/${stats.folders}`}
-            highlight={stats.watching > 0}
-          />
-        </div>
-        {running && (
-          <span className="flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] text-accent">
+      <nav className="flex h-full items-center gap-1" aria-label="主导航">
+        <NavButton active={tab === 'search'} onClick={() => onTab('search')}>搜图</NavButton>
+        <NavButton active={tab === 'library'} onClick={() => onTab('library')}>视频库</NavButton>
+      </nav>
+      <div className="ml-auto flex items-center gap-1.5">
+        {(running || busy) && (
+          <span className="mr-2 flex items-center gap-2 text-[11.5px] text-secondary">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            索引中 {status?.queued ? `队列 ${status.queued}` : ''}
+            {busy ?? `正在索引 ${status?.active ?? 0} 个视频`}
           </span>
         )}
-        <button className="btn hover:bg-ink-700/70" onClick={onImportFiles} disabled={!!busy}>
-          + 导入视频
-        </button>
+        {!running && !busy && stats.videos > 0 && (
+          <span className="mr-2 text-[11px] tabular-nums text-tertiary">{stats.videos} 个视频</span>
+        )}
         <button
-          className="btn hover:bg-ink-700/70"
-          onClick={onImportFolder}
-          disabled={!!busy}
-          title="递归导入当前已有视频，不持续监视后续变化"
-        >
-          + 导入文件夹
-        </button>
-        <button
-          className="btn border-accent-strong/60 bg-accent/15 text-accent hover:bg-accent/25"
-          onClick={onWatchFolder}
-          disabled={!!busy}
-          title="加入资料库并持续监视新增、修改和删除"
-        >
-          + 监视文件夹
-        </button>
-        <button
-          className="btn px-2 hover:bg-ink-700/70"
+          className="icon-btn"
           onClick={onCycleTheme}
-          title={`主题：${THEME_LABEL[themeMode]}${themeMode === 'system' ? `（当前${themeResolved === 'dark' ? '深色' : '浅色'}）` : ''} — 点击切换`}
+          title={`主题：${THEME_LABEL[themeMode]}${themeMode === 'system' ? `（当前${themeResolved === 'dark' ? '深色' : '浅色'}）` : ''}`}
           aria-label="切换主题"
         >
           {THEME_ICON[themeMode]}
         </button>
-        {/* 快捷键入口：只做发现用（快捷键本身在 App 里监听），所以给个按钮而不是快捷键提示 */}
-        <button
-          className="btn px-2 hover:bg-ink-700/70"
-          onClick={onShowShortcuts}
-          title="键盘快捷键 (?)"
-          aria-label="键盘快捷键"
-        >
-          ?
-        </button>
+        <button className="icon-btn" onClick={onShowShortcuts} title="键盘快捷键 (?)" aria-label="键盘快捷键">?</button>
       </div>
     </header>
   )
 }
 
-function TabButton({
-  active,
-  onClick,
-  children
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
+function NavButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-[12.5px] transition ${
-        active ? 'bg-accent/20 text-accent shadow-inner' : 'text-secondary hover:bg-ink-700/60'
-      }`}
+      className={`relative h-full px-4 text-[13px] transition ${active ? 'font-medium text-primary' : 'text-tertiary hover:text-secondary'}`}
     >
       {children}
+      {active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />}
     </button>
-  )
-}
-
-function Metric({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <span className="flex items-baseline gap-1">
-      <span className="text-tertiary">{label}</span>
-      <span className={`font-semibold ${highlight ? 'text-ok' : 'text-primary'}`}>{value}</span>
-    </span>
   )
 }

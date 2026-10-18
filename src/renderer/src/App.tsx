@@ -68,18 +68,6 @@ export default function App() {
         tab={tab}
         onTab={setTab}
         busy={state.busy}
-        onImportFiles={() => {
-          void actions.importFiles()
-          setTab('library')
-        }}
-        onImportFolder={() => {
-          void actions.importFolderOnce()
-          setTab('library')
-        }}
-        onWatchFolder={() => {
-          void actions.watchFolder()
-          setTab('library')
-        }}
         themeMode={themeMode}
         themeResolved={themeResolved}
         onCycleTheme={cycleTheme}

@@ -125,30 +125,30 @@ export function SearchView(props: Props) {
       }}
       onDrop={handleDrop}
     >
-      <div className="flex min-w-0 flex-col gap-3 p-4">
+      <div className={`mx-auto flex w-full min-w-0 flex-col gap-3 p-5 ${search ? '' : 'max-w-3xl pt-14'}`}>
         <div
-          className={`card relative flex min-w-0 items-center gap-4 p-4 transition ${
-            dragging ? 'border-accent/70 bg-accent/10' : ''
+          className={`relative flex min-w-0 items-center gap-5 rounded-2xl border p-5 transition ${
+            dragging ? 'border-accent bg-accent/10' : 'border-line bg-surface-2'
           }`}
         >
-          <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-ink-900">
+          <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface-inset">
             {queryImage ? (
               <img src={queryImage} alt="查询图片" className="h-full w-full object-cover" />
             ) : (
-              <span className="px-2 text-center text-[11px] text-tertiary">
-                {queryLabel?.startsWith('http') ? '来自链接' : '拖入 / 粘贴图片'}
+              <span className="text-3xl text-tertiary">
+                {queryLabel?.startsWith('http') ? '↗' : '＋'}
               </span>
             )}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-primary">
-              {queryLabel ?? '把截图、海报或任意图片拖到这里'}
+            <div className="text-[16px] font-semibold text-primary">
+              {queryLabel ?? '用一张图，找到视频'}
             </div>
-            <div className="mt-1 text-[11.5px] text-muted">
+            <div className="mt-1 text-[11.5px] text-tertiary">
               {search
-                ? `已比对 ${search.comparedFrames.toLocaleString('zh-CN')} 个帧指纹 · 命中 ${search.matchCount} 个视频 · 耗时 ${search.elapsedMs} ms`
-                : '支持拖拽、Ctrl+V 粘贴、或点击按钮选择图片文件'}
+                ? `${search.matchCount} 个结果 · ${search.elapsedMs} ms`
+                : '拖放图片到这里，也可以选择文件或粘贴截图'}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
@@ -159,10 +159,10 @@ export function SearchView(props: Props) {
                   if (paths.length) onSearchPath(paths[0])
                 }}
               >
-                选择图片文件
+                选择图片
               </button>
               <button className="btn hover:bg-ink-700/70" disabled={searching} onClick={onSearchClipboard}>
-                使用剪贴板图片
+                粘贴截图
               </button>
               {queryImage && (hasIndexedFrames || error) && (
                 <button
@@ -171,12 +171,12 @@ export function SearchView(props: Props) {
                   onClick={onReSearch}
                   title="用同一张图片重新搜索"
                 >
-                  重新搜索
+                  重搜
                 </button>
               )}
               {(search || error) && (
                 <button className="btn hover:bg-ink-700/70" onClick={onClear}>
-                  清除结果
+                  清除
                 </button>
               )}
               {searching && <span className="self-center text-[12px] text-accent">比对中…</span>}
@@ -193,7 +193,7 @@ export function SearchView(props: Props) {
                     submitUrl()
                   }
                 }}
-                placeholder="粘贴图片链接或网页地址，回车检索（Ctrl+K 聚焦）"
+                placeholder="粘贴图片或网页链接"
                 spellCheck={false}
                 disabled={searching}
                 className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-tertiary focus:border-accent/60 disabled:opacity-50"
@@ -204,7 +204,7 @@ export function SearchView(props: Props) {
                 onClick={submitUrl}
                 title="从链接取图并检索（支持 og:image、网页首图）"
               >
-                链接检索
+                搜索
               </button>
             </div>
             {search && search.comparedFrames === 0 && (
@@ -214,14 +214,6 @@ export function SearchView(props: Props) {
             )}
           </div>
 
-          {top && (
-            <div className="hidden shrink-0 rounded-xl border border-line bg-ink-900/70 px-4 py-3 text-center md:block">
-              <div className={`text-2xl font-bold ${scoreColor(top.score)}`}>
-                {formatPercent(top.score)}
-              </div>
-              <div className="text-[11px] text-muted">{scoreLabel(top.score)}</div>
-            </div>
-          )}
         </div>
 
         {error && (
@@ -235,8 +227,7 @@ export function SearchView(props: Props) {
             {/* 单匹配直接说"对应的视频"；多匹配改"对应的视频（X 个匹配）"，让用户知道
                 列表里还有其他候选 —— maxResults 默认 ≥ 1 但 ≥2 也常见（截图通用化 / 多个视频
                 含同一帧）。top 一行始终给最佳（最高分）的位置，决策锚点。 */}
-            ✅ 已在本地库中找到这张图对应的视频{search.matchCount > 1 ? `（${search.matchCount} 个匹配）` : ''}
-            ：{top?.video.name}
+            找到了{search.matchCount > 1 ? ` ${search.matchCount} 个匹配` : ''}：{top?.video.name}
             {top && top.timeSeconds > 0 ? (
               <>
                 {'（'}
@@ -250,7 +241,7 @@ export function SearchView(props: Props) {
 
         {search && search.matchCount === 0 && search.comparedFrames > 0 && (
           <div className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] text-warn">
-            没有视频与这张图相似 —— 这张图对应的视频大概率还没下载到已导入的目录里。
+            没有找到相似画面
           </div>
         )}
       </div>
@@ -273,27 +264,10 @@ export function SearchView(props: Props) {
             正在读取图片并与帧指纹比对…
           </div>
         )}
-        {!search && !searching && <EmptyHint />}
+        {!search && !searching && (
+          <div className="mt-5 text-center text-[11px] text-tertiary">所有比对都在本机完成</div>
+        )}
       </div>
-    </div>
-  )
-}
-
-function EmptyHint() {
-  return (
-    <div className="mt-2 grid gap-3 text-[12.5px] text-secondary sm:grid-cols-3">
-      <Hint title="1 · 建立索引" body="在「视频库与监听」里导入单个视频或整个文件夹，程序会抽帧建立指纹索引。" />
-      <Hint title="2 · 丢一张图进来" body="把图片拖进窗口、Ctrl+V 粘贴，或点击「选择图片文件」。" />
-      <Hint title="3 · 看结果" body="命中即说明该视频已在本地；未命中说明这张图对应的视频还没下载。" />
-    </div>
-  )
-}
-
-function Hint({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="card p-3">
-      <div className="text-[12px] font-semibold text-primary">{title}</div>
-      <div className="mt-1 leading-relaxed text-muted">{body}</div>
     </div>
   )
 }

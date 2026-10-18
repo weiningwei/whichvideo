@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 interface Props {
+  mode: 'folders' | 'settings' | null
+  onClose: () => void
   onAddFolder: () => void
   folders: ReactNode
   folderDrop: boolean
@@ -8,93 +10,43 @@ interface Props {
   onDragLeave: () => void
   onDrop: (e: React.DragEvent) => void
   settings: ReactNode
-  /** 监听目录数量，用于标签上的计数 */
   folderCount: number
 }
 
-/**
- * 视频库页右侧单栏（监听 / 设置 切换）。
- *
- * 此前 App 与 LibraryView 各有一层固定右面板（索引设置 300px + 监听 360px
- * = 660px），1280 宽窗口下表格只剩 620px、960 宽时几乎不可用。现合并为
- * 单栏 280px，两块内容按需切换，不再同时占位。
- */
+/** 低频管理项按需从右侧滑出，不再永久挤占视频列表。 */
 export function SidePanel({
-  onAddFolder,
-  folders,
-  folderDrop,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  settings,
-  folderCount
+  mode, onClose, onAddFolder, folders, folderDrop, onDragOver, onDragLeave,
+  onDrop, settings, folderCount
 }: Props) {
-  const [tab, setTab] = useState<'folders' | 'settings'>('folders')
-
+  if (!mode) return null
+  const foldersMode = mode === 'folders'
   return (
-    <aside className="flex w-[280px] min-w-[240px] shrink-0 flex-col border-l border-line/70 bg-ink-900/40">
-      <div className="flex shrink-0 gap-1 border-b border-line/70 p-2">
-        <Tab active={tab === 'folders'} onClick={() => setTab('folders')} count={folderCount}>
-          监听
-        </Tab>
-        <Tab active={tab === 'settings'} onClick={() => setTab('settings')}>
-          索引设置
-        </Tab>
-      </div>
-
-      {tab === 'folders' ? (
-        <>
-          <div className="flex shrink-0 items-center justify-between border-b border-line/70 px-3.5 py-2.5">
-            <span className="text-[12.5px] font-semibold text-primary">监听文件夹</span>
-            <button className="btn px-2 py-1 text-[11.5px] hover:bg-ink-700/70" onClick={onAddFolder}>
-              + 添加
-            </button>
+    <div className="absolute inset-0 z-30 bg-surface-0/45" onMouseDown={onClose}>
+      <aside
+        className="absolute inset-y-0 right-0 flex w-[360px] max-w-[85vw] flex-col border-l border-line bg-surface-2 shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="flex h-14 shrink-0 items-center border-b border-line px-4">
+          <div>
+            <div className="text-[14px] font-semibold text-primary">{foldersMode ? '监视目录' : '索引设置'}</div>
+            {foldersMode && <div className="text-[10.5px] text-tertiary">{folderCount} 个目录</div>}
           </div>
-
+          {foldersMode && <button className="btn ml-auto py-1.5 text-[12px]" onClick={onAddFolder}>＋ 添加</button>}
+          <button className="icon-btn ml-1" onClick={onClose} aria-label="关闭面板">×</button>
+        </header>
+        {foldersMode ? (
           <div
-            className={`min-h-0 flex-1 overflow-y-auto p-2.5 ${folderDrop ? 'bg-accent/5' : ''}`}
+            className={`min-h-0 flex-1 overflow-y-auto p-3 ${folderDrop ? 'bg-accent/10' : ''}`}
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
             {folders}
           </div>
-        </>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">{settings}</div>
-      )}
-    </aside>
-  )
-}
-
-function Tab({
-  active,
-  onClick,
-  count,
-  children
-}: {
-  active: boolean
-  onClick: () => void
-  count?: number
-  children: ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] transition ${
-        active
-          ? 'bg-ink-700/70 font-medium text-primary'
-          : 'text-muted hover:bg-ink-800/50 hover:text-secondary'
-      }`}
-    >
-      {children}
-      {count !== undefined && (
-        <span
-          className={`rounded px-1 text-[10px] ${active ? 'bg-accent/20 text-accent' : 'bg-ink-700/60 text-tertiary'}`}
-        >
-          {count}
-        </span>
-      )}
-    </button>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">{settings}</div>
+        )}
+      </aside>
+    </div>
   )
 }
