@@ -157,7 +157,7 @@ export function Toolbar(props: ToolbarProps) {
                 }}>移除</button>
                 <button className="text-[11.5px] text-tertiary hover:text-primary" onClick={clearSelection}>取消</button>
               </div>
-            ) : <span className="ml-1 text-[11px] tabular-nums text-tertiary">显示 {videos.length}</span>}
+            ) : null}
       </div>
     </div>
   )
