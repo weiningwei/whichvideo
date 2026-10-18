@@ -4,6 +4,8 @@
 
 **看到一张截图，想确认这个画面是不是自己下过的某一集。**
 
+当前发布目标为 **Windows 10/11 x64**；macOS/Linux 还未完成适配与测试。
+
 WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任何一张图（截图 /
 海报 / 缩略图 / 屏摄），它会回答三件事：
 
@@ -52,7 +54,13 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ## 快速开始
 
-需要 Node >= 22、pnpm >= 10、Rust stable、Windows C++ 构建工具，以及 **ffmpeg**（抽帧用，见下）。
+普通用户可从 [GitHub Releases](https://github.com/weiningwei/whichvideo/releases) 下载 Windows x64
+安装包，或下载便携 ZIP 后解压运行 `WhichVideo.exe`；无需安装 Node、pnpm 或 Rust。
+正式发行资产由 GitHub Actions 从版本标签重新构建，不使用开发者本机的旧产物。
+两个版本都不内置 FFmpeg，首次启动可在软件中指定其 `bin` 目录。
+
+如需从源码构建，则需要 Node >= 22、pnpm >= 10、Rust stable、Windows C++ 构建工具，
+以及 **ffmpeg**（抽帧用，见下）。
 
 ```bash
 # 1. 安装依赖
@@ -371,6 +379,7 @@ EPERM、Rust/NSIS 工具下载）见 [docs/troubleshooting.md](docs/troubleshoot
 
 - [docs/how-search-works.md](docs/how-search-works.md) —— 检索原理、算法来源与实测数据
 - [docs/troubleshooting.md](docs/troubleshooting.md) —— 打包与运行排障
+- [docs/releasing.md](docs/releasing.md) —— Windows 发行流程与验收清单
 - [AGENTS.md](AGENTS.md) —— 架构约束与自检清单
 
 ---

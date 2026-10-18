@@ -75,6 +75,7 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 pnpm test:rust        # Rust 单元与模块测试
 pnpm test:contract    # 前端桥接、命令实现和注册表一致性
 pnpm test:portable    # 便携目录结构、资源和 data 保留
+pnpm test:release     # 三处版本号、Windows 打包目标与版本说明
 pnpm test:theme       # 语义色 token
 pnpm test:cursor      # 列表光标行为
 pnpm test:range       # Shift/Ctrl 连选
@@ -85,6 +86,13 @@ pnpm test:events      # 后端事件消费
 
 Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，可临时设置
 `CARGO_PROFILE_DEV_DEBUG=0` 后重跑测试；这只关闭开发产物调试信息，不改变 release 配置。
+
+## 发行边界
+
+- 目前只支持 Windows x64。后端路径规范化、资源管理器/播放器、剪贴板及网页取图仍有 Windows 专用实现，不能直接增加 macOS/Linux 发布矩阵。
+- GitHub Actions 在推送 `vX.Y.Z` 标签后从该提交重新构建 NSIS 与便携 ZIP，生成校验和并创建发行草稿；不上传本机 `dist` 或 `target` 产物。
+- 每版同步三个版本号和 `docs/releases/vX.Y.Z.md`，运行 `pnpm test:release`；发布说明的人工作者摘要与 PR 自动分类互补。
+- 草稿需经过干净 Windows 机器的手动验收后才公开。当前产物未签名，SmartScreen 风险须在首版说明中写清楚。完整流程见 `docs/releasing.md`。
 
 ## UI 约束
 
