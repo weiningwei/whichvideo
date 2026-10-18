@@ -307,8 +307,16 @@ fn ensure_file_hash(app: &AppHandle, video_id: i64) -> Result<Option<String>, St
     Ok(Some(hash))
 }
 
+fn duplicate_coverage_score(average: f64, coverage: f64) -> f64 {
+    average * (0.5 + 0.5 * coverage)
+}
+
+fn duplicate_meets_threshold(score: f64, threshold: f64) -> bool {
+    score >= threshold
+}
+
 fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<DuplicatePair>, String> {
-    let threshold = min_score.filter(|v| *v > 0.0).unwrap_or(0.88);
+    let threshold = min_score.filter(|v| v.is_finite() && *v > 0.0 && *v <= 1.0).unwrap_or(0.88);
     let identical_candidates = {
         let state = app.state::<AppState>();
         let guard = state.db.lock().map_err(|e| e.to_string())?;
@@ -376,7 +384,7 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
                 );
                 if let Some(hit) = results.into_iter().find(|result| result.video_id != id) {
                     let key = pair_key(id, hit.video_id);
-                    if seen.insert(key) {
+                    if !seen.contains(&key) {
                         let vectors = index.video_frame_vectors(id, 8);
                         let mut matched = 0usize;
                         let mut sum = 0.0;
@@ -392,14 +400,18 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
                         }
                         let coverage = if vectors.is_empty() { 0.0 } else { matched as f64 / vectors.len() as f64 };
                         let average = if matched == 0 { 0.0 } else { sum / matched as f64 };
-                        rough.push(RoughDuplicateHit {
-                            id_a: id,
-                            id_b: hit.video_id,
-                            hash_score: hit.hash_score,
-                            color_score: hit.color_score,
-                            time_seconds: hit.time_seconds,
-                            score: average * (0.5 + 0.5 * coverage),
-                        });
+                        let score = duplicate_coverage_score(average, coverage);
+                        if duplicate_meets_threshold(score, threshold) {
+                            seen.insert(key);
+                            rough.push(RoughDuplicateHit {
+                                id_a: id,
+                                id_b: hit.video_id,
+                                hash_score: hit.hash_score,
+                                color_score: hit.color_score,
+                                time_seconds: hit.time_seconds,
+                                score,
+                            });
+                        }
                     }
                 }
             }
@@ -1270,6 +1282,16 @@ mod tests {
     fn duplicate_pair_key_is_order_independent() {
         assert_eq!(pair_key(7, 3), (3, 7));
         assert_eq!(pair_key(3, 7), (3, 7));
+    }
+
+    #[test]
+    fn duplicate_coverage_score_must_pass_final_threshold() {
+        let threshold = 0.88;
+        let average = 1.0;
+        let low_coverage = duplicate_coverage_score(average, 0.5);
+        let full_coverage = duplicate_coverage_score(average, 1.0);
+        assert!(!duplicate_meets_threshold(low_coverage, threshold));
+        assert!(duplicate_meets_threshold(full_coverage, threshold));
     }
 
     #[test]
