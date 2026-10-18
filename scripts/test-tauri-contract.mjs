@@ -77,9 +77,11 @@ check(
     !importFolderOnce.includes('insert_folder')
 )
 check(
-  '重建索引在重新入队前释放数据库锁',
-  reindexCommand.includes('drop(guard);') &&
-    reindexCommand.indexOf('drop(guard);') < reindexCommand.indexOf('enqueue(app.clone(), *id, true)')
+  '重建索引延迟到工作线程开始时清理旧数据',
+  !reindexCommand.includes('clear_frames') &&
+    reindexCommand.includes('enqueue(app.clone(), *id, true)') &&
+    indexerSource.includes('reset_before_run') &&
+    indexerSource.includes('process_video(app2, id, reset_before_run)')
 )
 for (const [name, source] of [
   ['添加监听文件夹', foldersAddPathCommand],

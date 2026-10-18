@@ -22,6 +22,10 @@ use tauri::{AppHandle, Emitter, Manager};
 pub struct IndexerState {
     pub queue: Vec<i64>,
     pub queued: HashSet<i64>,
+    pub active_ids: HashSet<i64>,
+    /// 需要在真正开始处理时清空旧索引的视频。这样正在处理的视频可以安全地
+    /// 排队重建，而不会提前删掉当前工作线程仍在使用的数据。
+    pub reset_before_run: HashSet<i64>,
     pub active: usize,
     pub done: u64,
     pub failed: u64,
@@ -38,6 +42,8 @@ impl Default for IndexerState {
         IndexerState {
             queue: Vec::new(),
             queued: HashSet::new(),
+            active_ids: HashSet::new(),
+            reset_before_run: HashSet::new(),
             active: 0,
             done: 0,
             failed: 0,
@@ -51,6 +57,34 @@ impl Default for IndexerState {
 }
 
 impl IndexerState {
+    fn schedule(&mut self, video_id: i64, force: bool) -> Option<bool> {
+        if force {
+            self.reset_before_run.insert(video_id);
+        }
+        if self.queued.contains(&video_id) || (self.active_ids.contains(&video_id) && !force) {
+            return None;
+        }
+        let deferred = self.active_ids.contains(&video_id);
+        self.queued.insert(video_id);
+        self.queue.push(video_id);
+        Some(deferred)
+    }
+
+    fn take_next(&mut self, concurrency: usize) -> Option<(i64, bool)> {
+        if self.active >= concurrency {
+            return None;
+        }
+        let position = self
+            .queue
+            .iter()
+            .position(|id| !self.active_ids.contains(id))?;
+        let id = self.queue.remove(position);
+        self.queued.remove(&id);
+        self.active_ids.insert(id);
+        self.active += 1;
+        Some((id, self.reset_before_run.remove(&id)))
+    }
+
     /// 当前索引器状态（供 library_status 命令）。
     pub fn status(&self) -> db::IndexerStatus {
         let total = (self.done + self.failed) as i64 + self.queue.len() as i64 + self.active as i64;
@@ -151,27 +185,25 @@ pub fn get_frame_progress(app: &AppHandle, video_id: i64) -> Option<crate::event
 /* 队列与泵                                                            */
 /* ------------------------------------------------------------------ */
 
-/// 把视频加入索引队列（去重：已在队列中则跳过）。force 仅在未入队时生效。
-pub fn enqueue(app: AppHandle, video_id: i64, _force: bool) {
-    let already = {
+/// 把视频加入索引队列。同一视频不会并发处理；force 会把活动任务之后的重建请求
+/// 保留在队列中，并在它真正开始时才清空旧索引。
+pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
+    let scheduled = {
         let state = app.state::<AppState>();
         let mut idx = state.indexer.lock().unwrap();
-        if idx.queued.contains(&video_id) {
-            true
-        } else {
-            idx.queued.insert(video_id);
-            idx.queue.push(video_id);
+        let scheduled = idx.schedule(video_id, force);
+        if scheduled.is_some() {
             if idx.started_at.is_none() {
                 idx.started_at = Some(db::now_ms());
             }
             idx.finished_at = None;
-            false
         }
+        scheduled
     };
-    if already {
+    let Some(deferred) = scheduled else {
         return;
-    }
-    {
+    };
+    if !deferred {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
         if let Some(c) = guard.as_mut() {
@@ -196,30 +228,28 @@ pub fn pump(app: AppHandle) {
         }
     };
     loop {
-        let id = {
+        let job = {
             let state = app.state::<AppState>();
             let mut idx = state.indexer.lock().unwrap();
-            if idx.active >= concurrency || idx.queue.is_empty() {
-                break;
-            }
-            let id = idx.queue.remove(0);
-            idx.queued.remove(&id);
-            idx.active += 1;
-            id
+            idx.take_next(concurrency)
+        };
+        let Some((id, reset_before_run)) = job else {
+            break;
         };
         let app2 = app.clone();
         std::thread::spawn(move || {
-            process_video(app2, id);
+            process_video(app2, id, reset_before_run);
         });
     }
     broadcast_status(&app);
 }
 
 /// 任务结束的收尾：更新计数、播报、继续泵队列。
-fn finish(app: AppHandle, ok: bool) {
+fn finish(app: AppHandle, video_id: i64, ok: bool) {
     {
         let state = app.state::<AppState>();
         let mut idx = state.indexer.lock().unwrap();
+        idx.active_ids.remove(&video_id);
         idx.active = idx.active.saturating_sub(1);
         if ok {
             idx.done += 1;
@@ -255,7 +285,7 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
             message: format!("索引失败：{error}"),
         },
     );
-    finish(app, false);
+    finish(app, video_id, false);
 }
 
 fn rebuild_search_index(app: &AppHandle) {
@@ -274,14 +304,14 @@ fn rebuild_search_index(app: &AppHandle) {
 fn finish_ready(app: AppHandle, video_id: i64) {
     rebuild_search_index(&app);
     emit_video_updated(&app, video_id);
-    finish(app, true);
+    finish(app, video_id, true);
 }
 
 /* ------------------------------------------------------------------ */
 /* 单视频处理                                                          */
 /* ------------------------------------------------------------------ */
 
-fn process_video(app: AppHandle, video_id: i64) {
+fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     let settings = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap();
@@ -290,6 +320,17 @@ fn process_video(app: AppHandle, video_id: i64) {
             None => db::default_settings(),
         }
     };
+
+    if reset_before_run {
+        frames_store::remove_video(video_id);
+        let state = app.state::<AppState>();
+        let mut guard = state.db.lock().unwrap();
+        if let Some(c) = guard.as_mut() {
+            let _ = db::clear_frames(c, &[video_id]);
+            let _ = db::update_processed_timestamps(c, video_id, &[]);
+            let _ = db::set_video_status(c, video_id, "pending", None);
+        }
+    }
 
     let video = {
         let state = app.state::<AppState>();
@@ -302,7 +343,7 @@ fn process_video(app: AppHandle, video_id: i64) {
     let video = match video {
         Some(v) => v,
         None => {
-            finish(app, false);
+            finish(app, video_id, false);
             return;
         }
     };
@@ -727,24 +768,7 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
             let _ = db::set_sampling_override(c, &ids, m);
         }
     }
-    if !targets.is_empty() {
-        let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
-        if let Some(c) = guard.as_mut() {
-            let _ = db::clear_frames(c, &targets);
-        }
-    }
     for id in &targets {
-        frames_store::remove_video(*id);
-        let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
-        if let Some(c) = guard.as_mut() {
-            let _ = db::update_processed_timestamps(c, *id, &[]);
-            let _ = db::set_video_status(c, *id, "pending", None);
-        }
-        // enqueue 会再次获取 db 锁、更新状态并广播视频事件。必须先释放这里的
-        // guard，否则同一线程二次 lock 会永久自锁，前端表现为整窗“未响应”。
-        drop(guard);
         enqueue(app.clone(), *id, true);
     }
     if !targets.is_empty() {
@@ -787,4 +811,32 @@ pub fn resume_pending(app: AppHandle) {
 
 fn log(msg: &str) {
     logger::log(&format!("[indexer] {msg}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IndexerState;
+
+    #[test]
+    fn forced_reindex_waits_for_the_same_active_video() {
+        let mut state = IndexerState::default();
+        assert_eq!(state.schedule(7, false), Some(false));
+        assert_eq!(state.take_next(2), Some((7, false)));
+
+        assert_eq!(state.schedule(7, false), None);
+        assert_eq!(state.schedule(7, true), Some(true));
+        assert_eq!(state.take_next(2), None);
+
+        state.active_ids.remove(&7);
+        state.active = 0;
+        assert_eq!(state.take_next(2), Some((7, true)));
+    }
+
+    #[test]
+    fn force_upgrades_an_already_queued_job() {
+        let mut state = IndexerState::default();
+        assert_eq!(state.schedule(3, false), Some(false));
+        assert_eq!(state.schedule(3, true), None);
+        assert_eq!(state.take_next(1), Some((3, true)));
+    }
 }
