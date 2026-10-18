@@ -4,7 +4,9 @@ use rusqlite::{params_from_iter, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// 与 src/shared/types.ts 的 LibraryStats 对齐（serde rename 输出 camelCase）。
 #[derive(Serialize, Clone)]
@@ -101,21 +103,128 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 "#;
 
-/// 数据目录判定（骨架简化版）：
-/// 1) env WHICHVIDEO_DATA_DIR
-/// 2) exe 同级 data/
-/// 3) 当前目录 data/
-/// 完整判定（便携启动器注入等）留待阶段 4。
-pub fn data_dir() -> PathBuf {
-    if let Ok(d) = env::var("WHICHVIDEO_DATA_DIR") {
-        return PathBuf::from(d);
-    }
-    if let Ok(exe) = env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            return parent.join("data");
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DataDirResolution {
+    pub dir: PathBuf,
+    pub portable: bool,
+    pub source: &'static str,
+}
+
+static DATA_DIR: OnceLock<DataDirResolution> = OnceLock::new();
+
+fn clean_env(value: Option<String>) -> Option<PathBuf> {
+    value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// 纯判定函数，与 Electron datadir.ts 的优先级一致，便于独立测试。
+pub fn resolve_data_dir<F>(
+    default_dir: &Path,
+    env_dir: Option<String>,
+    portable_dir: Option<String>,
+    exe_dir: &Path,
+    is_packaged: bool,
+    mut is_writable: F,
+) -> DataDirResolution
+where
+    F: FnMut(&Path) -> bool,
+{
+    if let Some(candidate) = clean_env(env_dir) {
+        if is_writable(&candidate) {
+            return DataDirResolution {
+                dir: candidate,
+                portable: true,
+                source: "env",
+            };
         }
     }
-    PathBuf::from("data")
+    if let Some(base) = clean_env(portable_dir) {
+        let candidate = base.join("data");
+        if is_writable(&base) && is_writable(&candidate) {
+            return DataDirResolution {
+                dir: candidate,
+                portable: true,
+                source: "portable-launcher",
+            };
+        }
+    }
+    if is_packaged {
+        let candidate = exe_dir.join("data");
+        if is_writable(exe_dir) && is_writable(&candidate) {
+            return DataDirResolution {
+                dir: candidate,
+                portable: true,
+                source: "portable-launcher",
+            };
+        }
+    }
+    DataDirResolution {
+        dir: default_dir.to_path_buf(),
+        portable: false,
+        source: "default",
+    }
+}
+
+fn is_writable_dir(dir: &Path) -> bool {
+    if fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(format!(".whichvideo-write-{}", std::process::id()));
+    match fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(_) => {
+            let _ = fs::remove_file(probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn migrate_legacy_database(target: &Path, legacy: &Path) {
+    if target == legacy || target.join("whichvideo.db").exists() {
+        return;
+    }
+    for name in ["whichvideo.db", "whichvideo.db-wal", "whichvideo.db-shm"] {
+        let from = legacy.join(name);
+        if from.exists() {
+            let _ = fs::copy(from, target.join(name));
+        }
+    }
+}
+
+/// 在 Tauri setup 阶段调用一次，之后所有模块共享同一个最终目录。
+pub fn initialize_data_dir(default_dir: PathBuf, is_packaged: bool) -> io::Result<DataDirResolution> {
+    let exe_dir = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let resolution = resolve_data_dir(
+        &default_dir,
+        env::var("WHICHVIDEO_DATA_DIR").ok(),
+        env::var("PORTABLE_EXECUTABLE_DIR").ok(),
+        &exe_dir,
+        is_packaged,
+        is_writable_dir,
+    );
+    fs::create_dir_all(&resolution.dir)?;
+    if resolution.portable {
+        let marker = format!(
+            "portable data directory\r\nbase: {}\r\n",
+            resolution.dir.parent().unwrap_or(&resolution.dir).display()
+        );
+        let _ = fs::write(resolution.dir.join("whichvideo.portable"), marker);
+        migrate_legacy_database(&resolution.dir, &default_dir);
+    }
+    let _ = DATA_DIR.set(resolution.clone());
+    Ok(resolution)
+}
+
+pub fn data_dir() -> PathBuf {
+    DATA_DIR
+        .get()
+        .map(|r| r.dir.clone())
+        .unwrap_or_else(|| PathBuf::from("data"))
 }
 
 pub fn open_db() -> SqlResult<Connection> {
@@ -695,22 +804,15 @@ pub struct DataDirInfo {
 
 /// 解析数据目录并附带便携判定与工具可用性。
 pub fn data_dir_info(tools_ready: bool) -> DataDirInfo {
-    let dir = data_dir();
-    let dir_str = dir.to_string_lossy().to_string();
-    let (portable, source) = if std::env::var("WHICHVIDEO_DATA_DIR").is_ok() {
-        (false, "env")
-    } else {
-        // exe 同级 data/ 存在 → 视为便携模式（数据随 exe 走）。
-        let is_portable = std::env::current_exe()
-            .ok()
-            .and_then(|e| e.parent().map(|p| p.join("data").exists()))
-            .unwrap_or(false);
-        (is_portable, "default")
-    };
+    let resolution = DATA_DIR.get().cloned().unwrap_or(DataDirResolution {
+        dir: data_dir(),
+        portable: false,
+        source: "default",
+    });
     DataDirInfo {
-        dir: dir_str,
-        portable,
-        source: source.to_string(),
+        dir: resolution.dir.to_string_lossy().to_string(),
+        portable: resolution.portable,
+        source: resolution.source.to_string(),
         tools_ready,
     }
 }
@@ -1094,6 +1196,45 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn data_dir_resolution_matches_portable_priority_and_fallback() {
+        let default = Path::new("C:\\Users\\tester\\AppData\\Roaming\\WhichVideo");
+        let exe = Path::new("D:\\WhichVideo");
+        let all_writable = |_path: &Path| true;
+
+        let env_choice = resolve_data_dir(
+            default,
+            Some(" E:\\LibraryData ".to_string()),
+            Some("D:\\WhichVideo".to_string()),
+            exe,
+            true,
+            all_writable,
+        );
+        assert_eq!(env_choice.dir, PathBuf::from("E:\\LibraryData"));
+        assert!(env_choice.portable);
+        assert_eq!(env_choice.source, "env");
+
+        let launcher_choice = resolve_data_dir(
+            default,
+            None,
+            Some("D:\\WhichVideo".to_string()),
+            exe,
+            true,
+            all_writable,
+        );
+        assert_eq!(launcher_choice.dir, exe.join("data"));
+        assert_eq!(launcher_choice.source, "portable-launcher");
+
+        let unpacked_choice = resolve_data_dir(default, None, None, exe, true, all_writable);
+        assert_eq!(unpacked_choice.dir, exe.join("data"));
+        assert!(unpacked_choice.portable);
+
+        let fallback = resolve_data_dir(default, None, None, exe, true, |_path| false);
+        assert_eq!(fallback.dir, default);
+        assert!(!fallback.portable);
+        assert_eq!(fallback.source, "default");
+    }
 
     #[test]
     fn duplicate_candidates_require_matching_size_and_near_duration() {

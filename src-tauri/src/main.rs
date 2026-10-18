@@ -14,10 +14,23 @@ mod state;
 mod watcher;
 
 use state::AppState;
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
-        .manage(AppState::new())
+        .setup(|app| {
+            let app_default = app.path().app_data_dir()?;
+            #[cfg(windows)]
+            let default_dir = std::env::var_os("APPDATA")
+                .map(std::path::PathBuf::from)
+                .map(|p| p.join("WhichVideo"))
+                .unwrap_or(app_default);
+            #[cfg(not(windows))]
+            let default_dir = app_default;
+            db::initialize_data_dir(default_dir, !cfg!(debug_assertions))?;
+            app.manage(AppState::new());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::library_stats,
             commands::library_status,
