@@ -1,0 +1,24 @@
+scripts/build-tauri-portable.mjs
+  s_e78e0118ab4232::t_125e38e618ad52 1-133
+package.json
+  s_e78e0118ab4232::t_125e38e618ad52 22,29
+scripts/test-tauri-portable.mjs
+  s_e78e0118ab4232::t_d4f08657cdbef3 1,6-8,49
+  s_e78e0118ab4232::t_125e38e618ad52 2-5,9-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0df913f0ddcc5a6a6066f5c147c72e0c936bf74",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
