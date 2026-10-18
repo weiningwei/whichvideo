@@ -1,0 +1,20 @@
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_a931fb37aa29be 722-726,728-729,732-740,742-749,753,756,759,763,849,856,877
+  s_e78e0118ab4232::t_329b1f13f6160a 989,991-1012
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd172d1a4f750cf1459f32065924b228a0b88b02",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
