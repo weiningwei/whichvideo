@@ -146,24 +146,14 @@ export default function App() {
         )}
       </main>
 
-      {/* 通知分流：状态栏只承载 info（进度/操作反馈，就地不打扰）；
-          warn/error 固定在右下角浮层。此前一律取 notices[0] 上状态栏 ——
-          同一条提示会随新通知插入在状态栏与右下角之间"搬家"，位置不可
-          预期（用户实测困惑）。 */}
-      <StatusBar
-        status={state.status}
-        busy={state.busy}
-        notice={state.notices.find((n) => n.level === 'info') ?? null}
-      />
+      {/* 状态栏只展示持续任务状态；所有一次性反馈固定在通知浮层，绝不换位置。 */}
+      <StatusBar status={state.status} busy={state.busy} />
 
       {(() => {
-        // 浮层内容：不在状态栏里的通知（warn/error 全部 + 更早的 info），最多 4 条
-        const barNotice = state.notices.find((n) => n.level === 'info')
-        const floating = state.notices.filter((n) => n.id !== barNotice?.id).slice(0, 4)
+        // 最新通知固定贴近状态栏，旧通知依次向上累积，最多显示四条。
+        const floating = state.notices.slice(0, 4)
         if (floating.length === 0) return null
-        // flex-col-reverse：floating 头部=最新，反转后新通知渲染在底部
-        // （贴近状态栏的固定位置），旧的向上累积 —— 像聊天消息的时间序。
-        // 用户实测"最新那条跑到最上面第 1 位"不符合直觉，故反转。
+        // flex-col-reverse：floating 头部=最新，反转后新通知渲染在底部。
         return (
         <div className="pointer-events-auto absolute bottom-12 right-4 flex w-[360px] flex-col-reverse gap-2">
           {floating.map((notice) => (

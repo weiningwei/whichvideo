@@ -120,7 +120,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('顶栏展示品牌与两个简短导航', header.includes('WhichVideo') && header.includes('搜图') && header.includes('视频库'))
   check('顶栏不再堆放导入按钮和五项统计', !header.includes('导入视频') && !header.includes('帧指纹') && !header.includes('监听 1/1'))
   check('顶栏保留主题和快捷键入口', header.includes('切换主题') && header.includes('键盘快捷键'))
-  const statusHtml = render(jsx(StatusBar, { status, busy: null, notice: null }))
+  const statusHtml = render(jsx(StatusBar, { status, busy: null }))
   check('状态栏空闲时只显示简短状态', statusHtml.includes('就绪') && !statusHtml.includes('拖入图片'))
 
   console.log('\n=== 搜图页 ===')

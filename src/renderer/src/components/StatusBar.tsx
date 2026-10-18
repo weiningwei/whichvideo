@@ -3,10 +3,9 @@ import type { IndexerStatus } from '@shared/types'
 interface Props {
   status: IndexerStatus | null
   busy: string | null
-  notice?: { level: 'info' | 'warn' | 'error'; message: string; at: number } | null
 }
 
-export function StatusBar({ status, busy, notice }: Props) {
+export function StatusBar({ status, busy }: Props) {
   const running = status?.running ?? false
   const total = status?.total ?? 0
   const done = (status?.done ?? 0) + (status?.failed ?? 0)
@@ -46,21 +45,7 @@ export function StatusBar({ status, busy, notice }: Props) {
       )}
 
       <span className="ml-auto truncate">
-        {busy ? (
-          <span className="text-accent">{busy}</span>
-        ) : notice ? (
-          <span
-            className={
-              notice.level === 'error'
-                ? 'text-bad'
-                : notice.level === 'warn'
-                  ? 'text-warn'
-                  : 'text-secondary'
-            }
-          >
-            {notice.message}
-          </span>
-        ) : null}
+        {busy && <span className="text-accent">{busy}</span>}
       </span>
     </footer>
   )
