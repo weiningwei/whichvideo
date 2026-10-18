@@ -62,6 +62,7 @@ check(
 )
 const importFilesCommand = commandsSource.match(/pub (?:async )?fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
 const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
+const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\/ 启动恢复/)?.[0] ?? ''
 check(
   '导入视频不再隐式登记监听目录',
   importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
@@ -71,6 +72,11 @@ check(
   importFolderOnce.includes('scan_video_files') &&
     importFolderOnce.includes('import_files') &&
     !importFolderOnce.includes('insert_folder')
+)
+check(
+  '重建索引在重新入队前释放数据库锁',
+  reindexCommand.includes('drop(guard);') &&
+    reindexCommand.indexOf('drop(guard);') < reindexCommand.indexOf('enqueue(app.clone(), *id, true)')
 )
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length

@@ -742,8 +742,13 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
             let _ = db::update_processed_timestamps(c, *id, &[]);
             let _ = db::set_video_status(c, *id, "pending", None);
         }
-        emit_video_updated(&app, *id);
+        // enqueue 会再次获取 db 锁、更新状态并广播视频事件。必须先释放这里的
+        // guard，否则同一线程二次 lock 会永久自锁，前端表现为整窗“未响应”。
+        drop(guard);
         enqueue(app.clone(), *id, true);
+    }
+    if !targets.is_empty() {
+        log(&format!("重建索引入队：{} 个视频", targets.len()));
     }
     targets.len() as i64
 }
