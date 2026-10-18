@@ -1,0 +1,48 @@
+src-tauri/src/db.rs
+  s_e78e0118ab4232::t_51152c609040aa 135-137,139-147,150,153-154,159-161,164,176
+  s_e78e0118ab4232::t_5aba291858ec9b 753
+  s_e78e0118ab4232::t_948f54601b3244 1181-1199,1201-1204
+  s_e78e0118ab4232::t_9e54f8916511d8 121-122,124-127,130-131,168-169,174,766,1168,1170-1171,1175-1177
+  s_e78e0118ab4232::t_9211a2879eaf07 1178
+  s_e78e0118ab4232::t_aa05ca235115d0 1180
+src/renderer/src/components/SettingsPanel.tsx
+  s_e78e0118ab4232::t_4090329b4d6114 124-126,132
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_0e12dbe5434d58 32,34,37-38,42,47-55
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_55b1b3cbd90010 12,20
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_5aba291858ec9b 36-37
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_58c2643b67bf44 853,881
+  s_e78e0118ab4232::t_4090329b4d6114 882,887,893-895
+README.md
+  s_e78e0118ab4232::t_d724854fa693eb 247
+  s_e78e0118ab4232::t_3a050852c9f098 44
+  s_e78e0118ab4232::t_55b1b3cbd90010 228,235,241-242,245-246
+src/shared/types.ts
+  s_e78e0118ab4232::t_0e12dbe5434d58 86,90-91
+src-tauri/tauri.conf.json
+  s_e78e0118ab4232::t_0e12dbe5434d58 16
+scripts/build-tauri-portable.mjs
+  s_e78e0118ab4232::t_55b1b3cbd90010 104
+AGENTS.md
+  s_e78e0118ab4232::t_55b1b3cbd90010 48-49
+  s_e78e0118ab4232::t_5aba291858ec9b 28,30,37,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eae7e7f01583bfc0d4d407b67543af8946e0ff86",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
