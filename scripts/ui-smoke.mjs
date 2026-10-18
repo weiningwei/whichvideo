@@ -152,6 +152,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('工具栏保持搜索、状态筛选和排序', libraryUnselected.includes('搜索视频') && libraryUnselected.includes('全部状态') && libraryUnselected.includes('最近添加'))
   check('表格精简为六列', /视频<\/th>[\s\S]*状态<\/th>[\s\S]*时长<\/th>[\s\S]*大小<\/th>[\s\S]*操作<\/th>/.test(library) && !library.includes('采样</th>'))
   check('视频行只露出三个高频图标操作', library.includes(`播放 ${video.name}`) && library.includes(`定位 ${video.name}`) && library.includes(`更多操作 ${video.name}`))
+  check('索引状态内显示采样帧数且不增加表格列', library.includes(`已索引 · ${video.frameCount} 帧`) && library.includes(`已建立 ${video.frameCount} 个索引采样帧`))
   check('选中态仍有强调色和左侧标记', library.includes('bg-row-selected') && library.includes('w-[2px] bg-accent') && library.includes('text-accent'))
   check('选中后切换为专用批量操作栏', library.includes('已选 1 项') && library.includes('重建索引') && library.includes('取消选择'))
 

@@ -63,6 +63,13 @@ export function VideoRow({
     indexing: { label: '索引中', dot: 'bg-accent', text: 'text-accent' },
     pending: { label: '待索引', dot: 'bg-warn', text: 'text-secondary' }
   }[video.status]
+  const statusLabel = video.status === 'ready'
+    ? `已索引 · ${video.frameCount} 帧`
+    : video.status === 'indexing' && frameProgress?.phase !== 'detecting' && frameProgress
+      ? `索引中 · ${frameProgress.done}/${frameProgress.total} 帧`
+      : status.label
+  const statusTitle = video.error
+    ?? (video.status === 'ready' ? `已建立 ${video.frameCount} 个索引采样帧` : '')
 
   const progress = (() => {
     if (!frameProgress || video.status !== 'indexing') return null
@@ -106,8 +113,8 @@ export function VideoRow({
         </div>
       </td>
       <td className={`whitespace-nowrap px-2 py-2 align-middle transition-colors ${rowBg}`}>
-        <div className={`flex items-center gap-1.5 text-[11.5px] ${status.text}`} title={video.error ?? ''}>
-          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{status.label}
+        <div className={`flex items-center gap-1.5 text-[11.5px] ${status.text}`} title={statusTitle}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{statusLabel}
         </div>
         {progress}
       </td>
