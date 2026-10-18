@@ -3,6 +3,7 @@ use crate::events;
 use crate::indexer;
 use crate::media;
 use crate::state::AppState;
+use crate::watcher;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -36,14 +37,17 @@ pub fn folders_list(state: State<AppState>) -> Result<Vec<db::WatchedFolder>, St
 /// 登记一个被监听的文件夹（仅入库，扫描/索引由 indexer 模块完成）。
 #[tauri::command]
 pub fn folders_add_path(
-    state: State<AppState>,
+    app: AppHandle,
     dir_path: String,
 ) -> Result<db::WatchedFolder, String> {
+    let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::insert_folder(conn, &dir_path, true, true).map_err(|e| e.to_string())
+    let folder = db::insert_folder(conn, &dir_path, true, true).map_err(|e| e.to_string())?;
+    let _ = watcher::sync_all(&app);
+    Ok(folder)
 }
 
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
@@ -69,17 +73,21 @@ pub fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, Stri
             Err(_) => {}
         }
     }
+    let _ = watcher::sync_all(&app);
     Ok(folders)
 }
 
 /// 删除一个被监听的文件夹记录（视频记录保留，folder_id 自动置空）。
 #[tauri::command]
-pub fn folders_remove(state: State<AppState>, folder_id: i64) -> Result<(), String> {
+pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
+    let _ = watcher::stop(&app, folder_id);
+    let _ = watcher::sync_all(&app);
     Ok(())
 }
 
@@ -121,24 +129,28 @@ pub fn folders_rescan(
             total.folders += result.folders;
         }
     }
+    let _ = watcher::sync_all(&app);
     Ok(total)
 }
 
 /// 启用/停用文件夹监听，返回更新后的记录。
 #[tauri::command]
 pub fn folders_set_enabled(
-    state: State<AppState>,
+    app: AppHandle,
     folder_id: i64,
     enabled: bool,
 ) -> Result<db::WatchedFolder, String> {
+    let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::set_folder_enabled(conn, folder_id, enabled).map_err(|e| e.to_string())?;
-    db::get_folder(conn, folder_id)
+    let folder = db::get_folder(conn, folder_id)
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "文件夹不存在".to_string())
+        .ok_or_else(|| "文件夹不存在".to_string())?;
+    let _ = watcher::sync_all(&app);
+    Ok(folder)
 }
 
 /// 单个视频记录。
@@ -321,6 +333,12 @@ pub fn videos_reindex(
     mode: Option<String>,
 ) -> Result<i64, String> {
     Ok(indexer::reindex(app, video_ids, mode))
+}
+
+/// 同步文件夹监听（启动/停止各目录的磁盘监听以匹配启用状态）。
+#[tauri::command]
+pub fn watcher_sync(app: AppHandle) -> Result<(), String> {
+    watcher::sync_all(&app)
 }
 
 /// 用户设置（合并默认值）。

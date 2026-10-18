@@ -10,6 +10,7 @@ mod indexer;
 mod media;
 mod sampling;
 mod state;
+mod watcher;
 
 use state::AppState;
 
@@ -41,7 +42,8 @@ fn main() {
             commands::folders_add_dialog,
             commands::videos_import,
             commands::videos_import_images,
-            commands::videos_reindex
+            commands::videos_reindex,
+            commands::watcher_sync
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

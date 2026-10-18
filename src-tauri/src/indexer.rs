@@ -507,7 +507,7 @@ fn stat_file(path: &str) -> (i64, i64) {
     }
 }
 
-fn is_video_file(name: &str) -> bool {
+pub fn is_video_file(name: &str) -> bool {
     let dot = match name.rfind('.') {
         Some(d) => d,
         None => return false,
