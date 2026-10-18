@@ -26,7 +26,7 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin
 
 ```text
 src-tauri/src/main.rs         Tauri 初始化、窗口、状态装配与生命周期
-src-tauri/src/commands.rs     30 个前端命令入口
+src-tauri/src/commands.rs     前端命令入口
 src-tauri/src/db.rs           SQLite 持久层与数据目录判定（rusqlite）
 src-tauri/src/indexer.rs      抽帧与索引队列
 src-tauri/src/search.rs       常驻内存帧索引、检索与时间纠偏
@@ -39,9 +39,9 @@ src/renderer/src              React 渲染端
 src/shared                    前端共享类型、指纹和 IPC 频道名
 ```
 
-渲染端只通过 `src/renderer/src/lib/tauri.ts` 调用后端。`src/shared/types.ts` 中的频道名、
+渲染端只通过 `src/renderer/src/lib/tauri-api.ts` 调用后端。`src/shared/types.ts` 中的频道名、
 桥接映射、`commands.rs` 的命令签名和 `main.rs` 的注册表必须同步；`pnpm test:contract`
-会验证 30 个命令没有遗漏。
+会验证命令没有遗漏。
 
 ## 后端关键约束
 
@@ -90,10 +90,12 @@ Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，�
 
 - 组件只使用 `primary`、`surface-*`、`line`、`accent` 等语义 token；不要写固定色值。
 - 全局顶栏只放品牌、主导航和运行状态；导入、筛选、设置等动作归属具体页面。
-- 视频库默认保持「文件夹导航 + 内容」两栏。监视管理与索引设置使用按需抽屉，不得常驻挤压列表。
+- 视频库默认显示文件夹视图：导入目录逐层展开，单独导入的视频直接留在顶层；也能切到「全部视频」。监视管理与索引设置使用按需抽屉，不得常驻挤压列表。
 - 三种导入方式统一放在「添加」菜单；高级库操作放在「更多」，不要平铺一整排按钮。
-- 视频表格保持六列（选择、视频、状态、时长、大小、操作）；行内只露出播放、定位、更多三个高频入口。
-- 文件夹树只负责浏览和过滤，不放批量选择复选框；视频选择统一在列表完成。
+- 视频表格保持五列（视频、状态、时长、大小、操作），不加行尾复选框；行内只露出播放和更多两个高频入口。
+- 文件夹行只负责浏览和过滤，不放批量选择复选框；视频选择通过点击列表行完成。
+- 查重结果和搜图结果中的视频必须显示目录，同名文件不能只靠悬停提示区分；查重移除须按后端实际成功的 ID 更新结果。
+- 异步搜索的新请求或清除操作必须使旧响应失效；媒体预览失败必须有回退或错误提示，不能无限加载。
 - 选中行使用左侧 2px 强调条、`bg-row-selected` 和文件名 `text-accent`。
 - 操作列的 sticky 单元格必须沿用不透明的 `row-*` 行底 token。
 - Shift/Ctrl 点击只阻止修饰键触发的原生文本选择，不要给整行加 `select-none`。
