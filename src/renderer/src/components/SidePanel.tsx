@@ -6,17 +6,13 @@ interface Props {
   onAddFolder: () => void
   folders: ReactNode
   folderDrop: boolean
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: (e: React.DragEvent) => void
   settings: ReactNode
   folderCount: number
 }
 
 /** 低频管理项按需从右侧滑出，不再永久挤占视频列表。 */
 export function SidePanel({
-  mode, onClose, onAddFolder, folders, folderDrop, onDragOver, onDragLeave,
-  onDrop, settings, folderCount
+  mode, onClose, onAddFolder, folders, folderDrop, settings, folderCount
 }: Props) {
   useEffect(() => {
     if (!mode) return
@@ -48,9 +44,6 @@ export function SidePanel({
         {foldersMode ? (
           <div
             className={`min-h-0 flex-1 overflow-y-auto p-3 ${folderDrop ? 'bg-accent/10' : ''}`}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
           >
             {folders}
           </div>

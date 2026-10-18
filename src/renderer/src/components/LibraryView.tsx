@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
@@ -112,6 +113,35 @@ export function LibraryView(props: Props) {
     if (openMenuId !== null && !selectedVideoIds.has(openMenuId)) setOpenMenuId(null)
   }, [selectedVideoIds, openMenuId])
   useEffect(() => { setOpenMenuId(null) }, [drawer, duplicates, framesVideo])
+  // 浏览器 DataTransfer 不保证暴露本地绝对路径，且旧实现把所有 / 强转成 \\，
+  // 会让 macOS/Linux 拖入目录失效。Tauri 原生事件提供真实路径，文件路径也不会
+  // 被悄悄截成父目录（后端会明确拒绝非目录）。
+  useEffect(() => {
+    if (drawer !== 'folders') return
+    let active = true
+    let unlisten: (() => void) | undefined
+    void getCurrentWindow().onDragDropEvent((event) => {
+      if (!active) return
+      if (event.payload.type === 'enter' || event.payload.type === 'over') {
+        setFolderDrop(true)
+      } else if (event.payload.type === 'leave') {
+        setFolderDrop(false)
+      } else {
+        setFolderDrop(false)
+        const [path] = event.payload.paths
+        if (path) props.onAddFolderPath(path)
+      }
+    }).then((stop) => {
+      if (active) unlisten = stop
+      else stop()
+    }).catch(() => {
+      if (active) setFolderDrop(false)
+    })
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [drawer, props.onAddFolderPath])
   useEffect(() => {
     if (openMenuId === null) return
     const dismiss = (event: PointerEvent) => {
@@ -311,17 +341,6 @@ export function LibraryView(props: Props) {
         onAddFolder={props.onAddFolder}
         folderCount={folders.length}
         folderDrop={folderDrop}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setFolderDrop(true)
-        }}
-        onDragLeave={() => setFolderDrop(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setFolderDrop(false)
-          const dir = extractDroppedDir(e.dataTransfer)
-          if (dir) props.onAddFolderPath(dir)
-        }}
         folders={
           <>
             {folders.length === 0 && (
@@ -451,20 +470,4 @@ function FolderCard({
       </div>
     </div>
   )
-}
-
-/** 从拖拽内容里尽力提取目录绝对路径（桌面 WebView 的 File.path 扩展可用时优先）。 */
-function extractDroppedDir(dataTransfer: DataTransfer): string | null {
-  const files = Array.from(dataTransfer.files ?? [])
-  for (const file of files) {
-    const path = (file as File & { path?: string }).path
-    if (!path) continue
-    return /[\\/][^\\/]+$/.test(path) ? path.replace(/[\\/][^\\/]+$/, '') : path
-  }
-  const uri = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain')
-  if (uri) {
-    const cleaned = uri.replace(/^file:\/\/\//, '').replace(/\//g, '\\')
-    return decodeURIComponent(cleaned)
-  }
-  return null
 }

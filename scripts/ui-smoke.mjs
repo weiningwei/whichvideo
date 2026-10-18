@@ -61,7 +61,8 @@ async function main() {
     'react/jsx-runtime': join(shimDir, 'jsx-runtime.js'),
     'react/jsx-dev-runtime': join(shimDir, 'jsx-runtime.js'),
     'react-dom/client': join(shimDir, 'client.js'),
-    'react-dom/server': join(shimDir, 'server.js')
+    'react-dom/server': join(shimDir, 'server.js'),
+    '@tauri-apps/api/window': join(shimDir, 'tauri-window.js')
   }
   const hooks = ['useState','useEffect','useMemo','useCallback','useRef','useReducer','useContext','useLayoutEffect','useId','useTransition','useDeferredValue','useSyncExternalStore','useInsertionEffect','useImperativeHandle','useDebugValue']
   writeFileSync(shims.react, `import { createRequire } from 'node:module'
@@ -71,6 +72,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   writeFileSync(shims['react/jsx-runtime'], `import { createRequire } from 'node:module'; const require=createRequire(import.meta.url); const mod=require(${JSON.stringify(req.resolve('react/jsx-runtime'))}); export const jsx=mod.jsx, jsxs=mod.jsxs, jsxDEV=mod.jsxDEV, Fragment=mod.Fragment; export default mod`)
   writeFileSync(shims['react-dom/server'], `import { createRequire } from 'node:module'; const require=createRequire(import.meta.url); const mod=require(${JSON.stringify(req.resolve('react-dom/server'))}); export const renderToStaticMarkup=mod.renderToStaticMarkup, renderToString=mod.renderToString; export default mod`)
   writeFileSync(shims['react-dom/client'], `import { createRequire } from 'node:module'; const require=createRequire(import.meta.url); const mod=require(${JSON.stringify(req.resolve('react-dom/client'))}); export const createRoot=mod.createRoot, hydrateRoot=mod.hydrateRoot; export default mod`)
+  writeFileSync(shims['@tauri-apps/api/window'], `export const getCurrentWindow=()=>({onDragDropEvent:async()=>()=>{}})`)
   rewriteSpecifiers(js, shims)
 
   const { jsx } = req('react/jsx-runtime')
@@ -226,6 +228,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('添加菜单明确区分三种导入方式', ['视频文件', '导入文件夹', '监视文件夹'].every((text) => toolbarSource.includes(text)))
   check('监视管理和设置改为按需抽屉', toolbarSource.includes("setDrawer") || (toolbarSource.includes('onManageFolders') && toolbarSource.includes('onOpenSettings')))
   check('管理抽屉明确说明添加和拖入都会持续监视', drawerSource.includes('＋ 监视文件夹') && source('LibraryView.tsx').includes('拖入文件夹将自动监视'))
+  check('文件夹拖放使用 Tauri 原生绝对路径且不截断文件路径', source('LibraryView.tsx').includes("from '@tauri-apps/api/window'") && source('LibraryView.tsx').includes('onDragDropEvent') && !source('LibraryView.tsx').includes('extractDroppedDir') && !source('LibraryView.tsx').includes("replace(/\\//g, '\\\\')"))
   check('移除文件夹明确确认且说明不删除磁盘文件', source('LibraryView.tsx').includes('从库中移除') && source('LibraryView.tsx').includes('不会删除磁盘上的文件'))
   check('抽屉覆盖内容而非永久占宽', drawerSource.includes('absolute inset-0') && drawerSource.includes('if (!mode) return null'))
   check('定位和索引等低频动作放入更多菜单', rowSource.includes('查看索引帧') && rowSource.includes('在资源管理器中显示') && rowSource.includes('按${sampling') && rowSource.includes('从视频库移除'))
