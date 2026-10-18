@@ -1,0 +1,31 @@
+src/renderer/src/lib/shortcuts.ts
+  s_e78e0118ab4232::t_4ea521f7e9b9d6 68
+src/renderer/src/components/VideoRow.tsx
+  s_e78e0118ab4232::t_78a02bb31c100d 9,101
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_6fbbbc75b710b0 131
+  s_e78e0118ab4232::t_78a02bb31c100d 163,194
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_43f7fb29b5f513 157
+  s_e78e0118ab4232::t_48562111436814 156
+src/renderer/src/components/Toolbar.tsx
+  s_e78e0118ab4232::t_78a02bb31c100d 10,29,147
+README.md
+  s_e78e0118ab4232::t_43f7fb29b5f513 217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bb1f37197582d1fa582f0e41320eacbb66ecc06",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
