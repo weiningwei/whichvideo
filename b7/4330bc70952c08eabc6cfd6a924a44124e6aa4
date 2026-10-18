@@ -1,0 +1,25 @@
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_5187a58e710437 207-208
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_5187a58e710437 37
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_43ede63286ae2f 114-115
+src/renderer/src/components/Toolbar.tsx
+  s_e78e0118ab4232::t_5187a58e710437 18,65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b74330bc70952c08eabc6cfd6a924a44124e6aa4",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
