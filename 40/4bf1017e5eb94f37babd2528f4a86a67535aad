@@ -1,0 +1,19 @@
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_99c3d71ae7456c 907-910,935,1328-1329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "404bf1017e5eb94f37babd2528f4a86a67535aad",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
