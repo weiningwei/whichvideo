@@ -1,0 +1,25 @@
+src/renderer/src/components/SidePanel.tsx
+  s_e78e0118ab4232::t_ed09d3b0b58693 1,21-31,35
+src/renderer/src/components/MediaToolsSetup.tsx
+  s_e78e0118ab4232::t_ed09d3b0b58693 16-26
+src/renderer/src/components/DuplicatesModal.tsx
+  s_e78e0118ab4232::t_ed09d3b0b58693 1,27-36,41-43
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_ed09d3b0b58693 130-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45c6326c60e498abc399c961e7454e248530c207",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
