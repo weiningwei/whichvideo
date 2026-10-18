@@ -29,7 +29,7 @@
     "test:cursor": "node scripts/test-cursor.mjs",
     "test:range": "node scripts/test-range-select.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
+    "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "test:events": "node scripts/test-video-events.mjs"
   },
   "dependencies": {
