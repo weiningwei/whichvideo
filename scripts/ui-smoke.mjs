@@ -850,7 +850,7 @@ export default mod
   const settingsHtml = render(
     jsx(SettingsPanel, {
       settings: appSettings,
-      dataDir: { dir: 'C:\\Users\\me\\AppData\\Roaming\\WhichVideo', portable: false, source: 'default', toolsReady: true },
+      dataDir: { dir: 'D:\\Apps\\WhichVideo\\data', source: 'install', toolsReady: true },
       onChange: noop,
       onReset: noop,
       onOpenDatabaseFolder: noop
@@ -878,20 +878,21 @@ export default mod
       settingsHtml.includes('打开索引库位置'),
     '清空 / 说明 / 打开位置都在首屏'
   )
-  check('设置面板展示数据目录', settingsHtml.includes('数据目录') && settingsHtml.includes('AppData\\Roaming\\WhichVideo'))
-  check('默认模式标注为"默认（用户目录）"', settingsHtml.includes('默认（用户目录）'))
+  check('设置面板展示数据目录', settingsHtml.includes('数据目录') && settingsHtml.includes('Apps\\WhichVideo\\data'))
+  check('默认模式标注为程序目录', settingsHtml.includes('程序目录'))
 
   const portablePanelHtml = render(
     jsx(SettingsPanel, {
       settings: appSettings,
-      dataDir: { dir: 'E:\\WhichVideo\\data', portable: true, source: 'portable-launcher', toolsReady: true },
+      dataDir: { dir: 'E:\\WhichVideo\\data', source: 'env', toolsReady: true },
       onChange: noop,
       onReset: noop,
       onOpenDatabaseFolder: noop
     })
   )
-  check('便携模式在界面上标注出来', portablePanelHtml.includes('便携模式') && portablePanelHtml.includes('E:\\WhichVideo\\data'))
-  check('提示可整目录拷走迁移', portablePanelHtml.includes('整个文件夹拷走'))
+  check('环境变量模式在界面上标注出来', portablePanelHtml.includes('环境变量指定') && portablePanelHtml.includes('E:\\WhichVideo\\data'))
+  check('提示所有版本都写入程序目录', settingsHtml.includes('所有版本') && settingsHtml.includes('程序同级 data'))
+  check('提示可整目录拷走迁移', portablePanelHtml.includes('整个安装文件夹拷走'))
   check('提示可用环境变量指定位置', portablePanelHtml.includes('WHICHVIDEO_DATA_DIR'))
 
   /* ---------- 8. 纯函数 ---------- */

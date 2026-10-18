@@ -121,21 +121,15 @@ export function SettingsPanel({
       <div className="rounded-lg border border-line/70 bg-ink-900/60 px-2.5 py-2 text-[10.5px] leading-relaxed">
         <div className="flex items-center gap-1.5">
           <span className="text-secondary">数据目录</span>
-          {dataDir?.portable ? (
-            <span className="rounded border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok">
-              便携模式{dataDir.source === 'env' ? '（环境变量）' : ''}
-            </span>
-          ) : (
-            <span className="rounded border border-line bg-ink-700/40 px-1.5 py-0.5 text-[10px] text-secondary">
-              默认（用户目录）
-            </span>
-          )}
+          <span className="rounded border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok">
+            {dataDir?.source === 'env' ? '环境变量指定' : '程序目录'}
+          </span>
         </div>
         <div className="mt-1 break-all font-mono text-[10px] text-secondary" title={dataDir?.dir}>
           {dataDir?.dir ?? '（读取中）'}
         </div>
         <div className="mt-1 text-tertiary">
-          便携模式下索引库与缓存都写在这个目录，整个文件夹拷走即可迁移；也可用环境变量
+          所有版本的索引库、日志与缓存都写在程序同级 data 目录，整个安装文件夹拷走即可迁移；也可用环境变量
           <span className="font-mono"> WHICHVIDEO_DATA_DIR </span>
           指定其他位置。
         </div>

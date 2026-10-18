@@ -106,7 +106,6 @@ CREATE TABLE IF NOT EXISTS settings (
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DataDirResolution {
     pub dir: PathBuf,
-    pub portable: bool,
     pub source: &'static str,
 }
 
@@ -119,103 +118,62 @@ fn clean_env(value: Option<String>) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// 数据目录优先级的纯判定函数，便于独立测试。
-pub fn resolve_data_dir<F>(
-    default_dir: &Path,
-    env_dir: Option<String>,
-    portable_dir: Option<String>,
-    exe_dir: &Path,
-    is_packaged: bool,
-    mut is_writable: F,
-) -> DataDirResolution
-where
-    F: FnMut(&Path) -> bool,
-{
+/// 数据目录固定在程序目录；环境变量仅作为显式覆盖入口。
+pub fn resolve_data_dir(env_dir: Option<String>, exe_dir: &Path) -> DataDirResolution {
     if let Some(candidate) = clean_env(env_dir) {
-        if is_writable(&candidate) {
-            return DataDirResolution {
-                dir: candidate,
-                portable: true,
-                source: "env",
-            };
-        }
-    }
-    if let Some(base) = clean_env(portable_dir) {
-        let candidate = base.join("data");
-        if is_writable(&base) && is_writable(&candidate) {
-            return DataDirResolution {
-                dir: candidate,
-                portable: true,
-                source: "portable-launcher",
-            };
-        }
-    }
-    if is_packaged {
-        let candidate = exe_dir.join("data");
-        if is_writable(exe_dir) && is_writable(&candidate) {
-            return DataDirResolution {
-                dir: candidate,
-                portable: true,
-                source: "portable-launcher",
-            };
-        }
+        return DataDirResolution {
+            dir: candidate,
+            source: "env",
+        };
     }
     DataDirResolution {
-        dir: default_dir.to_path_buf(),
-        portable: false,
-        source: "default",
+        dir: exe_dir.join("data"),
+        source: "install",
     }
 }
 
-fn is_writable_dir(dir: &Path) -> bool {
-    if fs::create_dir_all(dir).is_err() {
-        return false;
+fn copy_tree_missing(source: &Path, target: &Path) -> io::Result<()> {
+    if !source.is_dir() {
+        return Ok(());
     }
-    let probe = dir.join(format!(".whichvideo-write-{}", std::process::id()));
-    match fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
-        Ok(_) => {
-            let _ = fs::remove_file(probe);
-            true
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree_missing(&from, &to)?;
+        } else if !to.exists() {
+            fs::copy(from, to)?;
         }
-        Err(_) => false,
     }
+    Ok(())
 }
 
-fn migrate_legacy_database(target: &Path, legacy: &Path) {
-    if target == legacy || target.join("whichvideo.db").exists() {
+fn migrate_legacy_data(target: &Path, legacy: &Path) {
+    if target == legacy {
         return;
     }
     for name in ["whichvideo.db", "whichvideo.db-wal", "whichvideo.db-shm"] {
         let from = legacy.join(name);
-        if from.exists() {
-            let _ = fs::copy(from, target.join(name));
+        let to = target.join(name);
+        if from.exists() && !to.exists() {
+            let _ = fs::copy(from, to);
         }
     }
+    let _ = copy_tree_missing(&legacy.join("frames"), &target.join("frames"));
 }
 
 /// 在 Tauri setup 阶段调用一次，之后所有模块共享同一个最终目录。
-pub fn initialize_data_dir(default_dir: PathBuf, is_packaged: bool) -> io::Result<DataDirResolution> {
+/// legacy_dir 只用于把旧版本数据库迁入程序目录，不会成为运行时回退位置。
+pub fn initialize_data_dir(legacy_dir: PathBuf) -> io::Result<DataDirResolution> {
     let exe_dir = env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| PathBuf::from("."));
-    let resolution = resolve_data_dir(
-        &default_dir,
-        env::var("WHICHVIDEO_DATA_DIR").ok(),
-        env::var("PORTABLE_EXECUTABLE_DIR").ok(),
-        &exe_dir,
-        is_packaged,
-        is_writable_dir,
-    );
+    let resolution = resolve_data_dir(env::var("WHICHVIDEO_DATA_DIR").ok(), &exe_dir);
     fs::create_dir_all(&resolution.dir)?;
-    if resolution.portable {
-        let marker = format!(
-            "portable data directory\r\nbase: {}\r\n",
-            resolution.dir.parent().unwrap_or(&resolution.dir).display()
-        );
-        let _ = fs::write(resolution.dir.join("whichvideo.portable"), marker);
-        migrate_legacy_database(&resolution.dir, &default_dir);
-    }
+    migrate_legacy_data(&resolution.dir, &legacy_dir);
     let _ = DATA_DIR.set(resolution.clone());
     Ok(resolution)
 }
@@ -792,12 +750,11 @@ pub fn idle_indexer_status() -> IndexerStatus {
     }
 }
 
-/// 与 src/shared/types.ts 的 DataDirInfo 对齐。tools_ready 在 M5（媒体探测）补齐。
+/// 与 src/shared/types.ts 的 DataDirInfo 对齐。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataDirInfo {
     pub dir: String,
-    pub portable: bool,
     pub source: String,
     pub tools_ready: bool,
 }
@@ -806,12 +763,10 @@ pub struct DataDirInfo {
 pub fn data_dir_info(tools_ready: bool) -> DataDirInfo {
     let resolution = DATA_DIR.get().cloned().unwrap_or(DataDirResolution {
         dir: data_dir(),
-        portable: false,
-        source: "default",
+        source: "install",
     });
     DataDirInfo {
         dir: resolution.dir.to_string_lossy().to_string(),
-        portable: resolution.portable,
         source: resolution.source.to_string(),
         tools_ready,
     }
@@ -1210,42 +1165,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn data_dir_resolution_matches_portable_priority_and_fallback() {
-        let default = Path::new("C:\\Users\\tester\\AppData\\Roaming\\WhichVideo");
+    fn data_dir_is_always_next_to_executable_unless_explicitly_overridden() {
         let exe = Path::new("D:\\WhichVideo");
-        let all_writable = |_path: &Path| true;
 
-        let env_choice = resolve_data_dir(
-            default,
-            Some(" E:\\LibraryData ".to_string()),
-            Some("D:\\WhichVideo".to_string()),
-            exe,
-            true,
-            all_writable,
-        );
+        let env_choice = resolve_data_dir(Some(" E:\\LibraryData ".to_string()), exe);
         assert_eq!(env_choice.dir, PathBuf::from("E:\\LibraryData"));
-        assert!(env_choice.portable);
         assert_eq!(env_choice.source, "env");
 
-        let launcher_choice = resolve_data_dir(
-            default,
-            None,
-            Some("D:\\WhichVideo".to_string()),
-            exe,
-            true,
-            all_writable,
+        let installed = resolve_data_dir(None, exe);
+        assert_eq!(installed.dir, exe.join("data"));
+        assert_eq!(installed.source, "install");
+    }
+
+    #[test]
+    fn legacy_database_and_frames_are_copied_without_overwriting_new_data() {
+        let root = env::temp_dir().join(format!(
+            "whichvideo-data-migration-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let legacy = root.join("legacy");
+        let target = root.join("install").join("data");
+        fs::create_dir_all(legacy.join("frames").join("7")).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(legacy.join("whichvideo.db"), b"legacy-db").unwrap();
+        fs::write(legacy.join("frames").join("7").join("0.jpg"), b"jpeg").unwrap();
+
+        migrate_legacy_data(&target, &legacy);
+        assert_eq!(fs::read(target.join("whichvideo.db")).unwrap(), b"legacy-db");
+        assert_eq!(
+            fs::read(target.join("frames").join("7").join("0.jpg")).unwrap(),
+            b"jpeg"
         );
-        assert_eq!(launcher_choice.dir, exe.join("data"));
-        assert_eq!(launcher_choice.source, "portable-launcher");
 
-        let unpacked_choice = resolve_data_dir(default, None, None, exe, true, all_writable);
-        assert_eq!(unpacked_choice.dir, exe.join("data"));
-        assert!(unpacked_choice.portable);
-
-        let fallback = resolve_data_dir(default, None, None, exe, true, |_path| false);
-        assert_eq!(fallback.dir, default);
-        assert!(!fallback.portable);
-        assert_eq!(fallback.source, "default");
+        fs::write(target.join("whichvideo.db"), b"new-db").unwrap();
+        migrate_legacy_data(&target, &legacy);
+        assert_eq!(fs::read(target.join("whichvideo.db")).unwrap(), b"new-db");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

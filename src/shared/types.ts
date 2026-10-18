@@ -83,14 +83,12 @@ export interface LibraryStats {
   watching: number
 }
 
-/** 运行时数据目录信息（便携模式相关） */
+/** 运行时数据目录信息 */
 export interface DataDirInfo {
   /** 索引库、缓存、日志所在目录 */
   dir: string
-  /** 是否便携模式（数据写在 exe 旁边，整个目录拷走即可迁移） */
-  portable: boolean
-  /** 便携模式的判定来源 */
-  source: 'env' | 'portable-launcher' | 'default'
+  /** 默认写在程序目录；env 表示由环境变量显式覆盖 */
+  source: 'env' | 'install'
   /** ffmpeg 是否可用 */
   toolsReady: boolean
 }

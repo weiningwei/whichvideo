@@ -25,30 +25,28 @@ pnpm fetch:ffmpeg     # 下载 ffmpeg/ffprobe 到 resources/bin
 ## 架构
 
 ```text
-src-tauri/src/lib.rs          Tauri 初始化、状态装配、生命周期
+src-tauri/src/main.rs         Tauri 初始化、窗口、状态装配与生命周期
 src-tauri/src/commands.rs     30 个前端命令入口
-src-tauri/src/db.rs           SQLite 持久层（rusqlite）
+src-tauri/src/db.rs           SQLite 持久层与数据目录判定（rusqlite）
 src-tauri/src/indexer.rs      抽帧与索引队列
 src-tauri/src/search.rs       常驻内存帧索引、检索与时间纠偏
 src-tauri/src/media.rs        ffmpeg/ffprobe 调用
 src-tauri/src/sampling.rs     场景采样计划
 src-tauri/src/watcher.rs      目录监听与变更同步
-src-tauri/src/datadir.rs      数据目录和便携模式判定
 src-tauri/src/logger.rs       文件日志与 panic 记录
-src-tauri/src/frame_store.rs  索引帧落盘、读取与清理
-src-tauri/src/url_image.rs    用户主动触发的网页图片获取
+src-tauri/src/frames_store.rs 索引帧落盘、读取与清理
 src/renderer/src              React 渲染端
 src/shared                    前端共享类型、指纹和 IPC 频道名
 ```
 
 渲染端只通过 `src/renderer/src/lib/tauri.ts` 调用后端。`src/shared/types.ts` 中的频道名、
-桥接映射、`commands.rs` 的命令签名和 `lib.rs` 的注册表必须同步；`pnpm test:contract`
+桥接映射、`commands.rs` 的命令签名和 `main.rs` 的注册表必须同步；`pnpm test:contract`
 会验证 30 个命令没有遗漏。
 
 ## 后端关键约束
 
-- 数据目录优先级：`WHICHVIDEO_DATA_DIR` → 便携版 exe 同级 `data` → 可写的打包 exe
-  同级 `data` → `%APPDATA%/WhichVideo`。数据库、日志、索引帧和设置都必须落在该目录。
+- 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到 exe 同级 `data`。
+  `WHICHVIDEO_DATA_DIR` 可显式覆盖；目标不可写时启动失败，不得回退到用户目录。
 - SQLite 使用 WAL。改变表结构时必须保留已有库的迁移路径，不能靠删库升级。
 - 帧指纹固定为 16×16 灰度（256 字节）；查询图和视频帧必须使用相同的缩放、
   重采样和均值归一化规则。

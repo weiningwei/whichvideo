@@ -101,7 +101,7 @@ function writePortable(source, destination, parent) {
       '1. 双击 WhichVideo.exe 直接运行。',
       '2. 首次运行会在本目录创建 data\\，索引库、日志与缓存都保存在其中。',
       '3. 迁移时复制整个 WhichVideo-portable 文件夹；升级时保留 data\\。',
-      '4. 若目录不可写，数据会回退到 %APPDATA%\\WhichVideo。',
+      '4. 安装版与绿色版都把数据写在程序同级 data\\，目录必须可写。',
       '5. 可用 WHICHVIDEO_DATA_DIR 环境变量显式指定数据位置。',
       ''
     ].join('\r\n'),

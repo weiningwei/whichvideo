@@ -29,24 +29,30 @@ fn main() {
             }
         }))
         .setup(|app| {
-            let app_default = app.path().app_data_dir()?;
+            let legacy_app_data = app.path().app_data_dir()?;
             #[cfg(windows)]
-            let default_dir = std::env::var_os("APPDATA")
+            let legacy_app_data = std::env::var_os("APPDATA")
                 .map(std::path::PathBuf::from)
                 .map(|p| p.join("WhichVideo"))
-                .unwrap_or(app_default);
-            #[cfg(not(windows))]
-            let default_dir = app_default;
-            let resolution = db::initialize_data_dir(default_dir, !cfg!(debug_assertions))?;
+                .unwrap_or(legacy_app_data);
+            let resolution = db::initialize_data_dir(legacy_app_data)?;
             let log_path = logger::init(&resolution.dir);
             logger::install_panic_hook();
             logger::log(&format!(
-                "数据目录：{}（portable={} source={}）",
+                "数据目录：{}（source={}）",
                 resolution.dir.display(),
-                resolution.portable,
                 resolution.source
             ));
             logger::log(&format!("日志文件：{}", log_path.display()));
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .first()
+                .ok_or_else(|| "缺少主窗口配置".to_string())?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?
+                .data_directory(resolution.dir.join("session"))
+                .build()?;
             app.manage(AppState::new());
             if let Err(error) = watcher::sync_all(app.handle()) {
                 logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
