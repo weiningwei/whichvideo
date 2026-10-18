@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SearchMatch, SearchResponse, VideoRecord } from '@shared/types'
-import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel, shortPath } from '../lib/format'
+import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel } from '../lib/format'
 
 interface Props {
   search: SearchResponse | null
@@ -9,7 +9,6 @@ interface Props {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
-  roots: string[]
   onPickImageFile: () => Promise<string[]>
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
@@ -32,7 +31,6 @@ export function SearchView(props: Props) {
     queryImage,
     queryLabel,
     hasIndexedFrames,
-    roots,
     onPickImageFile,
     onSearchPath,
     onSearchDataUrl,
@@ -252,7 +250,6 @@ export function SearchView(props: Props) {
             <ResultCard
               key={match.video.id}
               match={match}
-              roots={roots}
               onOpen={props.onOpen}
               onReveal={props.onReveal}
               onReindex={props.onReindex}
@@ -274,13 +271,11 @@ export function SearchView(props: Props) {
 
 function ResultCard({
   match,
-  roots,
   onOpen,
   onReveal,
   onReindex
 }: {
   match: SearchMatch
-  roots: string[]
   onOpen: (id: number, atSeconds?: number) => void
   onReveal: (id: number) => void
   onReindex: (id: number) => void
@@ -317,11 +312,6 @@ function ResultCard({
   }, [video])
 
   const available = video.status === 'ready' && video.frameCount > 0
-  const localPath = useMemo(() => {
-    const dir = shortPath(video.path, roots)
-    return dir
-  }, [video.path, roots])
-
   return (
     <div className="card group flex gap-3 overflow-hidden p-3 transition hover:border-accent/40">
       <div className="relative h-[86px] w-[150px] shrink-0 overflow-hidden rounded-lg border border-line bg-surface-inset">
@@ -343,8 +333,8 @@ function ResultCard({
             <div className="truncate text-[13px] font-medium text-primary" title={video.path}>
               {video.name}
             </div>
-            <div className="truncate text-[11px] text-muted" title={video.path}>
-              {localPath}
+            <div className="truncate text-[11px] text-muted" title={video.dir}>
+              {video.dir}
             </div>
           </div>
           <div className="shrink-0 text-right">

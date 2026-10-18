@@ -121,7 +121,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('状态栏空闲时只显示简短状态', statusHtml.includes('就绪') && !statusHtml.includes('拖入图片'))
 
   console.log('\n=== 搜图页 ===')
-  const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, roots: [folder.path], onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }
+  const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }
   const emptySearch = render(jsx(SearchView, { ...searchBase, search: null }))
   check('首屏只有一个清晰主任务', emptySearch.includes('用一张图，找到视频') && emptySearch.includes('选择图片') && emptySearch.includes('粘贴截图'))
   check('支持拖放、链接和本地隐私提示', emptySearch.includes('拖放图片') && emptySearch.includes('粘贴图片或网页链接') && emptySearch.includes('所有比对都在本机完成'))
@@ -130,6 +130,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const hitHtml = render(jsx(SearchView, { ...searchBase, search: hit, queryLabel: 'query.png' }))
   check('命中态给出简短结论', hitHtml.includes('找到了') && hitHtml.includes(video.name))
   check('结果保留相似度、时间与播放定位', hitHtml.includes('96%') && hitHtml.includes('2:00') && hitHtml.includes('处播放') && hitHtml.includes('定位文件'))
+  check('搜图结果直接显示视频目录而不重复文件名', hitHtml.includes(`title="${video.dir}">${video.dir}</div>`))
   const miss = { ...hit, matchCount: 0, found: false, matches: [] }
   check('未命中态文案简洁', render(jsx(SearchView, { ...searchBase, search: miss })).includes('没有找到相似画面'))
 

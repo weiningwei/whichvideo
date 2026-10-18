@@ -85,7 +85,6 @@ export default function App() {
             queryLabel={state.queryLabel}
             hasIndexedFrames={hasIndexedFrames}
             onReSearch={reSearch}
-            roots={state.folders.map((f) => f.path)}
             onPickImageFile={() => window.whichvideo.videos.importImages()}
             onSearchPath={(path) => void runSearch({ path })}
             onSearchDataUrl={(dataUrl, label) =>
