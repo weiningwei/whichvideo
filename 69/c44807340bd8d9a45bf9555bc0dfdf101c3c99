@@ -1,0 +1,21 @@
+src/renderer/src/components/DuplicatesModal.tsx
+  s_e78e0118ab4232::t_be65c0945f6e3c 81,89-92,119
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_be65c0945f6e3c 85,106-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69c44807340bd8d9a45bf9555bc0dfdf101c3c99",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
