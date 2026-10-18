@@ -1,0 +1,25 @@
+AGENTS.md
+  s_e78e0118ab4232::t_5b8ba86078f15b 29,42,44,93,95-98
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_10dcc71b935b5a 45-47
+README.md
+  s_e78e0118ab4232::t_5b8ba86078f15b 29,106-107,125,220,228,319,333
+  s_e78e0118ab4232::t_faa89e20fde766 131
+  s_e78e0118ab4232::t_10dcc71b935b5a 133-134,179-180,192-194,206-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b528c04ec1c173f959018fb414b692c42972735c",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
