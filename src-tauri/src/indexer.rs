@@ -718,6 +718,10 @@ fn stat_file(path: &str) -> (i64, i64) {
     }
 }
 
+fn can_reuse_file_hash(stored_size: i64, stored_mtime: i64, size: i64, mtime: i64) -> bool {
+    size > 0 && mtime > 0 && stored_size == size && stored_mtime == mtime
+}
+
 pub fn is_video_file(name: &str) -> bool {
     let dot = match name.rfind('.') {
         Some(d) => d,
@@ -769,17 +773,16 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         result.skipped += 1;
         return;
     }
-    let probe = {
+    let existing = {
         let mut guard = state.db.lock().unwrap();
         match guard.as_mut() {
-            Some(c) => db::find_by_path(c, &path)
-                .ok()
-                .flatten()
-                .filter(|v| v.duration.is_some())
-                .map(|v| (v.duration, v.width, v.height, v.video_codec)),
+            Some(c) => db::find_by_path(c, &path).ok().flatten(),
             None => None,
         }
     };
+    let probe = existing.as_ref()
+        .filter(|v| v.duration.is_some())
+        .map(|v| (v.duration, v.width, v.height, v.video_codec.clone()));
     let (duration, width, height, codec) = match probe {
         Some(p) => p,
         None => match media::probe_video(&path) {
@@ -790,8 +793,11 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
             }
         },
     };
-    let file_hash = media::sha256_of_file(&path).ok();
     let (size, mtime) = stat_file(&path);
+    let file_hash = existing.as_ref()
+        .filter(|v| can_reuse_file_hash(v.size, v.mtime_ms, size, mtime))
+        .and_then(|v| v.file_hash.clone())
+        .or_else(|| media::sha256_of_file(&path).ok());
     let input = db::UpsertVideoInput {
         path: path.clone(),
         size,
@@ -979,7 +985,7 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{consider_thumbnail_frame, plan_detected_scenes, resume_start_index, IndexerState};
+    use super::{can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, resume_start_index, IndexerState};
     use crate::media::RawFrame;
 
     #[test]
@@ -997,6 +1003,14 @@ mod tests {
         consider_thumbnail_frame(&mut selected, &frame(11.5, 3), 12.0);
         consider_thumbnail_frame(&mut selected, &frame(13.0, 4), 12.0);
         assert_eq!(selected.unwrap().rgb, vec![3; 12]);
+    }
+
+    #[test]
+    fn file_hash_is_reused_only_for_exact_file_metadata_match() {
+        assert!(can_reuse_file_hash(100, 1234, 100, 1234));
+        assert!(!can_reuse_file_hash(100, 1234, 101, 1234));
+        assert!(!can_reuse_file_hash(100, 1234, 100, 1235));
+        assert!(!can_reuse_file_hash(0, 0, 0, 0));
     }
 
     #[test]
