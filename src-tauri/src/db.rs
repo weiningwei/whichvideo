@@ -7,6 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// 与 src/shared/types.ts 的 LibraryStats 对齐（serde rename 输出 camelCase）。
 #[derive(Serialize, Clone)]
@@ -209,9 +210,7 @@ pub fn open_db() -> SqlResult<Connection> {
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("whichvideo.db");
     let conn = Connection::open(path)?;
-    let _ = conn.pragma_update(None, "journal_mode", "WAL");
-    let _ = conn.pragma_update(None, "synchronous", "NORMAL");
-    let _ = conn.pragma_update(None, "foreign_keys", "ON");
+    configure_connection(&conn)?;
     conn.execute_batch(SCHEMA)?;
     // 兼容早期数据库：补齐可能缺失的列（已有则 ALTER 报错并忽略）。
     for stmt in [
@@ -221,6 +220,16 @@ pub fn open_db() -> SqlResult<Connection> {
         let _ = conn.execute(stmt, []);
     }
     Ok(conn)
+}
+
+/// 每个 SQLite 连接都必须有相同的事务约束。配置失败时宁可让启动明确报错，
+/// 也不要静默退回到可能损坏关联数据或频繁报 `database is locked` 的默认设置。
+fn configure_connection(conn: &Connection) -> SqlResult<()> {
+    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    Ok(())
 }
 
 pub fn stats(conn: &Connection) -> SqlResult<LibraryStats> {
@@ -1299,6 +1308,20 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn database_connection_configuration_enforces_constraints_and_waits_for_locks() {
+        let conn = Connection::open_in_memory().unwrap();
+        configure_connection(&conn).unwrap();
+        let foreign_keys: i64 = conn
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .unwrap();
+        let busy_timeout: i64 = conn
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+        assert_eq!(busy_timeout, 5_000);
+    }
 
     #[test]
     fn resetting_frame_progress_clears_frames_and_resume_markers_together() {
