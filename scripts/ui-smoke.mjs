@@ -150,6 +150,9 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     isVideoSelected: () => false
   }))
   check('默认只显示可展开的导入目录，不铺满视频文件', library.includes('Movies') && library.includes('aria-expanded="false"') && !library.includes(`播放 ${video.name}`))
+  const pausedFolder = { ...folder, enabled: false, watchState: 'idle' }
+  const pausedLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [pausedFolder] }))
+  check('文件夹行显示实际监视状态', library.includes('监听中') && pausedLibrary.includes('已暂停') && !pausedLibrary.includes('自动同步'))
   check('显式提供文件夹和全部视频视图', library.includes('文件夹</button>') && library.includes('全部视频</button>'))
   check('主操作收进单个添加菜单入口', library.includes('＋ 添加') && !library.includes('导入文件夹'))
   check('工具栏保持搜索、状态筛选和排序', libraryUnselected.includes('搜索视频') && libraryUnselected.includes('全部状态') && libraryUnselected.includes('最近添加'))

@@ -219,7 +219,13 @@ export function LibraryView(props: Props) {
                     </button>
                   </td>
                   <td className="sticky right-0 border-b border-line/50 bg-surface-1 px-3 text-right text-[10.5px] text-tertiary">
-                    {row.node.folder && !row.node.folder.pinned ? '一次性导入' : row.node.folder ? '自动同步' : ''}
+                    {row.node.folder && !row.node.folder.pinned
+                      ? '一次性导入'
+                      : row.node.folder
+                        ? row.node.folder.enabled
+                          ? (STATE_STYLE[row.node.folder.watchState]?.text ?? '待监听')
+                          : '已暂停'
+                        : ''}
                   </td>
                 </tr>
               ) : (
