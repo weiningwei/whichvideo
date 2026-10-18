@@ -6,7 +6,7 @@ import { formatBytes, formatDuration, formatPercent } from '../lib/format'
 interface DuplicatesModalProps {
   duplicates: DuplicatePair[]
   onClose: () => void
-  onRemoveVideos: (ids: number[]) => void
+  onRemoveVideos: (ids: number[]) => Promise<number[]>
   /** 移除成功后回调，让父组件从结果集里剔除含这些视频的 pair（结果与库同步） */
   onPrune: (removedIds: number[]) => void
 }
@@ -22,6 +22,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
   // 每组用户指定的保留项（videoId）；未指定时用组默认（体积最大）。
   // 移除后对应 id 自动清除。
   const [keptIds, setKeptIds] = useState<Set<number>>(new Set())
+  const [removingGroupId, setRemovingGroupId] = useState<string | null>(null)
 
   return (
     <div
@@ -112,7 +113,8 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       className="btn btn-danger px-2 py-1 text-[11px] hover:bg-bad/10"
-                      onClick={() => {
+                      disabled={removingGroupId !== null}
+                      onClick={async () => {
                         const ids = toRemove.map((m) => m.id)
                         if (
                           !window.confirm(
@@ -121,16 +123,23 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                         ) {
                           return
                         }
-                        onRemoveVideos(ids)
-                        onPrune(ids)
-                        setKeptIds((prev) => {
-                          const next = new Set(prev)
-                          for (const id of ids) next.delete(id)
-                          return next
-                        })
+                        setRemovingGroupId(group.id)
+                        try {
+                          const removedIds = await onRemoveVideos(ids)
+                          if (removedIds.length > 0) {
+                            onPrune(removedIds)
+                            setKeptIds((prev) => {
+                              const next = new Set(prev)
+                              for (const id of removedIds) next.delete(id)
+                              return next
+                            })
+                          }
+                        } finally {
+                          setRemovingGroupId(null)
+                        }
                       }}
                     >
-                      移除其余 {toRemove.length} 个（保留 {keep.name}）
+                      {removingGroupId === group.id ? '正在移除…' : `移除其余 ${toRemove.length} 个（保留 ${keep.name}）`}
                     </button>
                   </div>
                 )}

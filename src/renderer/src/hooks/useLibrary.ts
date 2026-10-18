@@ -174,11 +174,20 @@ export function useLibrary() {
        * 没 await，N 个请求并发交错。这里串行逐条调 IPC，最后统一刷新一次；
        * 后端广播的 video-removed 事件会由 useVideoList 逐条就地删行。
        */
-      async removeVideos(videoIds: number[]): Promise<void> {
+      async removeVideos(videoIds: number[]): Promise<number[]> {
+        const removedIds: number[] = []
         await withBusy(`正在从库中移除 ${videoIds.length} 个视频…`, async () => {
-          for (const id of videoIds) await window.whichvideo.videos.remove(id)
-          await refreshAll()
+          try {
+            for (const id of videoIds) {
+              await window.whichvideo.videos.remove(id)
+              removedIds.push(id)
+            }
+          } finally {
+            // 中途失败也要刷新已成功移除的记录，不能留下陈旧计数。
+            if (removedIds.length > 0) await refreshAll()
+          }
         })
+        return removedIds
       },
       async reindex(videoIds?: number[], mode?: SamplingMode): Promise<void> {
         await withBusy('正在重建索引…', async () => {

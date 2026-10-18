@@ -119,7 +119,7 @@ export default function App() {
               onOpen={(id, atSeconds) => void actions.openVideo(id, atSeconds)}
               onReveal={(id) => void actions.revealVideo(id)}
               onRemoveVideo={(id) => void actions.removeVideo(id)}
-              onRemoveVideos={(ids) => void actions.removeVideos(ids)}
+              onRemoveVideos={(ids) => actions.removeVideos(ids)}
               onReindex={(ids, mode) => void actions.reindex(ids, mode)}
               globalSampling={state.settings?.samplingMode ?? 'uniform'}
               onFindDuplicates={(minScore) => actions.findDuplicates(minScore)}

@@ -29,7 +29,7 @@ interface Props {
   onOpen: (videoId: number, atSeconds?: number) => void
   onReveal: (videoId: number) => void
   onRemoveVideo: (videoId: number) => void
-  onRemoveVideos: (videoIds: number[]) => void
+  onRemoveVideos: (videoIds: number[]) => Promise<number[]>
   onReindex: (videoIds?: number[], mode?: SamplingMode) => void
   /** 全局采样模式（视频行未设覆盖时的生效值） */
   globalSampling: 'uniform' | 'scene'
