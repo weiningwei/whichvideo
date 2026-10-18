@@ -1,0 +1,24 @@
+src-tauri/src/media.rs
+  s_e78e0118ab4232::t_af1bb4ba048124 140,142-143,598-607,782,790-795,1153,1177-1180,1187-1191,1193-1196,1202-1203
+  s_e78e0118ab4232::t_1ef67bfeccb155 550
+  s_e78e0118ab4232::t_513fccce29319e 551,1192,1197-1201
+  s_e78e0118ab4232::t_8be836b2e08f82 18-21,549,582-590,593-597,608-644,646-648,652-657,661
+  s_e78e0118ab4232::t_4fcc1c4aa0ce2d 1181-1186
+  s_e78e0118ab4232::t_5481d622d39800 1204-1205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcfd22d0eb830147914a2d3837429d9fd99d92b7",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
