@@ -137,6 +137,14 @@ check(
     watcherSource.includes('indexer::cancel(app') &&
     watcherSource.includes('rebuild_search_index(app)')
 )
+check(
+  '耗时图片检索在线程池运行且不持锁执行 FFmpeg',
+  ['search_path', 'search_data_url', 'search_clipboard', 'search_url'].every((name) =>
+    commandsSource.includes(`pub async fn ${name}`)
+  ) &&
+    (commandsSource.match(/spawn_blocking\(/g) ?? []).length >= 5 &&
+    commandsSource.includes('let videos: HashMap<i64, db::VideoRecord>')
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(

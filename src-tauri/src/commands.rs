@@ -11,9 +11,8 @@ use crate::search;
 use crate::state::AppState;
 use crate::watcher;
 use base64::Engine;
-use rusqlite::Connection;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -819,14 +818,18 @@ fn decode_data_url(data_url: &str) -> Option<Vec<u8>> {
 
 /// 二阶段验证重排：对粗召回的前 RERANK_TOP_K 个命中解码其命中帧，做像素级 SSIM，
 /// 与粗打分凸组合后重排。解码失败（文件已删/时间点越界）保持原分数不惩罚。
-fn rerank_matches(conn: &Connection, qild: &hash::ImageDataLike, hits: &mut [search::IndexedHit]) {
+fn rerank_matches(
+    videos: &HashMap<i64, db::VideoRecord>,
+    qild: &hash::ImageDataLike,
+    hits: &mut [search::IndexedHit],
+) {
     if hits.len() <= 1 {
         return;
     }
     let head_len = hits.len().min(RERANK_TOP_K);
     for i in 0..head_len {
         let (vid, t, old_score) = (hits[i].video_id, hits[i].time_seconds, hits[i].score);
-        let video = match db::get_video(conn, vid).ok().flatten() {
+        let video = match videos.get(&vid) {
             Some(v) => v,
             None => continue,
         };
@@ -911,31 +914,57 @@ fn refine_hit_time(qv: &search::QueryVector, video: &db::VideoRecord, hit: &mut 
 
 /// 检索编排：重建索引 → 粗召回 → SSIM 重排 → 命中时间精修 → 构造响应。
 fn perform_search(
-    conn: &Connection,
-    index: &search::FrameSearchIndex,
+    state: &AppState,
     qv: &search::QueryVector,
     qild: &hash::ImageDataLike,
     qw: u32,
     qh: u32,
-) -> SearchResponse {
+) -> Result<SearchResponse, String> {
     let started = std::time::SystemTime::now();
-    let settings = db::get_settings(conn).unwrap_or_default();
+    let settings = {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_settings(conn).unwrap_or_else(|_| db::default_settings())
+    };
     let candidate_limit = (settings.max_results as usize).max(RERANK_TOP_K);
 
-    let (mut results, compared) = index.search(
-        qv,
-        &search::SearchOptions {
-            min_hash_score: settings.min_hash_score,
-            max_results: candidate_limit,
-        },
-    );
+    let (mut results, compared) = {
+        let index = state.search_index.lock().map_err(|e| e.to_string())?;
+        index.search(
+            qv,
+            &search::SearchOptions {
+                min_hash_score: settings.min_hash_score,
+                max_results: candidate_limit,
+            },
+        )
+    };
 
-    rerank_matches(conn, qild, &mut results);
+    // 后续重排/精修会多次启动 FFmpeg，先把候选视频快照出来，绝不能在这些
+    // 外部进程运行期间持有全局 SQLite 互斥锁。
+    let videos: HashMap<i64, db::VideoRecord> = {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        results
+            .iter()
+            .filter_map(|hit| {
+                db::get_video(conn, hit.video_id)
+                    .ok()
+                    .flatten()
+                    .map(|video| (video.id, video))
+            })
+            .collect()
+    };
+
+    rerank_matches(&videos, qild, &mut results);
 
     // 命中时间精修：只对最佳命中做（补采 2×4+1 帧逐点 seek），把显示时间从
     // 「最近采样帧」对准到「真实截图帧」。
     if let Some(top) = results.first_mut() {
-        if let Some(video) = db::get_video(conn, top.video_id).ok().flatten() {
+        if let Some(video) = videos.get(&top.video_id) {
             refine_hit_time(qv, &video, top);
         }
     }
@@ -944,7 +973,7 @@ fn perform_search(
         .iter()
         .take(settings.max_results as usize)
         .filter_map(|hit| {
-            let video = db::get_video(conn, hit.video_id).ok()??;
+            let video = videos.get(&hit.video_id)?.clone();
             Some(SearchMatch {
                 video,
                 score: round4(hit.score),
@@ -963,7 +992,7 @@ fn perform_search(
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
 
-    SearchResponse {
+    Ok(SearchResponse {
         query: SearchQuery {
             width: qw,
             height: qh,
@@ -977,12 +1006,18 @@ fn perform_search(
         error: None,
         error_code: None,
         query_image_url: None,
-    }
+    })
 }
 
 /// 从文件检索。
 #[tauri::command]
-pub fn search_path(state: State<AppState>, file_path: String) -> Result<SearchResponse, String> {
+pub async fn search_path(app: AppHandle, file_path: String) -> Result<SearchResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || search_path_sync(&app, file_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn search_path_sync(app: &AppHandle, file_path: String) -> Result<SearchResponse, String> {
     let img = match image::open(&file_path) {
         Ok(i) => i,
         Err(e) => return Ok(fail_response("decode-failed", &format!("无法读取图片：{e}"))),
@@ -1000,24 +1035,25 @@ pub fn search_path(state: State<AppState>, file_path: String) -> Result<SearchRe
         order: hash::ChannelOrder::Rgb,
         data: &buf,
     };
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let index = state.search_index.lock().map_err(|e| e.to_string())?;
-    Ok(perform_search(
-        conn,
-        &index,
+    let state = app.state::<AppState>();
+    perform_search(
+        state.inner(),
         &qv,
         &ild,
         source_width,
         source_height,
-    ))
+    )
 }
 
 /// 从 data URL 检索（拖入/粘贴的 base64 图片）。
 #[tauri::command]
-pub fn search_data_url(state: State<AppState>, data_url: String) -> Result<SearchResponse, String> {
+pub async fn search_data_url(app: AppHandle, data_url: String) -> Result<SearchResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || search_data_url_sync(&app, data_url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn search_data_url_sync(app: &AppHandle, data_url: String) -> Result<SearchResponse, String> {
     let bytes = match decode_data_url(&data_url) {
         Some(b) => b,
         None => return Ok(fail_response("decode-failed", "无法解析图片数据")),
@@ -1039,24 +1075,25 @@ pub fn search_data_url(state: State<AppState>, data_url: String) -> Result<Searc
         order: hash::ChannelOrder::Rgb,
         data: &buf,
     };
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let index = state.search_index.lock().map_err(|e| e.to_string())?;
-    Ok(perform_search(
-        conn,
-        &index,
+    let state = app.state::<AppState>();
+    perform_search(
+        state.inner(),
         &qv,
         &ild,
         source_width,
         source_height,
-    ))
+    )
 }
 
 /// 从系统剪贴板检索。剪贴板无图片时返回 null（调用方据此显示空态）。
 #[tauri::command]
-pub fn search_clipboard(state: State<AppState>) -> Result<Option<ClipboardSearchResult>, String> {
+pub async fn search_clipboard(app: AppHandle) -> Result<Option<ClipboardSearchResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || search_clipboard_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult>, String> {
     let png = match read_clipboard_image_png() {
         Some(p) => p,
         None => return Ok(None),
@@ -1088,19 +1125,14 @@ pub fn search_clipboard(state: State<AppState>) -> Result<Option<ClipboardSearch
         order: hash::ChannelOrder::Rgb,
         data: &buf,
     };
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let index = state.search_index.lock().map_err(|e| e.to_string())?;
+    let state = app.state::<AppState>();
     let response = perform_search(
-        conn,
-        &index,
+        state.inner(),
         &qv,
         &ild,
         source_width,
         source_height,
-    );
+    )?;
     Ok(Some(ClipboardSearchResult {
         data_url: Some(data_url),
         response,
@@ -1109,7 +1141,13 @@ pub fn search_clipboard(state: State<AppState>) -> Result<Option<ClipboardSearch
 
 /// 从 http(s) 链接检索（图片直链或普通网页里解析出的主图）。失败时 error 字段说明原因。
 #[tauri::command]
-pub fn search_url(state: State<AppState>, url: String) -> Result<SearchResponse, String> {
+pub async fn search_url(app: AppHandle, url: String) -> Result<SearchResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || search_url_sync(&app, url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn search_url_sync(app: &AppHandle, url: String) -> Result<SearchResponse, String> {
     let (bytes, final_url) = match fetch_image_from_url(&url) {
         Ok(v) => v,
         Err((code, msg)) => return Ok(fail_response(&code, &msg)),
@@ -1136,19 +1174,14 @@ pub fn search_url(state: State<AppState>, url: String) -> Result<SearchResponse,
         order: hash::ChannelOrder::Rgb,
         data: &buf,
     };
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let index = state.search_index.lock().map_err(|e| e.to_string())?;
+    let state = app.state::<AppState>();
     let mut response = perform_search(
-        conn,
-        &index,
+        state.inner(),
         &qv,
         &ild,
         source_width,
         source_height,
-    );
+    )?;
     response.query_image_url = Some(final_url);
     Ok(response)
 }
