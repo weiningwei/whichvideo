@@ -13,7 +13,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{OnceLock, RwLock};
 
 #[derive(Clone, Default)]
@@ -667,7 +667,11 @@ pub struct RawFrame {
 
 /// 检测场景切换时间点（秒，升序）。只有选中的场景帧经过 showinfo；
 /// 不输出全帧进度日志（run_ffmpeg 同步等待退出，无法实时消费该进度）。
-pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String> {
+pub fn detect_scenes(
+    file_path: &str,
+    threshold: f64,
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<f64>, String> {
     let args = vec![
         "-hide_banner".to_string(),
         "-v".to_string(),
@@ -686,7 +690,7 @@ pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String
         "null".to_string(),
         "-".to_string(),
     ];
-    let out = run_ffmpeg(&args)?;
+    let out = run_ffmpeg_null_output_cancellable(&args, cancelled)?;
     if !out.success {
         return Err(format!(
             "场景检测失败（退出码非 0）：{}",
@@ -694,6 +698,57 @@ pub fn detect_scenes(file_path: &str, threshold: f64) -> Result<Vec<f64>, String
         ));
     }
     Ok(parse_scene_times(&out.stderr))
+}
+
+/// 场景检测没有 stdout 数据；持续读取 stderr 防止管道塞满，并允许索引取消时终止子进程。
+fn run_ffmpeg_null_output_cancellable(
+    args: &[String],
+    cancelled: impl Fn() -> bool,
+) -> Result<FfmpegOutput, String> {
+    if cancelled() {
+        return Err("场景检测已取消".to_string());
+    }
+    let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    let mut child = Command::new(&tools.ffmpeg)
+        .no_window()
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
+    let mut stderr_pipe = child.stderr.take().ok_or_else(|| "无法读取 ffmpeg 日志".to_string())?;
+    let stderr_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr_pipe.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let status = loop {
+        if cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stderr_reader.join();
+            return Err("场景检测已取消".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stderr_reader.join();
+                return Err(format!("等待 ffmpeg 失败：{e}"));
+            }
+        }
+    };
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "读取 ffmpeg 日志的线程失败".to_string())?
+        .map_err(|e| format!("读取 ffmpeg 日志失败：{e}"))?;
+    Ok(FfmpegOutput {
+        success: status.success(),
+        stdout: Vec::new(),
+        stderr: String::from_utf8_lossy(&stderr).to_string(),
+    })
 }
 
 fn parse_scene_times(stderr: &str) -> Vec<f64> {
@@ -1031,8 +1086,29 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_scene_times, parse_showinfo, sha256_of_file};
+    use super::{detect_scenes, parse_scene_times, parse_showinfo, resolve_tools, run_ffmpeg_null_output_cancellable, sha256_of_file};
     use std::fs;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn cancelled_scene_detection_does_not_start_ffmpeg() {
+        assert_eq!(detect_scenes("missing.mp4", 0.3, || true).unwrap_err(), "场景检测已取消");
+    }
+
+    #[test]
+    fn running_scene_detection_can_be_cancelled() {
+        if resolve_tools().is_none() {
+            return; // CI 不要求安装 FFmpeg；有工具的开发机覆盖实际进程取消。
+        }
+        let args = [
+            "-hide_banner", "-v", "error", "-nostdin", "-re", "-f", "lavfi",
+            "-i", "testsrc2=size=16x16:rate=30:duration=10", "-f", "null", "-",
+        ].map(str::to_string);
+        let started = Instant::now();
+        let result = run_ffmpeg_null_output_cancellable(&args, || started.elapsed() >= Duration::from_millis(150));
+        assert_eq!(result.err().as_deref(), Some("场景检测已取消"));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
 
     #[test]
     fn scene_times_accept_showinfo_filter_index_other_than_zero() {

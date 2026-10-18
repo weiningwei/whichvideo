@@ -462,7 +462,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     set_sampling_override(&app, &[video_id], &effective);
     let (timestamps, force_seek) = if effective == "scene" {
         set_frame_progress(&app, video_id, 0, duration.unwrap_or(0.0).round() as i64, Some("detecting"));
-        match media::detect_scenes(&video.path, 0.3) {
+        match media::detect_scenes(&video.path, 0.3, || is_cancelled(&app, video_id)) {
             Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.frames_per_video as usize),
             Err(e) => {
                 if is_cancelled(&app, video_id) {
