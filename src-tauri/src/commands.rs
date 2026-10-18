@@ -904,6 +904,10 @@ fn refinement_decode_times(candidates: &[f64], cached_center: bool) -> &[f64] {
     if cached_center { &candidates[1..] } else { candidates }
 }
 
+fn refinement_center_matches_hit(candidates: &[f64], hit_time: f64) -> bool {
+    candidates.first().is_some_and(|time| (time - hit_time).abs() < 0.001)
+}
+
 fn score_refinement_frame(qv: &search::QueryVector, frame: &media::RawFrame) -> f64 {
     let ild = hash::ImageDataLike {
         width: frame.width,
@@ -928,6 +932,7 @@ fn refine_hit_time(
     if candidates.len() <= 1 {
         return;
     }
+    let cached_center = cached_center.filter(|_| refinement_center_matches_hit(&candidates, hit.time_seconds));
     let decode_times = refinement_decode_times(&candidates, cached_center.is_some());
     let frames = match media::extract_and_hash_frames(
         &video.path,
@@ -1320,6 +1325,8 @@ mod tests {
         let candidates = [10.0, 9.5, 10.5];
         assert_eq!(refinement_decode_times(&candidates, true), &[9.5, 10.5]);
         assert_eq!(refinement_decode_times(&candidates, false), &candidates);
+        assert!(refinement_center_matches_hit(&candidates, 10.0));
+        assert!(!refinement_center_matches_hit(&candidates, 12.0));
     }
 
     #[test]
