@@ -249,7 +249,15 @@ pub fn stats(conn: &Connection) -> SqlResult<LibraryStats> {
 
 /// 路径规范化：统一成 Windows 反斜杠并去掉尾部反斜杠（镜像 types.ts::normalizePath）。
 pub fn normalize_path(p: &str) -> String {
-    p.replace('/', "\\").trim_end_matches('\\').to_string()
+    let normalized = p.replace('/', "\\");
+    let bytes = normalized.as_bytes();
+    if bytes.len() >= 3
+        && bytes[1] == b':'
+        && bytes[2..].iter().all(|byte| *byte == b'\\')
+    {
+        return normalized[..3].to_string();
+    }
+    normalized.trim_end_matches('\\').to_string()
 }
 
 /// 比较用 key（镜像 types.ts::pathKeyOf）。
@@ -1204,6 +1212,13 @@ mod tests {
         let installed = resolve_data_dir(None, exe);
         assert_eq!(installed.dir, exe.join("data"));
         assert_eq!(installed.source, "install");
+    }
+
+    #[test]
+    fn path_normalization_preserves_windows_drive_roots() {
+        assert_eq!(normalize_path("C:\\"), "C:\\");
+        assert_eq!(normalize_path("D:////"), "D:\\");
+        assert_eq!(normalize_path("C:\\Media\\\\"), "C:\\Media");
     }
 
     #[test]

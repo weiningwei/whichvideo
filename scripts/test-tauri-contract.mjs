@@ -46,6 +46,11 @@ check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electr
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
 check(
+  '前后端路径规范化保留 Windows 盘符根目录',
+  shared.includes("/^[a-z]:\\\\+$/i.test(normalized)") &&
+    dbSource.includes("return normalized[..3].to_string()")
+)
+check(
   'FFmpeg 支持环境变量、手动目录与 PATH 探测',
   mediaSource.includes('WHICHVIDEO_FFMPEG') &&
     mediaSource.includes('WHICHVIDEO_BIN_DIR') &&

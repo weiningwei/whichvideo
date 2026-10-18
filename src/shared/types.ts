@@ -347,7 +347,9 @@ export function isImageFile(filePath: string): boolean {
 
 /** 把路径统一成 Windows 原生形式并生成比较用的 key */
 export function normalizePath(p: string): string {
-  return p.replace(/\//g, '\\').replace(/\\+$/, '')
+  const normalized = p.replace(/\//g, '\\')
+  if (/^[a-z]:\\+$/i.test(normalized)) return normalized.slice(0, 3)
+  return normalized.replace(/\\+$/, '')
 }
 
 export function pathKeyOf(p: string): string {
