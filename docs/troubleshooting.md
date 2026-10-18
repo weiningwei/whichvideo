@@ -92,7 +92,7 @@ pwsh -File scripts/lib/who-locks-dir.ps1 -Path dist\WhichVideo-portable -All
 ```
 
 便携构建会尽量保留旧目录中的 `data`。即便如此，替换产物前仍建议备份该目录；不要手工删除
-用户数据来解决构建占用。可用 `WHICHVIDEO_PORTABLE_DIR` 指定另一个输出目录。
+用户数据来解决构建占用。可用 `WHICHVIDEO_RELEASE_DIR` 指定另一个输出根目录。
 
 ## 日志和诊断材料
 
