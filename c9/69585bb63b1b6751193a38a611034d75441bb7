@@ -1,0 +1,30 @@
+package.json
+  s_e78e0118ab4232::t_27c455e5ee591f 22,30
+scripts/check-release.mjs
+  s_e78e0118ab4232::t_27c455e5ee591f 1-26
+.github/workflows/ci.yml
+  s_e78e0118ab4232::t_5153d517074800 1-30
+.github/workflows/release.yml
+  s_e78e0118ab4232::t_5153d517074800 1-117
+.github/release.yml
+  s_e78e0118ab4232::t_5153d517074800 1-11
+docs/releases/v0.1.0.md
+  s_e78e0118ab4232::t_27c455e5ee591f 1-12,20-28
+  s_e78e0118ab4232::t_05347c410dde39 13-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c969585bb63b1b6751193a38a611034d75441bb7",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
