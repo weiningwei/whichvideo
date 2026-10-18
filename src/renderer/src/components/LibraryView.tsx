@@ -83,11 +83,11 @@ export function LibraryView(props: Props) {
   }
 
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
-  const explorerRoots = useMemo(() => buildExplorerTree(folders, videos), [folders, videos])
+  const explorerTree = useMemo(() => buildExplorerTree(folders, videos), [folders, videos])
   const filtering = Boolean(query.keyword?.trim()) || (query.status != null && query.status !== 'all')
   const rows = useMemo(
-    () => treeVisible ? visibleExplorerRows(filtering ? explorerRoots.filter((root) => root.count > 0) : explorerRoots, expandedPaths, filtering, closedFilteredPaths) : videos.map((video) => ({ type: 'video' as const, video, depth: 0 })),
-    [treeVisible, explorerRoots, expandedPaths, filtering, closedFilteredPaths, videos]
+    () => treeVisible ? visibleExplorerRows(filtering ? { ...explorerTree, folders: explorerTree.folders.filter((root) => root.count > 0) } : explorerTree, expandedPaths, filtering, closedFilteredPaths) : videos.map((video) => ({ type: 'video' as const, video, depth: 0 })),
+    [treeVisible, explorerTree, expandedPaths, filtering, closedFilteredPaths, videos]
   )
   const shownVideos = useMemo(() => rows.flatMap((row) => row.type === 'video' ? [row.video] : []), [rows])
   useEffect(() => { props.setSelectionOrder(shownVideos.map((video) => video.id)) }, [props.setSelectionOrder, shownVideos])

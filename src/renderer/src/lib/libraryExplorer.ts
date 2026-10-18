@@ -16,6 +16,11 @@ export interface ExplorerNode {
   count: number
 }
 
+export interface ExplorerTree {
+  folders: ExplorerNode[]
+  looseVideos: VideoRecord[]
+}
+
 export type ExplorerRow =
   | { type: 'folder'; node: ExplorerNode; depth: number }
   | { type: 'video'; video: VideoRecord; depth: number }
@@ -26,33 +31,21 @@ function contains(root: string, dir: string): boolean {
   const b = key(dir)
   return b === a || b.startsWith(a.endsWith('\\') ? a : a + '\\')
 }
-function nameOf(path: string): string {
-  return normalizeDirPath(path).split(/[\\/]/).filter(Boolean).pop() || path
-}
-
-/** 将已登记的导入目录和旧数据中的未归属目录统一建为可展开的目录树。 */
-export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[]): ExplorerNode[] {
+/** 只有明确导入的文件夹形成目录节点；单独导入的视频留在顶层。 */
+export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[]): ExplorerTree {
   const roots: ExplorerNode[] = folders.map((folder) => ({
     path: normalizeDirPath(folder.path), name: folder.name, folder,
     children: [], videos: [], count: 0
   }))
   const byFolderId = new Map(folders.map((folder, i) => [folder.id, roots[i]]))
-  const byPath = new Map(roots.map((root) => [key(root.path), root]))
+  const looseVideos: VideoRecord[] = []
 
   for (const video of videos) {
     const dir = normalizeDirPath(video.dir)
-    let root = video.folderId == null ? undefined : byFolderId.get(video.folderId)
+    const root = video.folderId == null ? undefined : byFolderId.get(video.folderId)
     if (!root || !contains(root.path, dir)) {
-      root = roots.filter((candidate) => contains(candidate.path, dir))
-        .sort((a, b) => b.path.length - a.path.length)[0]
-    }
-    if (!root) {
-      root = byPath.get(key(dir))
-      if (!root) {
-        root = { path: dir, name: nameOf(dir), folder: null, children: [], videos: [], count: 0 }
-        roots.push(root)
-        byPath.set(key(dir), root)
-      }
+      looseVideos.push(video)
+      continue
     }
     root.count++
     let node = root
@@ -74,10 +67,10 @@ export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[
     nodes.forEach((node) => sort(node.children))
   }
   sort(roots)
-  return roots
+  return { folders: roots, looseVideos }
 }
 
-export function visibleExplorerRows(roots: ExplorerNode[], expanded: Set<string>, revealAll = false, forcedClosed = new Set<string>()): ExplorerRow[] {
+export function visibleExplorerRows(tree: ExplorerTree, expanded: Set<string>, revealAll = false, forcedClosed = new Set<string>()): ExplorerRow[] {
   const rows: ExplorerRow[] = []
   const visit = (node: ExplorerNode, depth: number) => {
     rows.push({ type: 'folder', node, depth })
@@ -85,7 +78,8 @@ export function visibleExplorerRows(roots: ExplorerNode[], expanded: Set<string>
     node.children.forEach((child) => visit(child, depth + 1))
     node.videos.forEach((video) => rows.push({ type: 'video', video, depth: depth + 1 }))
   }
-  roots.forEach((root) => visit(root, 0))
+  tree.folders.forEach((root) => visit(root, 0))
+  tree.looseVideos.forEach((video) => rows.push({ type: 'video', video, depth: 0 }))
   return rows
 }
 

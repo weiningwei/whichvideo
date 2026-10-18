@@ -168,7 +168,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const oneTime = { ...folder, id: 2, pinned: false, enabled: false }
   const importedRoots = explorer.buildExplorerTree([oneTime], [{ ...video, folderId: 2 }])
   const legacyRoots = explorer.buildExplorerTree([], [{ ...video, folderId: null }])
-  check('一次性导入和旧库视频都能归入文件夹', importedRoots.length === 1 && importedRoots[0].folder?.id === 2 && importedRoots[0].count === 1 && legacyRoots.length === 1 && legacyRoots[0].path === video.dir)
+  const directInWatchedDir = explorer.buildExplorerTree([folder], [{ ...video, folderId: null }])
+  check('一次性导入保留文件夹，单独导入视频留在顶层', importedRoots.folders.length === 1 && importedRoots.folders[0].folder?.id === 2 && importedRoots.folders[0].count === 1 && legacyRoots.looseVideos[0]?.id === video.id && directInWatchedDir.looseVideos[0]?.id === video.id)
 
   const source = (name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
   const toolbarSource = source('Toolbar.tsx')
