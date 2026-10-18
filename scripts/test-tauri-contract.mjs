@@ -72,6 +72,8 @@ const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\
 const foldersAddPathCommand = commandsSource.match(/pub fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''
 const foldersRemoveCommand = commandsSource.match(/pub fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
 const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enabled\([\s\S]*?\n}\n\n\/\/\/ 单个视频记录/)?.[0] ?? ''
+const foldersAddDialogCommand = commandsSource.match(/pub async fn folders_add_dialog\([\s\S]*?\n}\n\n\/\/\/ 删除一个/)?.[0] ?? ''
+const foldersRescanCommand = commandsSource.match(/pub fn folders_rescan\([\s\S]*?\n}\n\n\/\/\/ 启用\/停用/)?.[0] ?? ''
 const videosRemoveCommand = commandsSource.match(/pub fn videos_remove\([\s\S]*?\n}\n\n\/\/\/ 在资源管理器/)?.[0] ?? ''
 const libraryResetCommand = commandsSource.match(/pub fn library_reset\([\s\S]*?\n}\n\n\/\/\/ 打开数据目录/)?.[0] ?? ''
 check(
@@ -105,6 +107,13 @@ check(
   '拖放添加监听文件夹会立即扫描已有视频',
   foldersAddPathCommand.includes('indexer::import_folder') &&
     foldersAddPathCommand.includes('watcher::sync_all(&app)?')
+)
+check(
+  '文件夹导入与重扫不会静默吞掉错误',
+  !foldersAddDialogCommand.includes('Err(_) => {}') &&
+    foldersAddDialogCommand.includes('watcher::sync_all(&app)?') &&
+    !foldersRescanCommand.includes('if let Ok((result') &&
+    foldersRescanCommand.includes('watcher::sync_all(&app)?')
 )
 check(
   '删除视频会取消后台索引并广播删除事件',

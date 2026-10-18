@@ -73,20 +73,16 @@ pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>
     logger::log(&format!("[import] 已选择 {} 个监视文件夹", picked.len()));
     let mut folders = Vec::new();
     for dir in picked {
-        match indexer::import_folder(app.clone(), dir, true, true) {
-            Ok((_, id)) => {
-                let state = app.state::<AppState>();
-                let g = state.db.lock().map_err(|e| e.to_string())?;
-                if let Some(c) = g.as_ref() {
-                    if let Ok(Some(f)) = db::get_folder(c, id) {
-                        folders.push(f);
-                    }
-                }
-            }
-            Err(_) => {}
-        }
+        let (_, id) = indexer::import_folder(app.clone(), dir, true, true)?;
+        let state = app.state::<AppState>();
+        let g = state.db.lock().map_err(|e| e.to_string())?;
+        let c = g.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let folder = db::get_folder(c, id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "文件夹登记后无法读取".to_string())?;
+        folders.push(folder);
     }
-    let _ = watcher::sync_all(&app);
+    watcher::sync_all(&app)?;
     logger::log(&format!("[import] 已登记 {} 个监视文件夹", folders.len()));
     Ok(folders)
 }
@@ -134,17 +130,15 @@ pub fn folders_rescan(
             }
             continue;
         }
-        if let Ok((result, _)) =
-            indexer::import_folder(app.clone(), folder.path.clone(), folder.pinned, folder.recursive)
-        {
-            total.added += result.added;
-            total.duplicates += result.duplicates;
-            total.skipped += result.skipped;
-            total.scanned += result.scanned;
-            total.folders += result.folders;
-        }
+        let (result, _) =
+            indexer::import_folder(app.clone(), folder.path.clone(), folder.pinned, folder.recursive)?;
+        total.added += result.added;
+        total.duplicates += result.duplicates;
+        total.skipped += result.skipped;
+        total.scanned += result.scanned;
+        total.folders += result.folders;
     }
-    let _ = watcher::sync_all(&app);
+    watcher::sync_all(&app)?;
     Ok(total)
 }
 
