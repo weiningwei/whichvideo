@@ -13,7 +13,59 @@ use notify::event::{EventKind, RemoveKind};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
+
+static CHANGE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static PENDING_CHANGES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+fn pending_changes() -> &'static Mutex<HashMap<String, u64>> {
+    PENDING_CHANGES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn watcher_settings(app: &AppHandle) -> db::AppSettings {
+    let state = app.state::<AppState>();
+    state
+        .db
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().and_then(|conn| db::get_settings(conn).ok()))
+        .unwrap_or_else(db::default_settings)
+}
+
+fn forget_pending(path: &str) {
+    let key = db::normalize_path(path).to_lowercase();
+    if let Ok(mut pending) = pending_changes().lock() {
+        pending.remove(&key);
+    }
+}
+
+/// notify 在文件复制期间会连续发送 Create/Modify。只让最后一个事件在用户配置的
+/// 稳定等待期后触发导入，避免对尚未写完的大文件反复 probe/hash。
+fn schedule_import(app: &AppHandle, folder_id: i64, path: String) {
+    let key = db::normalize_path(&path).to_lowercase();
+    let ticket = CHANGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut pending) = pending_changes().lock() {
+        pending.insert(key.clone(), ticket);
+    }
+    let wait_ms = watcher_settings(app).await_write_ms.clamp(0, 60_000) as u64;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(wait_ms));
+        let is_latest = pending_changes()
+            .lock()
+            .ok()
+            .and_then(|mut pending| {
+                (pending.get(&key) == Some(&ticket)).then(|| pending.remove(&key))
+            })
+            .is_some();
+        if is_latest && Path::new(&path).is_file() {
+            indexer::import_files(app, vec![path], Some(folder_id));
+        }
+    });
+}
 
 /// 把当前启用的文件夹同步成实际的监听集合：启动新增、停止已停用/已移除的。
 pub fn sync_all(app: &AppHandle) -> Result<(), String> {
@@ -96,7 +148,7 @@ fn handle_event(app: &AppHandle, folder_id: i64, event: Event) {
                 let p = path.to_string_lossy().to_string();
                 if indexer::is_video_file(&p) {
                     let norm = db::normalize_path(&p);
-                    indexer::import_files(app.clone(), vec![norm], Some(folder_id));
+                    schedule_import(app, folder_id, norm);
                 }
             }
         }
@@ -104,14 +156,19 @@ fn handle_event(app: &AppHandle, folder_id: i64, event: Event) {
             for path in &event.paths {
                 let p = path.to_string_lossy().to_string();
                 if indexer::is_video_file(&p) {
-                    remove_by_path(app, &p);
+                    forget_pending(&p);
+                    if watcher_settings(app).prune_on_delete {
+                        remove_by_path(app, &p);
+                    }
                 }
             }
         }
         EventKind::Remove(RemoveKind::Folder) => {
             for path in &event.paths {
                 let p = path.to_string_lossy().to_string();
-                remove_under(app, &p);
+                if watcher_settings(app).prune_on_delete {
+                    remove_under(app, &p);
+                }
             }
         }
         _ => {}

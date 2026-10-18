@@ -12,6 +12,7 @@ const mediaSource = readFileSync(join(root, 'src-tauri', 'src', 'media.rs'), 'ut
 const dbSource = readFileSync(join(root, 'src-tauri', 'src', 'db.rs'), 'utf8')
 const portableSource = readFileSync(join(root, 'scripts', 'build-tauri-portable.mjs'), 'utf8')
 const processExt = readFileSync(join(root, 'src-tauri', 'src', 'process_ext.rs'), 'utf8')
+const watcherSource = readFileSync(join(root, 'src-tauri', 'src', 'watcher.rs'), 'utf8')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readFileSync(join(root, 'src-tauri', 'src', name), 'utf8'))
   .join('\n')
@@ -105,6 +106,12 @@ check(
   '清空资料库会停止监听并取消全部索引任务',
   libraryResetCommand.includes('watcher::stop_all(&app)?') &&
     libraryResetCommand.includes('indexer::cancel_all(&app)')
+)
+check(
+  '文件监听遵循写入等待与删除清理设置',
+  watcherSource.includes('await_write_ms') &&
+    watcherSource.includes('Duration::from_millis(wait_ms)') &&
+    watcherSource.includes('prune_on_delete')
 )
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
