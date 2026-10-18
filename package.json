@@ -27,6 +27,8 @@
     "test:clipboard": "node scripts/build-core.mjs && node scripts/test-clipboard.mjs",
     "test:pack": "node scripts/test-portable-builder.mjs",
     "test:tauri-portable": "node scripts/test-tauri-portable.mjs",
+    "test:rust": "node scripts/test-rust.mjs",
+    "test:tauri-contract": "node scripts/test-tauri-contract.mjs",
     "test:asar": "node scripts/test-asar-check.mjs",
     "bench:frames": "node scripts/build-core.mjs && node scripts/bench-frames.mjs",
     "bench:hash": "node scripts/build-core.mjs && node scripts/bench-hash-detail.mjs",
@@ -45,7 +47,7 @@
     "test:startup": "node scripts/build-core.mjs && node scripts/startup-smoke.mjs",
     "test:sampling": "node scripts/build-core.mjs && node scripts/test-sampling.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
-    "test": "npm run test:config && npm run test:output && npm run test:frames && npm run test:hash && npm run test:path && npm run test:url && npm run test:icon && npm run test:theme && npm run test:network && npm run test:cursor && npm run test:range && npm run test:url && npm run test:scale && npm run test:sampling && npm run test:startup && npm run test:core && npm run test:portable && npm run test:clipboard && npm run test:pack && npm run test:asar && npm run test:ui && npm run test:events",
+    "test": "npm run typecheck && npm run test:rust && npm run test:tauri-contract && npm run test:tauri-portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "rebuild:native": "electron-builder install-app-deps",
     "test:events": "node scripts/test-video-events.mjs"
   },
