@@ -1,0 +1,19 @@
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_c3c4454c430d32 463,466,474,478,661-668,956-965
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a634642ef42d5c4c6cc07657446cf53a5cedda3",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
