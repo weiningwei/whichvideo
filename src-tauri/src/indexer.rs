@@ -460,12 +460,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         .clone()
         .unwrap_or_else(|| settings.sampling_mode.clone());
     set_sampling_override(&app, &[video_id], &effective);
-    let force_seek = effective == "scene";
-
-    let timestamps = if force_seek {
+    let (timestamps, force_seek) = if effective == "scene" {
         set_frame_progress(&app, video_id, 0, duration.unwrap_or(0.0).round() as i64, Some("detecting"));
         match media::detect_scenes(&video.path, 0.3) {
-            Ok(scenes) => sampling::plan_scene_timestamps(&scenes, duration, settings.frames_per_video as usize),
+            Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.frames_per_video as usize),
             Err(e) => {
                 if is_cancelled(&app, video_id) {
                     finish_cancelled(app, video_id);
@@ -473,11 +471,11 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 }
                 log(&format!("场景检测失败，退回均匀采样：{e}"));
                 set_sampling_override(&app, &[video_id], "uniform");
-                sampling::plan_timestamps(duration, settings.frames_per_video as usize)
+                (sampling::plan_timestamps(duration, settings.frames_per_video as usize), false)
             }
         }
     } else {
-        sampling::plan_timestamps(duration, settings.frames_per_video as usize)
+        (sampling::plan_timestamps(duration, settings.frames_per_video as usize), false)
     };
     if is_cancelled(&app, video_id) {
         finish_cancelled(app, video_id);
@@ -657,6 +655,14 @@ fn resume_start_index(processed: &[i64], timestamps: &[f64], uses_full_scan: boo
         processed.len()
     } else {
         0
+    }
+}
+
+fn plan_detected_scenes(scenes: &[f64], duration: Option<f64>, budget: usize) -> (Vec<f64>, bool) {
+    if scenes.is_empty() {
+        (sampling::plan_timestamps(duration, budget), false)
+    } else {
+        (sampling::plan_scene_timestamps(scenes, duration, budget), true)
     }
 }
 
@@ -947,7 +953,16 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{resume_start_index, IndexerState};
+    use super::{plan_detected_scenes, resume_start_index, IndexerState};
+
+    #[test]
+    fn scene_detection_without_cuts_uses_uniform_extraction_path() {
+        let (timestamps, force_seek) = plan_detected_scenes(&[], Some(3600.0), 240);
+        assert_eq!(timestamps.len(), 240);
+        assert!(!force_seek);
+        let (_, force_seek_with_cuts) = plan_detected_scenes(&[120.0], Some(3600.0), 240);
+        assert!(force_seek_with_cuts);
+    }
 
     #[test]
     fn full_scan_restarts_instead_of_misaligning_partial_frames() {
