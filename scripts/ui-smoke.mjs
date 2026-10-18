@@ -111,6 +111,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('查重结果中同名文件显示各自目录', duplicateHtml.includes(video.dir) && duplicateHtml.includes(sameNameVideo.dir))
   const duplicatesSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'DuplicatesModal.tsx'), 'utf8')
   check('查重移除等待后端成功后才更新结果', duplicatesSource.includes('const removedIds = await onRemoveVideos(ids)') && duplicatesSource.includes('onPrune(removedIds)'))
+  const duplicateScanSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'Toolbar.tsx'), 'utf8')
+  check('查重失败不打开空结果并有错误通知', duplicateScanSource.includes('if (pairs !== null) onDuplicatesResolved(pairs)') && readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibrary.ts'), 'utf8').includes("withBusy('正在查找相似视频…'"))
 
   console.log('\n=== 全局框架 ===')
   const header = render(jsx(Header, { stats, status, tab: 'search', onTab: noop, busy: null, themeMode: 'dark', themeResolved: 'dark', onCycleTheme: noop, onShowShortcuts: noop }))

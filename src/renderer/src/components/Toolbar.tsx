@@ -15,7 +15,7 @@ interface ToolbarProps {
   onWatchFolder: () => void
   onManageFolders: () => void
   onOpenSettings: () => void
-  onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
+  onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[] | null>
   onDuplicatesResolved: (pairs: DuplicatePair[]) => void
   onReindex: (videoIds?: number[], mode?: SamplingMode) => void
   onRescan: (folderId?: number) => void
@@ -62,7 +62,9 @@ export function Toolbar(props: ToolbarProps) {
     if (scanningDuplicates) return
     setMoreOpen(false)
     setScanningDuplicates(true)
-    void onFindDuplicates().then(onDuplicatesResolved).finally(() => setScanningDuplicates(false))
+    void onFindDuplicates()
+      .then((pairs) => { if (pairs !== null) onDuplicatesResolved(pairs) })
+      .finally(() => setScanningDuplicates(false))
   }
 
   return (

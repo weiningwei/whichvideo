@@ -34,7 +34,7 @@ interface Props {
   /** 全局采样模式（视频行未设覆盖时的生效值） */
   globalSampling: 'uniform' | 'scene'
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
-  onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
+  onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[] | null>
   // 文件夹视图 / 平铺视图
   treeVisible: boolean
   onToggleTree: () => void

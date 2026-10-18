@@ -204,8 +204,8 @@ export function useLibrary() {
         })
       },
       /** 库内查重：代表帧跨视频互搜。耗时随库增大（每视频一次内存扫描）。 */
-      async findDuplicates(minScore?: number): Promise<DuplicatePair[]> {
-        return window.whichvideo.videos.findDuplicates(minScore)
+      async findDuplicates(minScore?: number): Promise<DuplicatePair[] | null> {
+        return withBusy('正在查找相似视频…', () => window.whichvideo.videos.findDuplicates(minScore))
       },
       async openVideo(videoId: number, atSeconds?: number): Promise<void> {
         await window.whichvideo.videos.openFile(videoId, atSeconds)
