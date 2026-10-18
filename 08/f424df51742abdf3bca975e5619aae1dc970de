@@ -1,0 +1,50 @@
+src/shared/types.ts
+  s_e78e0118ab4232::t_6517112ccaeeae 375-376,428
+src/renderer/src/components/LibraryView.tsx
+  s_e78e0118ab4232::t_6517112ccaeeae 23-24,234
+  s_e78e0118ab4232::t_1a8c338ae7cbcb 112
+README.md
+  s_e78e0118ab4232::t_6517112ccaeeae 87-90,153-154
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_1a8c338ae7cbcb 485,524
+  s_e78e0118ab4232::t_6517112ccaeeae 268,295-298
+src/renderer/src/components/Header.tsx
+  s_e78e0118ab4232::t_6517112ccaeeae 24,40,89,92,96-102
+  s_e78e0118ab4232::t_941a204037c01d 103
+src/renderer/src/lib/shortcuts.ts
+  s_e78e0118ab4232::t_6517112ccaeeae 80
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_6517112ccaeeae 90
+src/renderer/src/App.tsx
+  s_e78e0118ab4232::t_6517112ccaeeae 76-80,120-121
+src/renderer/src/hooks/useLibraryShortcuts.ts
+  s_e78e0118ab4232::t_1a8c338ae7cbcb 45,204
+  s_e78e0118ab4232::t_6517112ccaeeae 25,151
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_c78be30242362e 1103-1105
+  s_e78e0118ab4232::t_6517112ccaeeae 65-66,503-512,1099-1100,1102,1106,1138
+src/renderer/src/lib/tauri-api.ts
+  s_e78e0118ab4232::t_6517112ccaeeae 54
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_6517112ccaeeae 155-166
+src-tauri/src/indexer.rs
+  s_e78e0118ab4232::t_6517112ccaeeae 654-659
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_c78be30242362e 9-10,44-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08f424df51742abdf3bca975e5619aae1dc970de",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
