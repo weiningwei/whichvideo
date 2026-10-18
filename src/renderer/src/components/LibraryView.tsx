@@ -187,7 +187,7 @@ export function LibraryView(props: Props) {
                 <th className="w-32 whitespace-nowrap px-2 py-2 font-medium">状态</th>
                 <th className="w-16 whitespace-nowrap px-2 py-2 font-medium">时长</th>
                 <th className="w-[72px] whitespace-nowrap px-2 py-2 font-medium">大小</th>
-                <th className="sticky right-0 w-28 bg-surface-1 px-3 py-2 text-right font-medium">操作</th>
+                <th className="sticky right-0 w-20 bg-surface-1 px-3 py-2 text-right font-medium">操作</th>
               </tr>
             </thead>
             <tbody>

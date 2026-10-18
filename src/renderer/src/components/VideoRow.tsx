@@ -122,14 +122,15 @@ export function VideoRow({
       <td className={`sticky right-0 px-3 py-2 transition-colors ${rowBg}`} onClick={(e) => e.stopPropagation()}>
         <div className="relative flex items-center justify-end gap-1" data-video-menu={video.id}>
           <button className="icon-btn h-7 w-7 text-[11px]" onClick={() => onOpen(video.id)} title="播放" aria-label={`播放 ${video.name}`}>▶</button>
-          <button className="icon-btn h-7 w-7 text-[13px]" onClick={() => onReveal(video.id)} title="在资源管理器中显示" aria-label={`定位 ${video.name}`}>⌖</button>
           <button ref={menuButtonRef} className="icon-btn h-7 w-7 text-[15px]" onClick={onToggleMenu} title="更多" aria-expanded={menuOpen} aria-label={`更多操作 ${video.name}`}>···</button>
           {menuOpen && createPortal((() => {
             const rect = menuButtonRef.current?.getBoundingClientRect()
-            const top = rect ? (rect.bottom + 176 > window.innerHeight ? rect.top - 176 : rect.bottom + 4) : 0
+            const menuHeight = 200
+            const top = rect ? (rect.bottom + menuHeight > window.innerHeight ? Math.max(8, rect.top - menuHeight) : rect.bottom + 4) : 0
             const left = rect ? Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)) : 0
             return <div data-video-menu={video.id} className="popover fixed z-50 w-44 p-1.5 text-left" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
               <RowMenu label="查看索引帧" onClick={() => { onCloseMenu(); onViewFrames(video.id) }} />
+              <RowMenu label="在资源管理器中显示" onClick={() => { onCloseMenu(); onReveal(video.id) }} />
               <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
               <RowMenu label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
               <div className="my-1 border-t border-line" />
