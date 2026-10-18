@@ -118,6 +118,12 @@ check(
     watcherSource.includes('Duration::from_millis(wait_ms)') &&
     watcherSource.includes('prune_on_delete')
 )
+check(
+  '文件监听处理泛化删除事件并同步索引状态',
+  watcherSource.includes('EventKind::Remove(_)') &&
+    watcherSource.includes('indexer::cancel(app') &&
+    watcherSource.includes('rebuild_search_index(app)')
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(

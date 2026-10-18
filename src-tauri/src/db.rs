@@ -1174,26 +1174,50 @@ pub fn load_frame_matrix(conn: &Connection) -> SqlResult<FrameMatrix> {
     Ok(FrameMatrix { buffer, video_ids })
 }
 
-/// 删除某目录（含子目录）下的所有视频，返回被删 id 列表（frames 级联删除）。
-#[allow(dead_code)]
-pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> {
-    let key = path_key(&normalize_path(dir));
-    let prefix = format!("{}%", key);
+fn path_is_under(path: &str, directory: &str) -> bool {
+    path.strip_prefix(directory).is_some_and(|suffix| {
+        if directory.ends_with('\\') {
+            !suffix.is_empty()
+        } else {
+            suffix.starts_with('\\')
+        }
+    })
+}
+
+/// 列出某目录（含子目录）下的视频 id。路径边界在 Rust 中判断，避免 SQL LIKE
+/// 把 `C:\Media2` 误当作 `C:\Media` 的子目录，也避免反斜杠转义歧义。
+pub fn video_ids_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> {
+    let key = path_key(dir);
     let ids: Vec<i64> = {
-        let mut stmt = conn.prepare("SELECT id FROM videos WHERE path_key = ? OR path_key LIKE ? ESCAPE '\\'")?;
-        let rows = stmt.query_map([&key as &dyn rusqlite::ToSql, &prefix as &dyn rusqlite::ToSql], |row| row.get(0))?;
+        let mut stmt = conn.prepare("SELECT id, path_key FROM videos ORDER BY id")?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?;
         let mut v = Vec::new();
         for r in rows {
-            v.push(r?);
+            let (id, video_path) = r?;
+            if path_is_under(&video_path, &key) {
+                v.push(id);
+            }
         }
         v
     };
+    Ok(ids)
+}
+
+pub fn remove_video_ids(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
     if !ids.is_empty() {
         let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
         let sql = format!("DELETE FROM videos WHERE id IN ({})", placeholders.join(","));
         let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
         conn.execute(&sql, params.as_slice())?;
     }
+    Ok(())
+}
+
+/// 删除某目录（含子目录）下的所有视频，返回被删 id 列表（frames 级联删除）。
+#[allow(dead_code)]
+pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> {
+    let ids = video_ids_under(conn, dir)?;
+    remove_video_ids(conn, &ids)?;
     Ok(ids)
 }
 
@@ -1219,6 +1243,36 @@ mod tests {
         assert_eq!(normalize_path("C:\\"), "C:\\");
         assert_eq!(normalize_path("D:////"), "D:\\");
         assert_eq!(normalize_path("C:\\Media\\\\"), "C:\\Media");
+    }
+
+    #[test]
+    fn removing_a_directory_does_not_remove_similarly_prefixed_siblings() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        for (id, path) in [
+            (1_i64, "C:\\Media\\a.mp4"),
+            (2, "C:\\Media2\\b.mp4"),
+            (3, "C:\\Media\\Sub\\c.mp4"),
+        ] {
+            let input = UpsertVideoInput {
+                path: path.to_string(),
+                size: 1,
+                mtime_ms: 1,
+                duration: Some(1.0),
+                width: Some(1),
+                height: Some(1),
+                video_codec: None,
+                folder_id: None,
+                file_hash: None,
+            };
+            let (video, _, _) = upsert_video(&conn, &input).unwrap();
+            assert_eq!(video.id, id);
+        }
+
+        assert_eq!(remove_videos_under(&conn, "C:\\Media").unwrap(), vec![1, 3]);
+        assert!(get_video(&conn, 1).unwrap().is_none());
+        assert!(get_video(&conn, 3).unwrap().is_none());
+        assert!(get_video(&conn, 2).unwrap().is_some());
     }
 
     #[test]

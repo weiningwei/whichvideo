@@ -9,7 +9,7 @@ use crate::events::LibraryEvent;
 use crate::frames_store;
 use crate::indexer;
 use crate::state::AppState;
-use notify::event::{EventKind, RemoveKind};
+use notify::event::EventKind;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::Path;
@@ -152,21 +152,16 @@ fn handle_event(app: &AppHandle, folder_id: i64, event: Event) {
                 }
             }
         }
-        EventKind::Remove(RemoveKind::File) => {
-            for path in &event.paths {
-                let p = path.to_string_lossy().to_string();
-                if indexer::is_video_file(&p) {
-                    forget_pending(&p);
-                    if watcher_settings(app).prune_on_delete {
-                        remove_by_path(app, &p);
-                    }
-                }
+        EventKind::Remove(_) => {
+            if !watcher_settings(app).prune_on_delete {
+                return;
             }
-        }
-        EventKind::Remove(RemoveKind::Folder) => {
             for path in &event.paths {
                 let p = path.to_string_lossy().to_string();
-                if watcher_settings(app).prune_on_delete {
+                forget_pending(&p);
+                if indexer::is_video_file(&p) {
+                    remove_by_path(app, &p);
+                } else {
                     remove_under(app, &p);
                 }
             }
@@ -179,16 +174,23 @@ fn handle_event(app: &AppHandle, folder_id: i64, event: Event) {
 fn remove_by_path(app: &AppHandle, path: &str) {
     let norm = db::normalize_path(path);
     let state = app.state::<AppState>();
+    let existing = {
+        let g = state.db.lock();
+        match g {
+            Ok(guard) => guard
+                .as_ref()
+                .and_then(|c| db::find_by_path(c, &norm).ok().flatten()),
+            Err(_) => None,
+        }
+    };
+    let Some(existing) = existing else { return };
+    indexer::cancel(app, existing.id);
     let removed = {
         let g = state.db.lock();
         match g {
-            Ok(guard) => match guard.as_ref() {
-                Some(c) => match db::find_by_path(c, &norm) {
-                    Ok(Some(v)) => db::remove_video(c, v.id).ok().flatten(),
-                    _ => None,
-                },
-                None => None,
-            },
+            Ok(guard) => guard
+                .as_ref()
+                .and_then(|c| db::remove_video(c, existing.id).ok().flatten()),
             Err(_) => None,
         }
     };
@@ -201,6 +203,7 @@ fn remove_by_path(app: &AppHandle, path: &str) {
                 path: v.path.clone(),
             },
         );
+        rebuild_search_index(app);
     }
 }
 
@@ -211,22 +214,52 @@ fn remove_under(app: &AppHandle, dir: &str) {
     let ids = {
         let g = state.db.lock();
         match g {
-            Ok(guard) => match guard.as_ref() {
-                Some(c) => db::remove_videos_under(c, &norm).unwrap_or_default(),
-                None => Vec::new(),
-            },
+            Ok(guard) => guard
+                .as_ref()
+                .and_then(|c| db::video_ids_under(c, &norm).ok())
+                .unwrap_or_default(),
             Err(_) => Vec::new(),
         }
     };
-    for id in ids {
-        frames_store::remove_video(id);
+    for id in &ids {
+        indexer::cancel(app, *id);
+    }
+    {
+        let g = state.db.lock();
+        if let Ok(guard) = g {
+            if let Some(c) = guard.as_ref() {
+                let _ = db::remove_video_ids(c, &ids);
+            }
+        }
+    }
+    for id in &ids {
+        frames_store::remove_video(*id);
         let _ = app.emit(
             "library_event",
             LibraryEvent::VideoRemoved {
-                video_id: id,
+                video_id: *id,
                 path: String::new(),
             },
         );
+    }
+    if !ids.is_empty() {
+        rebuild_search_index(app);
+    }
+}
+
+fn rebuild_search_index(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let rebuilt = {
+        let guard = state.db.lock().ok();
+        guard
+            .as_ref()
+            .and_then(|guard| guard.as_ref())
+            .map(crate::search::FrameSearchIndex::rebuild_from_db)
+    };
+    if let Some(index) = rebuilt {
+        if let Ok(mut current) = state.search_index.lock() {
+            *current = index;
+        }
     }
 }
 
