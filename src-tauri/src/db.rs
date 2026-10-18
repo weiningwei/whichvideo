@@ -412,6 +412,13 @@ pub fn remove_folder(conn: &Connection, id: i64) -> SqlResult<bool> {
     Ok(n > 0)
 }
 
+/// 删除文件夹前列出其关联视频；不按路径猜测，避免误删单独导入的文件。
+pub fn folder_video_paths(conn: &Connection, folder_id: i64) -> SqlResult<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare("SELECT id, path FROM videos WHERE folder_id = ? ORDER BY id")?;
+    let rows = stmt.query_map([folder_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
+}
+
 /* ------------------------------------------------------------------ */
 /* 视频记录 / 查询 / 分页                                              */
 /* ------------------------------------------------------------------ */
@@ -1270,6 +1277,26 @@ mod tests {
         set_folder_enabled(&conn, watched.id, false).unwrap();
         // 手动重扫不得把用户暂停的监听重新打开。
         assert!(!insert_folder(&conn, "C:\\Media", true, true).unwrap().enabled);
+    }
+
+    #[test]
+    fn folder_removal_targets_only_linked_videos() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let folder = insert_imported_folder(&conn, "C:\\Media", true).unwrap();
+        for (path, folder_id) in [
+            ("C:\\Media\\linked.mp4", Some(folder.id)),
+            ("C:\\Media\\direct.mp4", None),
+        ] {
+            upsert_video(&conn, &UpsertVideoInput {
+                path: path.to_string(), size: 1, mtime_ms: 1,
+                duration: Some(1.0), width: Some(1), height: Some(1),
+                video_codec: None, folder_id, file_hash: None,
+            }).unwrap();
+        }
+        let linked = folder_video_paths(&conn, folder.id).unwrap();
+        assert_eq!(linked.len(), 1);
+        assert!(linked[0].1.ends_with("linked.mp4"));
     }
 
     #[test]

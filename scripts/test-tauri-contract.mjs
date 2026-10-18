@@ -72,7 +72,7 @@ const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\
 const foldersAddPathCommand = commandsSource.match(/pub fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''
 const foldersRemoveCommand = commandsSource.match(/pub fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
 const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enabled\([\s\S]*?\n}\n\n\/\/\/ 单个视频记录/)?.[0] ?? ''
-const foldersAddDialogCommand = commandsSource.match(/pub async fn folders_add_dialog\([\s\S]*?\n}\n\n\/\/\/ 删除一个/)?.[0] ?? ''
+const foldersAddDialogCommand = commandsSource.match(/pub async fn folders_add_dialog\([\s\S]*?\n}\n\n\/\/\/ 从索引库移除文件夹/)?.[0] ?? ''
 const foldersRescanCommand = commandsSource.match(/pub fn folders_rescan\([\s\S]*?\n}\n\n\/\/\/ 启用\/停用/)?.[0] ?? ''
 const videosRemoveCommand = commandsSource.match(/pub fn videos_remove\([\s\S]*?\n}\n\n\/\/\/ 在资源管理器/)?.[0] ?? ''
 const libraryResetCommand = commandsSource.match(/pub fn library_reset\([\s\S]*?\n}\n\n\/\/\/ 打开数据目录/)?.[0] ?? ''
@@ -115,6 +115,13 @@ check(
     foldersAddDialogCommand.includes('watcher::sync_all(&app)?') &&
     !foldersRescanCommand.includes('if let Ok((result') &&
     foldersRescanCommand.includes('watcher::sync_all(&app)?')
+)
+check(
+  '移除文件夹会删除关联视频索引但保留单独导入的视频',
+  foldersRemoveCommand.includes('db::folder_video_paths') &&
+    foldersRemoveCommand.includes('db::remove_video') &&
+    foldersRemoveCommand.includes('db::remove_folder') &&
+    dbSource.includes('WHERE folder_id = ? ORDER BY id')
 )
 check(
   '删除视频会取消后台索引并广播删除事件',

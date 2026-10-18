@@ -86,7 +86,7 @@ pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>
     Ok(folders)
 }
 
-/// 删除一个被监听的文件夹记录（视频记录保留，folder_id 自动置空）。
+/// 从索引库移除文件夹及其关联视频；磁盘文件不受影响。
 #[tauri::command]
 pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -94,9 +94,31 @@ pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
+    db::get_folder(conn, folder_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("文件夹不存在")?;
     drop(guard);
     watcher::stop(&app, folder_id)?;
+    let videos = {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or("数据库未初始化")?;
+        db::folder_video_paths(conn, folder_id).map_err(|e| e.to_string())?
+    };
+    for (id, _) in &videos { indexer::cancel(&app, *id); }
+    let (rebuilt, stats) = {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or("数据库未初始化")?;
+        for (id, _) in &videos { db::remove_video(conn, *id).map_err(|e| e.to_string())?; }
+        db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
+        (search::FrameSearchIndex::rebuild_from_db(conn), db::stats(conn).map_err(|e| e.to_string())?)
+    };
+    for (id, path) in videos {
+        frames_store::remove_video(id);
+        let _ = app.emit("library_event", events::LibraryEvent::VideoRemoved { video_id: id, path });
+    }
+    *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
+    let _ = app.emit("library_event", events::LibraryEvent::FolderRemoved { folder_id });
+    let _ = app.emit("library_event", events::LibraryEvent::Stats { stats });
     watcher::sync_all(&app)?;
     Ok(())
 }
