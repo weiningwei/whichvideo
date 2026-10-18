@@ -135,10 +135,11 @@ export function useVideoCursor({ videos, toggleVideoSelection }: UseVideoCursorA
    * @param shiftKey Shift：与上次选中的位置之间连选
    * @param ctrlKey Ctrl：只切换这一行的选中状态，其余行不动
    */
-  const toggleFocusedSelection = (shiftKey: boolean, ctrlKey: boolean) => {
+  const toggleFocusedSelection = (shiftKey: boolean, _ctrlKey: boolean) => {
     const item = navigableItems[focusedIndex]
     if (item && item.type === 'video' && item.video) {
-      toggleVideoSelection(item.video.id, shiftKey, ctrlKey)
+      // 空格是切换，不是普通单选；否则已选中时再按空格无法取消。
+      toggleVideoSelection(item.video.id, shiftKey, true)
     }
   }
 

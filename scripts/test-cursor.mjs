@@ -8,6 +8,9 @@
  * 这里复刻 moveCursor / jumpCursor 的核心算法（从 videoRowIndexes 上定位、
  * 按 Ctrl 决定动不动选中），喂各种边界情况看结果对不对。
  */
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /** 造一份与 LibraryView 同构的 navigableItems */
 function makeItems(ids, grouped) {
@@ -192,6 +195,9 @@ console.log('=== 点击后再连按方向键：从点击处连续走 ===')
   }
   check('点 12 后连按两次 ↓ 得到 12→13→14', JSON.stringify(seq) === '[12,13,14]', JSON.stringify(seq))
 }
+
+const cursorSource = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8')
+check('空格把选中当作切换而非普通单选', cursorSource.includes('toggleVideoSelection(item.video.id, shiftKey, true)'))
 
 console.log(`\n=== 光标行为：${pass}/${pass + fail} 通过 ===`)
 if (fail) process.exit(1)
