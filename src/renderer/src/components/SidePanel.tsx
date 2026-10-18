@@ -31,7 +31,7 @@ export function SidePanel({
             <div className="text-[14px] font-semibold text-primary">{foldersMode ? '管理文件夹' : '索引设置'}</div>
             {foldersMode && <div className="text-[10.5px] text-tertiary">{folderCount} 个目录</div>}
           </div>
-          {foldersMode && <button className="btn ml-auto py-1.5 text-[12px]" onClick={onAddFolder}>＋ 添加</button>}
+          {foldersMode && <button className="btn ml-auto py-1.5 text-[12px]" onClick={onAddFolder}>＋ 监视文件夹</button>}
           <button className="icon-btn ml-1" onClick={onClose} aria-label="关闭面板">×</button>
         </header>
         {foldersMode ? (

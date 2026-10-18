@@ -324,7 +324,7 @@ export function LibraryView(props: Props) {
           <>
             {folders.length === 0 && (
               <div className="rounded-xl border border-dashed border-line p-6 text-center text-[11.5px] text-tertiary">
-                将文件夹拖到这里，或点击添加
+                拖入文件夹将自动监视后续变化
               </div>
             )}
             <div className="flex flex-col gap-2">
