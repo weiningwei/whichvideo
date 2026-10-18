@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// 与 src/shared/types.ts 的 LibraryStats 对齐（serde rename 输出 camelCase）。
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryStats {
     pub videos: i64,
@@ -20,7 +20,7 @@ pub struct LibraryStats {
 }
 
 /// 与 src/shared/types.ts 的 WatchedFolder 对齐。
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchedFolder {
     pub id: i64,
@@ -180,7 +180,7 @@ pub fn stats(conn: &Connection) -> SqlResult<LibraryStats> {
 }
 
 /// 路径规范化：统一成 Windows 反斜杠并去掉尾部反斜杠（镜像 types.ts::normalizePath）。
-fn normalize_path(p: &str) -> String {
+pub fn normalize_path(p: &str) -> String {
     p.replace('/', "\\").trim_end_matches('\\').to_string()
 }
 
@@ -190,7 +190,7 @@ fn path_key(p: &str) -> String {
 }
 
 /// 当前毫秒时间戳（避免引入 chrono 依赖）。
-fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -331,7 +331,7 @@ pub fn remove_folder(conn: &Connection, id: i64) -> SqlResult<bool> {
 /* ------------------------------------------------------------------ */
 
 /// 与 src/shared/types.ts 的 VideoRecord 对齐（serde rename 输出 camelCase）。
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoRecord {
     pub id: i64,
@@ -388,7 +388,7 @@ pub struct FrameManifestEntry {
 }
 
 /// 与 src/shared/types.ts 的 AppSettings 对齐。
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub frames_per_video: i64,
@@ -633,7 +633,7 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
 /* ------------------------------------------------------------------ */
 
 /// 与 src/shared/types.ts 的 IndexerStatus 对齐。M7 接入真实索引器前先用闲置态。
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexerStatus {
     pub running: bool,
@@ -747,4 +747,273 @@ pub fn update_settings(conn: &mut Connection, patch: &SettingsPatch) -> SqlResul
 pub fn clear_all(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch("DELETE FROM frames; DELETE FROM videos; DELETE FROM image_folders;")?;
     Ok(())
+}
+
+/* ------------------------------------------------------------------ */
+/* 索引器写入                                                          */
+/* ------------------------------------------------------------------ */
+
+/// 单帧指纹落库形态（与 frames 表列一一对应）。dhash 以 i64 存储（BLOB 亲和列可容纳整数）。
+pub struct NewFrame {
+    pub dhash: i64,
+    pub struct_hash: Vec<u8>,
+    pub color: Vec<u8>,
+    pub spatial: Vec<u8>,
+    pub frame_index: i64,
+    pub time_ms: i64,
+}
+
+/// upsertVideo 的输入（仅含索引器会写/改的字段）。
+pub struct UpsertVideoInput {
+    pub path: String,
+    pub size: i64,
+    pub mtime_ms: i64,
+    pub duration: Option<f64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub video_codec: Option<String>,
+    pub folder_id: Option<i64>,
+    pub file_hash: Option<String>,
+}
+
+/// 按路径注册/更新一个视频，返回 (记录, 是否新建, 是否内容变化)。
+/// changed=true 的既有视频会被重新入队索引。镜像 db.upsertVideo。
+pub fn upsert_video(
+    conn: &Connection,
+    input: &UpsertVideoInput,
+) -> SqlResult<(VideoRecord, bool, bool)> {
+    let normalized = normalize_path(&input.path);
+    let key = path_key(&normalized);
+    let (name, dir, ext) = split_path(&normalized);
+
+    if let Some(existing) = find_folder_video_by_key(conn, &key)? {
+        // 既有：比较关键字段判断是否变化（内容变化 → 重抽）
+        let changed = existing.size != input.size
+            || (existing.mtime_ms - input.mtime_ms).abs() > 1000
+            || existing.duration != input.duration
+            || existing.width != input.width
+            || existing.height != input.height
+            || existing.video_codec != input.video_codec
+            || (existing.file_hash.is_none() && input.file_hash.is_some());
+        conn.execute(
+            "UPDATE videos SET size=?, mtime_ms=?, duration=?, width=?, height=?, video_codec=?, \
+             folder_id=?, file_hash=? WHERE id=?",
+            rusqlite::params![
+                input.size,
+                input.mtime_ms,
+                input.duration,
+                input.width,
+                input.height,
+                input.video_codec,
+                input.folder_id,
+                input.file_hash,
+                existing.id
+            ],
+        )?;
+        let refreshed = get_video(conn, existing.id)?.unwrap_or(existing);
+        Ok((refreshed, false, changed))
+    } else {
+        conn.execute(
+            "INSERT INTO videos (path, path_key, name, dir, ext, size, mtime_ms, duration, width, \
+             height, video_codec, status, added_at, folder_id, file_hash, processed_timestamps, \
+             processed_ms, frame_count) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, '[]', 0, 0)",
+            rusqlite::params![
+                normalized,
+                key,
+                name,
+                dir,
+                ext,
+                input.size,
+                input.mtime_ms,
+                input.duration,
+                input.width,
+                input.height,
+                input.video_codec,
+                now_ms(),
+                input.folder_id,
+                input.file_hash
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        let rec = get_video(conn, id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+        Ok((rec, true, true))
+    }
+}
+
+fn split_path(p: &str) -> (String, String, String) {
+    let path = std::path::Path::new(p);
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    let dir = path
+        .parent()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|e| format!(".{}", e.to_lowercase()))
+        .unwrap_or_default();
+    (name, dir, ext)
+}
+
+fn find_folder_video_by_key(conn: &Connection, key: &str) -> SqlResult<Option<VideoRecord>> {
+    let sql = format!("SELECT {} FROM videos WHERE path_key = ?", VIDEO_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query_map([key], row_to_video)?;
+    match rows.next() {
+        Some(r) => Ok(Some(r?)),
+        None => Ok(None),
+    }
+}
+
+/// 按路径查视频（pathKeyOf 规范化后比对）。
+pub fn find_by_path(conn: &Connection, path: &str) -> SqlResult<Option<VideoRecord>> {
+    let key = path_key(&normalize_path(path));
+    find_folder_video_by_key(conn, &key)
+}
+
+/// 设置视频状态（indexing/ready/failed/pending），可选写入错误信息。
+pub fn set_video_status(conn: &Connection, id: i64, status: &str, error: Option<&str>) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE videos SET status = ?, error = ? WHERE id = ?",
+        rusqlite::params![status, error, id],
+    )?;
+    Ok(())
+}
+
+/// 固化采样模式覆盖（sampling_override）。
+pub fn set_sampling_override(conn: &mut Connection, ids: &[i64], mode: &str) -> SqlResult<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    for &id in ids {
+        tx.execute(
+            "UPDATE videos SET sampling_override = ? WHERE id = ?",
+            rusqlite::params![mode, id],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// 清空若干视频的帧（重建索引前调用）。
+pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "DELETE FROM frames WHERE video_id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+    conn.execute(&sql, params.as_slice())?;
+    Ok(())
+}
+
+/// 写入已处理的时间点索引（断点续传）。
+pub fn update_processed_timestamps(conn: &Connection, id: i64, ts: &[i64]) -> SqlResult<()> {
+    let json = serde_json::to_string(ts).unwrap_or_else(|_| "[]".to_string());
+    conn.execute(
+        "UPDATE videos SET processed_timestamps = ? WHERE id = ?",
+        rusqlite::params![json, id],
+    )?;
+    Ok(())
+}
+
+/// 累加已处理耗时（断点续传跨会话累计）。
+pub fn add_processed_ms(conn: &Connection, id: i64, ms: i64) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE videos SET processed_ms = processed_ms + ? WHERE id = ?",
+        rusqlite::params![ms, id],
+    )?;
+    Ok(())
+}
+
+/// 标记索引完成：状态 ready + indexed_at + 帧数 + 缩略图。
+pub fn set_ready_with_thumbnail(
+    conn: &Connection,
+    id: i64,
+    thumbnail: Option<&[u8]>,
+) -> SqlResult<()> {
+    let frames: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM frames WHERE video_id = ?",
+        [id],
+        |row| row.get(0),
+    )?;
+    conn.execute(
+        "UPDATE videos SET status = 'ready', indexed_at = ?, frame_count = ?, thumbnail = ? WHERE id = ?",
+        rusqlite::params![now_ms(), frames, thumbnail, id],
+    )?;
+    Ok(())
+}
+
+/// 列出待处理视频（pending / indexing），启动恢复时用。
+#[allow(dead_code)]
+pub fn list_pending_videos(conn: &Connection) -> SqlResult<Vec<VideoRecord>> {
+    let sql = format!(
+        "SELECT {} FROM videos WHERE status IN ('pending','indexing') ORDER BY added_at ASC",
+        VIDEO_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], row_to_video)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// 增量写入一批帧指纹。
+pub fn upsert_frames_incremental(conn: &mut Connection, video_id: i64, frames: &[NewFrame]) -> SqlResult<()> {
+    if frames.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    for f in frames {
+        tx.execute(
+            "INSERT OR REPLACE INTO frames (video_id, frame_index, time_ms, dhash, struct, color, spatial) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                video_id,
+                f.frame_index,
+                f.time_ms,
+                f.dhash,
+                f.struct_hash,
+                f.color,
+                f.spatial
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// 删除某目录（含子目录）下的所有视频，返回被删 id 列表（frames 级联删除）。
+#[allow(dead_code)]
+pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> {
+    let key = path_key(&normalize_path(dir));
+    let prefix = format!("{}%", key);
+    let ids: Vec<i64> = {
+        let mut stmt = conn.prepare("SELECT id FROM videos WHERE path_key = ? OR path_key LIKE ? ESCAPE '\\'")?;
+        let rows = stmt.query_map([&key as &dyn rusqlite::ToSql, &prefix as &dyn rusqlite::ToSql], |row| row.get(0))?;
+        let mut v = Vec::new();
+        for r in rows {
+            v.push(r?);
+        }
+        v
+    };
+    if !ids.is_empty() {
+        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!("DELETE FROM videos WHERE id IN ({})", placeholders.join(","));
+        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+        conn.execute(&sql, params.as_slice())?;
+    }
+    Ok(ids)
 }

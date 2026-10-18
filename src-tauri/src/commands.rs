@@ -1,8 +1,10 @@
 use crate::db;
+use crate::events;
+use crate::indexer;
 use crate::media;
 use crate::state::AppState;
 use std::process::Command;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// 库统计：视频/帧/文件夹计数。复用现有 whichvideo.db。
 #[tauri::command]
@@ -12,6 +14,13 @@ pub fn library_stats(state: State<AppState>) -> Result<db::LibraryStats, String>
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::stats(conn).map_err(|e| e.to_string())
+}
+
+/// 索引器实时状态（取自共享受保护的状态）。
+#[tauri::command]
+pub fn library_status(state: State<AppState>) -> Result<db::IndexerStatus, String> {
+    let idx = state.indexer.lock().map_err(|e| e.to_string())?;
+    Ok(idx.status())
 }
 
 /// 监听文件夹列表。
@@ -37,6 +46,32 @@ pub fn folders_add_path(
     db::insert_folder(conn, &dir_path, true, true).map_err(|e| e.to_string())
 }
 
+/// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
+#[tauri::command]
+pub fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
+    let picked = pick_folder_dialog().ok_or_else(|| "未选择文件夹".to_string())?;
+    let mut folders = Vec::new();
+    for line in picked.lines() {
+        let dir = line.trim();
+        if dir.is_empty() {
+            continue;
+        }
+        match indexer::import_folder(app.clone(), dir.to_string(), true, true) {
+            Ok((_, id)) => {
+                let state = app.state::<AppState>();
+                let g = state.db.lock().map_err(|e| e.to_string())?;
+                if let Some(c) = g.as_ref() {
+                    if let Ok(Some(f)) = db::get_folder(c, id) {
+                        folders.push(f);
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    Ok(folders)
+}
+
 /// 删除一个被监听的文件夹记录（视频记录保留，folder_id 自动置空）。
 #[tauri::command]
 pub fn folders_remove(state: State<AppState>, folder_id: i64) -> Result<(), String> {
@@ -46,6 +81,47 @@ pub fn folders_remove(state: State<AppState>, folder_id: i64) -> Result<(), Stri
         .ok_or_else(|| "数据库未初始化".to_string())?;
     db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 重新扫描文件夹（folderId 缺省则全部），返回聚合结果。
+#[tauri::command]
+pub fn folders_rescan(
+    app: AppHandle,
+    folder_id: Option<i64>,
+) -> Result<events::ImportResult, String> {
+    let targets: Vec<db::WatchedFolder> = {
+        let state = app.state::<AppState>();
+        let g = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = g.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        match folder_id {
+            Some(id) => db::get_folder(conn, id).map_err(|e| e.to_string())?.into_iter().collect(),
+            None => db::list_folders(conn).map_err(|e| e.to_string())?,
+        }
+    };
+    let mut total = events::ImportResult::default();
+    for folder in &targets {
+        if !std::path::Path::new(&folder.path).exists() {
+            let state = app.state::<AppState>();
+            let g = state.db.lock().map_err(|e| e.to_string())?;
+            if let Some(c) = g.as_ref() {
+                let _ = db::update_folder_state(c, folder.id, "missing", Some("目录不存在"));
+                if let Ok(Some(f)) = db::get_folder(c, folder.id) {
+                    let _ = app.emit("library_event", events::LibraryEvent::FolderUpdated { folder: f });
+                }
+            }
+            continue;
+        }
+        if let Ok((result, _)) =
+            indexer::import_folder(app.clone(), folder.path.clone(), folder.pinned, folder.recursive)
+        {
+            total.added += result.added;
+            total.duplicates += result.duplicates;
+            total.skipped += result.skipped;
+            total.scanned += result.scanned;
+            total.folders += result.folders;
+        }
+    }
+    Ok(total)
 }
 
 /// 启用/停用文件夹监听，返回更新后的记录。
@@ -185,6 +261,68 @@ pub fn videos_frame_manifest(
     db::list_frame_manifest(conn, video_id).map_err(|e| e.to_string())
 }
 
+/// 单视频帧级进度（抽帧进行中实时回报）。
+#[tauri::command]
+pub fn videos_frame_progress(
+    app: AppHandle,
+    video_id: i64,
+) -> Result<Option<events::FrameProgress>, String> {
+    Ok(indexer::get_frame_progress(&app, video_id))
+}
+
+/// 通过系统文件选择对话框导入视频文件，返回聚合结果。
+#[tauri::command]
+pub fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
+    let files = pick_files_dialog(
+        "选择视频文件（可多选）",
+        "视频",
+        &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts", "mpg", "mpeg", "rmvb", "3gp"],
+    );
+    if files.is_empty() {
+        return Ok(events::ImportResult::default());
+    }
+    let result = indexer::import_files(app.clone(), files.clone(), None);
+    // 把所选文件所在目录也纳入监听，保证后续动态更新。
+    let mut dirs: Vec<String> = files
+        .iter()
+        .filter_map(|f| {
+            std::path::Path::new(f)
+                .parent()
+                .map(|p| db::normalize_path(&p.to_string_lossy()))
+        })
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    for d in dirs {
+        let _ = indexer::import_folder(app.clone(), d, true, true);
+    }
+    Ok(result)
+}
+
+/// 通过系统文件选择对话框选择要搜索的图片，返回归一化路径列表（不入库）。
+#[tauri::command]
+pub fn videos_import_images() -> Result<Vec<String>, String> {
+    let files = pick_files_dialog(
+        "选择要搜索的图片",
+        "图片",
+        &["jpg", "jpeg", "png", "webp", "bmp", "gif", "avif"],
+    );
+    Ok(files
+        .into_iter()
+        .map(|f| db::normalize_path(&f))
+        .collect())
+}
+
+/// 重建索引：按各视频当前记录的模式重抽（mode 仅指定时写入覆盖）。返回待处理视频数。
+#[tauri::command]
+pub fn videos_reindex(
+    app: AppHandle,
+    video_ids: Option<Vec<i64>>,
+    mode: Option<String>,
+) -> Result<i64, String> {
+    Ok(indexer::reindex(app, video_ids, mode))
+}
+
 /// 用户设置（合并默认值）。
 #[tauri::command]
 pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, String> {
@@ -233,8 +371,65 @@ pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
     Ok(db::data_dir_info(media::tools_ready()))
 }
 
-/// 索引器实时状态（M7 接入真实索引器前返回闲置态）。
-#[tauri::command]
-pub fn library_status() -> Result<db::IndexerStatus, String> {
-    Ok(db::idle_indexer_status())
+/* ================================================================== */
+/* 系统对话框（依赖 PowerShell，Windows 平台）                         */
+/* ================================================================== */
+
+#[cfg(windows)]
+fn run_powershell(script: &str) -> Option<String> {
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-STA", "-Command", script])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+#[cfg(windows)]
+fn pick_folder_dialog() -> Option<String> {
+    let script = "Add-Type -AssemblyName System.windows.forms; \
+        $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
+        $d.Description = '选择要导入并持续监听的文件夹'; \
+        if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }";
+    run_powershell(script)
+}
+
+#[cfg(windows)]
+fn pick_files_dialog(title: &str, filter_name: &str, exts: &[&str]) -> Vec<String> {
+    let filter = format!(
+        "{}|{}|全部文件|*.*",
+        filter_name,
+        exts.iter()
+            .map(|e| format!("*.{}", e))
+            .collect::<Vec<_>>()
+            .join(";")
+    );
+    let script = format!(
+        "Add-Type -AssemblyName System.windows.forms; \
+         $d = New-Object System.Windows.Forms.OpenFileDialog; \
+         $d.Multiselect = $true; $d.Title = '{}'; $d.Filter = '{}'; \
+         if ($d.ShowDialog() -eq 'OK') {{ $d.FileNames }}",
+        title.replace('\'', "''"),
+        filter.replace('\'', "''")
+    );
+    match run_powershell(&script) {
+        Some(out) => out
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+#[cfg(not(windows))]
+fn pick_folder_dialog() -> Option<String> {
+    None
+}
+
+#[cfg(not(windows))]
+fn pick_files_dialog(_title: &str, _filter_name: &str, _exts: &[&str]) -> Vec<String> {
+    Vec::new()
 }

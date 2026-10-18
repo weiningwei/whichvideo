@@ -3,8 +3,12 @@
 mod commands;
 mod constants;
 mod db;
+mod events;
+mod framepack;
 mod hash;
+mod indexer;
 mod media;
+mod sampling;
 mod state;
 
 use state::AppState;
@@ -31,7 +35,13 @@ fn main() {
             commands::videos_remove,
             commands::videos_reveal,
             commands::videos_open,
-            commands::videos_match_frame
+            commands::videos_match_frame,
+            commands::videos_frame_progress,
+            commands::folders_rescan,
+            commands::folders_add_dialog,
+            commands::videos_import,
+            commands::videos_import_images,
+            commands::videos_reindex
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

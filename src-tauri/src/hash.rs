@@ -10,6 +10,8 @@
 //! 索引器与搜索都依赖本模块：索引器把每帧算出四条指纹落库，搜索侧在内存里
 //! 比对。本文件不含 I/O，纯计算，便于单测。
 
+#![allow(dead_code)]
+
 pub const COLOR_BINS: usize = 64;
 pub const STRUCT_BYTES: usize = 128;
 pub const DHASH_BYTES: usize = 8;
@@ -133,13 +135,9 @@ pub fn to_gray(img: &ImageDataLike, w: usize, h: usize) -> GrayImage {
             let mut sum = 0f32;
             let mut count = 0usize;
             for sy in sy0..sy1 {
-                let base = sy * sw;
-                let mut idx = (base + sx0) * img.channels as usize;
                 for sx in sx0..sx1 {
-                    let _ = sx;
                     sum += luma_at(img, sx, sy);
                     count += 1;
-                    idx += img.channels as usize;
                 }
             }
             out[dy * w + dx] = if count > 0 { sum / count as f32 } else { 0.0 };
@@ -266,7 +264,7 @@ pub fn compute_color_histogram(img: &ImageDataLike) -> Vec<f32> {
     let ch = img.channels as usize;
     for y in (0..h).step_by(step) {
         let mut idx = y * w * ch;
-        for x in (0..w).step_by(step) {
+        for _ in (0..w).step_by(step) {
             let (r, g, b) = match img.order {
                 ChannelOrder::Rgb => (d[idx] as f32, d[idx + 1] as f32, d[idx + 2] as f32),
                 ChannelOrder::Bgr => (d[idx + 2] as f32, d[idx + 1] as f32, d[idx] as f32),

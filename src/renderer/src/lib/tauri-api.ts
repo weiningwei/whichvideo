@@ -12,6 +12,8 @@ import type {
   AppSettings,
   DataDirInfo,
   IndexerStatus,
+  ImportResult,
+  FrameProgress,
 } from '@shared/types'
 
 /**
@@ -38,10 +40,10 @@ export const tauriApi: WhichVideoApi = {
   },
   folders: {
     list: () => invoke<WatchedFolder[]>(IPC.foldersList),
-    addFromDialog: notImpl('folders.addFromDialog'),
+    addFromDialog: () => invoke<WatchedFolder[]>(IPC.foldersAddDialog),
     addPath: (dirPath) => invoke<WatchedFolder>(IPC.foldersAddPath, { dirPath }),
     remove: (folderId) => invoke<void>(IPC.foldersRemove, { folderId }),
-    rescan: notImpl('folders.rescan'),
+    rescan: (folderId) => invoke<ImportResult>(IPC.foldersRescan, { folderId }),
     setEnabled: (folderId, enabled) =>
       invoke<WatchedFolder>(IPC.foldersSetEnabled, { folderId, enabled }),
   },
@@ -49,14 +51,14 @@ export const tauriApi: WhichVideoApi = {
     list: (query) => invoke<VideoPage>(IPC.videosList, { query: query ?? {} }),
     get: (videoId) => invoke<VideoRecord | null>(IPC.videosGet, { videoId }),
     remove: (videoId) => invoke<void>(IPC.videosRemove, { videoId }),
-    reindex: notImpl('videos.reindex'),
+    reindex: (videoIds, mode) => invoke<{ count: number }>(IPC.videosReindex, { videoIds, mode }),
     findDuplicates: notImpl('videos.findDuplicates'),
-    importFiles: notImpl('videos.importFiles'),
-    importImages: notImpl('videos.importImages'),
+    importFiles: () => invoke<ImportResult>(IPC.videosImport),
+    importImages: () => invoke<string[]>(IPC.videosImportImages),
     openFile: (videoId, atSeconds) => invoke<void>(IPC.videosOpen, { videoId, atSeconds }),
     revealFile: (videoId) => invoke<void>(IPC.videosReveal, { videoId }),
     thumbnail: (videoId) => invoke<string | null>(IPC.videosThumbnail, { videoId }),
-    frameProgress: notImpl('videos.frameProgress'),
+    frameProgress: (videoId) => invoke<FrameProgress | null>(IPC.videosFrameProgress, { videoId }),
     frameManifest: (videoId) => invoke<FrameManifestEntry[]>(IPC.videosFrameManifest, { videoId }),
     matchFrame: (videoId, timeMs) => invoke<string | null>(IPC.videosMatchFrame, { videoId, timeMs }),
   },
