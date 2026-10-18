@@ -4,6 +4,7 @@ use crate::framepack;
 use crate::frames_store;
 use crate::hash;
 use crate::indexer;
+use crate::logger;
 use crate::media;
 use crate::process_ext::CommandNoWindow;
 use crate::search;
@@ -15,6 +16,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// 库统计：视频/帧/文件夹计数。复用现有 whichvideo.db。
 #[tauri::command]
@@ -61,16 +63,15 @@ pub fn folders_add_path(
 
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
 #[tauri::command]
-pub fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
-    let picked = pick_folder_dialog("选择要加入资料库并持续监视的文件夹")
-        .ok_or_else(|| "未选择文件夹".to_string())?;
+pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
+    let Some(picked) = native_folder_dialog(&app, "选择要加入资料库并持续监视的文件夹") else {
+        logger::log("[import] 监视文件夹选择已取消");
+        return Ok(Vec::new());
+    };
+    logger::log(&format!("[import] 已选择 {} 个监视文件夹", picked.len()));
     let mut folders = Vec::new();
-    for line in picked.lines() {
-        let dir = line.trim();
-        if dir.is_empty() {
-            continue;
-        }
-        match indexer::import_folder(app.clone(), dir.to_string(), true, true) {
+    for dir in picked {
+        match indexer::import_folder(app.clone(), dir, true, true) {
             Ok((_, id)) => {
                 let state = app.state::<AppState>();
                 let g = state.db.lock().map_err(|e| e.to_string())?;
@@ -84,6 +85,7 @@ pub fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, Stri
         }
     }
     let _ = watcher::sync_all(&app);
+    logger::log(&format!("[import] 已登记 {} 个监视文件夹", folders.len()));
     Ok(folders)
 }
 
@@ -491,31 +493,50 @@ pub fn videos_frame_progress(
 
 /// 通过系统文件选择对话框导入视频文件，返回聚合结果。
 #[tauri::command]
-pub fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
-    let files = pick_files_dialog(
+pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
+    let files = native_files_dialog(
+        &app,
         "选择视频文件（可多选）",
         "视频",
         &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts", "mpg", "mpeg", "rmvb", "3gp"],
     );
     if files.is_empty() {
+        logger::log("[import] 视频文件选择已取消");
         return Ok(events::ImportResult::default());
     }
-    Ok(indexer::import_files(app, files, None))
+    logger::log(&format!("[import] 已选择 {} 个视频文件", files.len()));
+    let result = indexer::import_files(app, files, None);
+    logger::log(&format!(
+        "[import] 视频文件导入完成：新增 {}，已存在 {}，跳过 {}",
+        result.added, result.duplicates, result.skipped
+    ));
+    Ok(result)
 }
 
 /// 递归导入一个文件夹，但不把它登记为监听目录。
 #[tauri::command]
-pub fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, String> {
-    let Some(dir) = pick_folder_dialog("选择要一次性导入的文件夹（不会持续监视）") else {
+pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, String> {
+    let Some(mut dirs) = native_folder_dialog(&app, "选择要一次性导入的文件夹（不会持续监视）") else {
+        logger::log("[import] 一次性文件夹选择已取消");
         return Ok(events::ImportResult::default());
     };
-    Ok(indexer::import_folder_once(app, dir.trim().to_string(), true))
+    let Some(dir) = dirs.pop() else {
+        return Ok(events::ImportResult::default());
+    };
+    logger::log(&format!("[import] 一次性导入文件夹：{dir}"));
+    let result = indexer::import_folder_once(app, dir, true);
+    logger::log(&format!(
+        "[import] 文件夹导入完成：扫描 {}，新增 {}，已存在 {}，跳过 {}",
+        result.scanned, result.added, result.duplicates, result.skipped
+    ));
+    Ok(result)
 }
 
 /// 通过系统文件选择对话框选择要搜索的图片，返回归一化路径列表（不入库）。
 #[tauri::command]
-pub fn videos_import_images() -> Result<Vec<String>, String> {
-    let files = pick_files_dialog(
+pub async fn videos_import_images(app: AppHandle) -> Result<Vec<String>, String> {
+    let files = native_files_dialog(
+        &app,
         "选择要搜索的图片",
         "图片",
         &["jpg", "jpeg", "png", "webp", "bmp", "gif", "avif"],
@@ -1079,8 +1100,37 @@ pub fn search_url(state: State<AppState>, url: String) -> Result<SearchResponse,
 }
 
 /* ================================================================== */
-/* 系统对话框（依赖 PowerShell，Windows 平台）                         */
+/* 系统对话框                                                          */
 /* ================================================================== */
+
+/// 使用 Tauri 原生对话框并绑定主窗口。PowerShell + CREATE_NO_WINDOW 在便携版里
+/// 会出现选择器未显示/未置前、最终返回空结果的问题。
+fn native_files_dialog(app: &AppHandle, title: &str, filter_name: &str, exts: &[&str]) -> Vec<String> {
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .add_filter(filter_name, exts);
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    dialog
+        .blocking_pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|path| path.into_path().ok())
+        .map(|path| db::normalize_path(&path.to_string_lossy()))
+        .collect()
+}
+
+fn native_folder_dialog(app: &AppHandle, title: &str) -> Option<Vec<String>> {
+    let mut dialog = app.dialog().file().set_title(title);
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    let path = dialog.blocking_pick_folder()?.into_path().ok()?;
+    Some(vec![db::normalize_path(&path.to_string_lossy())])
+}
 
 #[cfg(windows)]
 fn run_powershell(script: &str) -> Option<String> {
@@ -1093,55 +1143,6 @@ fn run_powershell(script: &str) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
-#[cfg(windows)]
-fn pick_folder_dialog(description: &str) -> Option<String> {
-    let script = format!("Add-Type -AssemblyName System.windows.forms; \
-        $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-        $d.Description = '{}'; \
-        if ($d.ShowDialog() -eq 'OK') {{ $d.SelectedPath }}",
-        description.replace('\'', "''")
-    );
-    run_powershell(&script)
-}
-
-#[cfg(windows)]
-fn pick_files_dialog(title: &str, filter_name: &str, exts: &[&str]) -> Vec<String> {
-    let filter = format!(
-        "{}|{}|全部文件|*.*",
-        filter_name,
-        exts.iter()
-            .map(|e| format!("*.{}", e))
-            .collect::<Vec<_>>()
-            .join(";")
-    );
-    let script = format!(
-        "Add-Type -AssemblyName System.windows.forms; \
-         $d = New-Object System.Windows.Forms.OpenFileDialog; \
-         $d.Multiselect = $true; $d.Title = '{}'; $d.Filter = '{}'; \
-         if ($d.ShowDialog() -eq 'OK') {{ $d.FileNames }}",
-        title.replace('\'', "''"),
-        filter.replace('\'', "''")
-    );
-    match run_powershell(&script) {
-        Some(out) => out
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        None => Vec::new(),
-    }
-}
-
-#[cfg(not(windows))]
-fn pick_folder_dialog(_description: &str) -> Option<String> {
-    None
-}
-
-#[cfg(not(windows))]
-fn pick_files_dialog(_title: &str, _filter_name: &str, _exts: &[&str]) -> Vec<String> {
-    Vec::new()
 }
 
 /* ================================================================== */

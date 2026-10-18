@@ -41,7 +41,15 @@ check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.i
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
-const importFilesCommand = commandsSource.match(/pub fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
+check(
+  '文件导入使用绑定主窗口的 Tauri 原生对话框',
+  rustMain.includes('tauri_plugin_dialog::init()') &&
+    commandsSource.includes('app.dialog().file()') &&
+    commandsSource.includes('dialog.set_parent(&window)') &&
+    !commandsSource.includes('System.Windows.Forms.OpenFileDialog') &&
+    !commandsSource.includes('System.Windows.Forms.FolderBrowserDialog')
+)
+const importFilesCommand = commandsSource.match(/pub (?:async )?fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
 const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
 check(
   '导入视频不再隐式登记监听目录',
