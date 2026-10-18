@@ -1,0 +1,19 @@
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_67a967f09abd5c 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f2807bf55a9fc8b49528aefb5f0ea8716776a2b",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
