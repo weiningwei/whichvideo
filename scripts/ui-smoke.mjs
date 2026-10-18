@@ -149,6 +149,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     selectedVideoIds: new Set(),
     isVideoSelected: () => false
   }))
+  const emptyLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [], videos: [], total: 0, selectedVideoIds: new Set() }))
+  check('空库直接提供视频与文件夹两个入口', emptyLibrary.includes('导入视频</button>') && emptyLibrary.includes('导入文件夹</button>'))
   check('默认只显示可展开的导入目录，不铺满视频文件', library.includes('Movies') && library.includes('aria-expanded="false"') && !library.includes(`播放 ${video.name}`))
   const pausedFolder = { ...folder, enabled: false, watchState: 'idle' }
   const pausedLibrary = render(jsx(LibraryView, { ...libraryProps, folders: [pausedFolder] }))

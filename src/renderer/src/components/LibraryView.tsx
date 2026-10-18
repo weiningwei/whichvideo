@@ -263,7 +263,10 @@ export function LibraryView(props: Props) {
               <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-3 text-xl text-tertiary">▶</div>
               <div className="mt-4 text-[14px] font-medium text-primary">{total ? '没有符合条件的视频' : '开始建立你的视频库'}</div>
               <div className="mt-1 text-[11.5px] text-tertiary">{total ? '试试清除搜索或更换筛选条件' : '添加视频或文件夹即可开始索引'}</div>
-              {!total && <button className="btn mt-4 border-accent-strong bg-accent text-surface-0" onClick={props.onImportFiles}>＋ 添加视频</button>}
+              {!total && <div className="mt-4 flex items-center gap-2">
+                <button className="btn border-accent-strong bg-accent text-surface-0" onClick={props.onImportFiles}>导入视频</button>
+                <button className="btn" onClick={props.onImportFolder}>导入文件夹</button>
+              </div>}
             </div>
           )}
         </div>
