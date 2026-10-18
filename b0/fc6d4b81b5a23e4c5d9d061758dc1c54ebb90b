@@ -1,0 +1,21 @@
+src-tauri/Cargo.toml
+  s_e78e0118ab4232::t_5a92bf67574ded 4,7
+src-tauri/capabilities/default.json
+  s_e78e0118ab4232::t_5a92bf67574ded 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0fc6d4b81b5a23e4c5d9d061758dc1c54ebb90b",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
