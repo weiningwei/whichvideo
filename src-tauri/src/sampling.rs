@@ -14,7 +14,7 @@ pub fn should_use_full_scan(frame_count: usize, width: Option<i64>, height: Opti
 /// 按视频时长得出的建议抽帧数（未与用户设置取小）。
 pub fn frames_for_duration(duration_seconds: Option<f64>) -> usize {
     let d = duration_seconds.unwrap_or(0.0);
-    if !(d > 0.0) {
+    if !matches!(d.partial_cmp(&0.0), Some(std::cmp::Ordering::Greater)) {
         return FRAME_COUNT_TABLE[0].1;
     }
     let table = FRAME_COUNT_TABLE;
@@ -45,7 +45,7 @@ pub fn planned_frame_count(duration_seconds: Option<f64>, budget: usize) -> usiz
 /// 根据时长与帧数决定抽帧时间点（秒），取每段中点以避开片头片尾黑场。
 pub fn plan_timestamps(duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
     let d = duration.unwrap_or(0.0);
-    if !(d > 0.5) {
+    if !matches!(d.partial_cmp(&0.5), Some(std::cmp::Ordering::Greater)) {
         return vec![0.0];
     }
     let count = planned_frame_count(Some(d), frame_budget);

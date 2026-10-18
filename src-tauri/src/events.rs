@@ -43,7 +43,7 @@ pub enum LibraryEvent {
     /// 索引器实时状态变化。
     Status { status: IndexerStatus },
     /// 单个视频记录变化（状态/帧数/缩略图/路径变更等）。
-    VideoUpdated { video: VideoRecord },
+    VideoUpdated { video: Box<VideoRecord> },
     /// 视频被移除。
     VideoRemoved { video_id: i64, path: String },
     /// 文件夹变化（登记/扫描完成/状态变更）。

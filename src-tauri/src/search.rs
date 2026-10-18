@@ -91,7 +91,7 @@ pub fn refine_candidate_times(
         (Some(d), n) if n > 0 && d > 0.0 => d / n as f64,
         _ => 10.0,
     };
-    let window = (gap / 2.0).max(1.0).min(15.0);
+    let window = (gap / 2.0).clamp(1.0, 15.0);
     let step = window / REFINE_POINTS_PER_SIDE as f64;
     let mut raw = vec![hit_time_seconds];
     for k in 1..=REFINE_POINTS_PER_SIDE {
@@ -126,7 +126,7 @@ pub fn score_signature(
     sig_spatial: &[u8],
 ) -> f64 {
     let weight = hash::COLOR_WEIGHT_MIN
-        + (hash::COLOR_WEIGHT_MAX - hash::COLOR_WEIGHT_MIN) * qv.colorfulness.max(0.0).min(1.0);
+        + (hash::COLOR_WEIGHT_MAX - hash::COLOR_WEIGHT_MIN) * qv.colorfulness.clamp(0.0, 1.0);
     let hash_score = 1.0
         - hash::hamming_bytes(&qv.struct_hash, 0, sig_struct, 0, framepack::STRUCT_BYTES) as f64
             / STRUCT_BITS;
@@ -340,7 +340,7 @@ impl FrameSearchIndex {
             return (Vec::new(), 0);
         }
         let weight = hash::COLOR_WEIGHT_MIN
-            + (hash::COLOR_WEIGHT_MAX - hash::COLOR_WEIGHT_MIN) * qv.colorfulness.max(0.0).min(1.0);
+            + (hash::COLOR_WEIGHT_MAX - hash::COLOR_WEIGHT_MIN) * qv.colorfulness.clamp(0.0, 1.0);
         let struct_weight = 1.0 - weight;
         let q_dhash_hi = (qv.dhash >> 32) as u32;
         let q_dhash_lo = (qv.dhash & 0xFFFF_FFFF) as u32;
@@ -364,8 +364,8 @@ impl FrameSearchIndex {
             }
             let s_base = w_base + (framepack::STRUCT_OFFSET >> 2);
             let mut struct_distance = 0usize;
-            for j in 0..(framepack::STRUCT_BYTES >> 2) {
-                struct_distance += (self.words[s_base + j] ^ q_struct_u32[j]).count_ones() as usize;
+            for (j, &query_word) in q_struct_u32.iter().enumerate() {
+                struct_distance += (self.words[s_base + j] ^ query_word).count_ones() as usize;
             }
             if struct_distance > STRUCT_PRUNE_BITS {
                 continue;
@@ -460,6 +460,7 @@ impl Default for FrameSearchIndex {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // 测试夹具按帧字段传入比元组更易读。
     fn append_frame(
         buffer: &mut Vec<u8>,
         video_ids: &mut Vec<i64>,
@@ -576,9 +577,9 @@ mod tests {
             20,
             9,
             9000,
-            &vec![0xff; framepack::STRUCT_BYTES],
-            &vec![0; framepack::COLOR_BYTES],
-            &vec![255; framepack::SPATIAL_BYTES],
+            &[0xff; framepack::STRUCT_BYTES],
+            &[0; framepack::COLOR_BYTES],
+            &[255; framepack::SPATIAL_BYTES],
         );
         let words = buffer
             .chunks_exact(4)

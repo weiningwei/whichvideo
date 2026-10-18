@@ -632,16 +632,14 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
         }
     }
     drop(guard);
-    if patch.keep_frame_images == Some(false) && previous.keep_frame_images {
-        if frames_store::remove_all() {
-            let _ = app.emit(
-                "library_event",
-                events::LibraryEvent::Notice {
-                    level: "info".to_string(),
-                    message: "已清空全部索引帧图片".to_string(),
-                },
-            );
-        }
+    if patch.keep_frame_images == Some(false) && previous.keep_frame_images && frames_store::remove_all() {
+        let _ = app.emit(
+            "library_event",
+            events::LibraryEvent::Notice {
+                level: "info".to_string(),
+                message: "已清空全部索引帧图片".to_string(),
+            },
+        );
     }
     let _ = watcher::sync_all(&app);
     let _ = app.emit(
@@ -859,8 +857,8 @@ fn rerank_matches(
         return decoded;
     }
     let head_len = hits.len().min(RERANK_TOP_K);
-    for i in 0..head_len {
-        let (vid, t, old_score) = (hits[i].video_id, hits[i].time_seconds, hits[i].score);
+    for hit in hits.iter_mut().take(head_len) {
+        let (vid, t, old_score) = (hit.video_id, hit.time_seconds, hit.score);
         let video = match videos.get(&vid) {
             Some(v) => v,
             None => continue,
@@ -889,7 +887,7 @@ fn rerank_matches(
         };
         let ssim = hash::ssim_similarity(qild, &fild, 48, 48);
         let new_score = old_score * (1.0 - RERANK_WEIGHT) + ssim * RERANK_WEIGHT;
-        hits[i].score = new_score;
+        hit.score = new_score;
         decoded.insert(vid, frame);
     }
     hits.sort_by(|a, b| {
@@ -1014,7 +1012,7 @@ fn perform_search(
     // 「最近采样帧」对准到「真实截图帧」。
     if let Some(top) = results.first_mut() {
         if let Some(video) = videos.get(&top.video_id) {
-            refine_hit_time(qv, &video, top, decoded.get(&top.video_id));
+            refine_hit_time(qv, video, top, decoded.get(&top.video_id));
         }
     }
 

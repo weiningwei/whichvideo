@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 索引器队列与实时状态。
+#[derive(Default)]
 pub struct IndexerState {
     pub queue: Vec<i64>,
     pub queued: HashSet<i64>,
@@ -36,26 +37,6 @@ pub struct IndexerState {
     pub last_error: Option<String>,
     /// 单视频帧进度：video_id -> (done, total, phase)
     pub frame_progress: HashMap<i64, (i64, i64, Option<String>)>,
-}
-
-impl Default for IndexerState {
-    fn default() -> Self {
-        IndexerState {
-            queue: Vec::new(),
-            queued: HashSet::new(),
-            active_ids: HashSet::new(),
-            cancelled: HashSet::new(),
-            reset_before_run: HashSet::new(),
-            active: 0,
-            done: 0,
-            failed: 0,
-            current_path: None,
-            started_at: None,
-            finished_at: None,
-            last_error: None,
-            frame_progress: HashMap::new(),
-        }
-    }
 }
 
 impl IndexerState {
@@ -166,7 +147,7 @@ fn emit_video_updated(app: &AppHandle, id: i64) {
         }
     };
     if let Some(video) = video {
-        emit(app, LibraryEvent::VideoUpdated { video });
+        emit(app, LibraryEvent::VideoUpdated { video: Box::new(video) });
     }
 }
 
@@ -886,8 +867,10 @@ pub fn import_folder(
             None => return Err("数据库未初始化".to_string()),
         }
     };
-    let mut result = ImportResult::default();
-    result.folders = 1;
+    let mut result = ImportResult {
+        folders: 1,
+        ..Default::default()
+    };
     let files = scan_video_files(&folder.path, recursive);
     for file in files {
         register_and_enqueue(&app, file, Some(folder.id), &mut result);

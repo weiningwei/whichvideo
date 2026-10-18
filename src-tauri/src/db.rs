@@ -667,9 +667,9 @@ pub fn list_videos(conn: &Connection, q: &VideoQuery) -> SqlResult<VideoPage> {
     params.push(Box::new(limit));
     params.push(Box::new(offset));
     let mut stmt = conn.prepare(&select_sql)?;
-    let mut rows = stmt.query_map(params_from_iter(params.iter().map(|b| b.as_ref())), row_to_video)?;
+    let rows = stmt.query_map(params_from_iter(params.iter().map(|b| b.as_ref())), row_to_video)?;
     let mut items = Vec::new();
-    while let Some(r) = rows.next() {
+    for r in rows {
         items.push(r?);
     }
     Ok(VideoPage { total, items })

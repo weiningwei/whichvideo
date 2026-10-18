@@ -101,7 +101,7 @@ fn luma_at(img: &ImageDataLike, x: usize, y: usize) -> f32 {
 fn channel_at(img: &ImageDataLike, c: usize, x: usize, y: usize) -> f32 {
     let idx = (y * img.width as usize + x) * img.channels as usize;
     let d = img.data;
-    let v = match c {
+    match c {
         0 => match img.order {
             ChannelOrder::Rgb => d[idx] as f32,
             ChannelOrder::Bgr => d[idx + 2] as f32,
@@ -111,8 +111,7 @@ fn channel_at(img: &ImageDataLike, c: usize, x: usize, y: usize) -> f32 {
             ChannelOrder::Rgb => d[idx + 2] as f32,
             ChannelOrder::Bgr => d[idx] as f32,
         },
-    };
-    v
+    }
 }
 
 /* ------------------------------------------------------------------ *
@@ -233,7 +232,6 @@ pub fn compute_struct_hash(img: &ImageDataLike) -> Vec<u8> {
         per_channel,
     );
     for c in 0..3 {
-        let c = c;
         offset += encode_channel(
             &cell_grid(w, h, STRUCT_GRID, |x, y| channel_at(img, c, x, y)),
             &mut out,

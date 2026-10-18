@@ -60,9 +60,9 @@ pub fn quantized_histogram_similarity(a: &[u8], b: &[u8], b_off: usize) -> f64 {
 /// 从量化直方图推断颜色鲜明度（主导分桶占比，0~1）。
 pub fn quantized_colorfulness(color: &[u8]) -> f64 {
     let mut max = 0u8;
-    for i in 0..COLOR_BYTES {
-        if color[i] > max {
-            max = color[i];
+    for &value in color.iter().take(COLOR_BYTES) {
+        if value > max {
+            max = value;
         }
     }
     max as f64 / 255.0
@@ -73,7 +73,7 @@ pub fn quantized_colorfulness(color: &[u8]) -> f64 {
 pub fn spatial_similarity(a: &[u8], b: &[u8], b_off: usize) -> f64 {
     let mut diff = 0u32;
     for i in 0..SPATIAL_BYTES {
-        let d = (a[i] as i32 - b[b_off + i] as i32).abs() as u32;
+        let d = (a[i] as i32 - b[b_off + i] as i32).unsigned_abs();
         diff += d;
     }
     (1.0 - diff as f64 / (SPATIAL_BYTES as f64 * 255.0)).max(0.0)

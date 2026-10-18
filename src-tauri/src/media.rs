@@ -192,11 +192,12 @@ fn detect_tools(configured_dir: Option<&std::path::Path>) -> (Option<ToolPaths>,
                 return status_for(tools, "configured", "使用手动设置的 FFmpeg 目录");
             }
         }
-        let mut status = MediaToolsStatus::default();
-        status.source = "configured".to_string();
-        status.directory = Some(dir.to_string_lossy().to_string());
-        status.message = "已设置目录中的 ffmpeg / ffprobe 缺失或无法运行，请重新选择。".to_string();
-        configured_error = Some(status);
+        configured_error = Some(MediaToolsStatus {
+            source: "configured".to_string(),
+            directory: Some(dir.to_string_lossy().to_string()),
+            message: "已设置目录中的 ffmpeg / ffprobe 缺失或无法运行，请重新选择。".to_string(),
+            ..Default::default()
+        });
     }
 
     let names = tool_names();
@@ -303,7 +304,9 @@ pub struct SeekablePlayer {
     pub args: fn(video_path: &str, start_seconds: f64) -> Vec<String>,
 }
 
-fn known_seekable() -> &'static [(&'static str, &'static str, fn(&str, f64) -> Vec<String>)] {
+type SeekableDefinition = (&'static str, &'static str, fn(&str, f64) -> Vec<String>);
+
+fn known_seekable() -> &'static [SeekableDefinition] {
     &[
         (
             "mpv.exe",
@@ -345,7 +348,7 @@ fn exe_from_command_template(cmd: &str) -> Option<String> {
         let end = rest.find('"')?;
         Some(rest[..end].to_string())
     });
-    let exe = quoted.unwrap_or_else(|| cmd.trim().split_whitespace().next().unwrap_or("").to_string());
+    let exe = quoted.unwrap_or_else(|| cmd.split_whitespace().next().unwrap_or("").to_string());
     if exe.to_lowercase().ends_with(".exe") {
         Some(exe)
     } else {
@@ -542,7 +545,7 @@ pub fn decode_frame_at(file_path: &str, time_ms: i64, width: u32) -> Option<Stri
         "-dn",
         "pipe:1",
     ];
-    let out = Command::new(&tools.ffmpeg).no_window().args(&args).output().ok()?;
+    let out = Command::new(&tools.ffmpeg).no_window().args(args).output().ok()?;
     if !out.status.success() || out.stdout.is_empty() {
         return None;
     }
@@ -792,11 +795,11 @@ fn extract_frames_seek(
     let mut inputs: Vec<String> = Vec::with_capacity(count * 4);
     let mut parts: Vec<String> = Vec::with_capacity(count + 1);
     let mut labels: Vec<String> = Vec::with_capacity(count);
-    for i in 0..count {
+    for (i, &timestamp) in timestamps.iter().enumerate() {
         inputs.push("-hwaccel".to_string());
         inputs.push("auto".to_string());
         inputs.push("-ss".to_string());
-        inputs.push(format!("{:.3}", timestamps[i]));
+        inputs.push(format!("{timestamp:.3}"));
         inputs.push("-i".to_string());
         inputs.push(file_path.to_string());
         parts.push(format!("[{}:v]trim=end_frame=1,scale=w={}:h=-2:flags=fast_bilinear[s{}]", i, w, i));
@@ -865,7 +868,7 @@ fn extract_frames_seek(
         ));
     }
     let frame_size = out.stdout.len() / count;
-    if frame_size == 0 || frame_size % row_bytes != 0 {
+    if frame_size == 0 || !frame_size.is_multiple_of(row_bytes) {
         return Err(format!(
             "抽帧失败：单帧 {frame_size} 字节不是 {w} 宽 RGB24 的整数倍"
         ));
@@ -873,12 +876,12 @@ fn extract_frames_seek(
     let height = frame_size / row_bytes;
 
     let mut frames = Vec::with_capacity(count);
-    for i in 0..count {
+    for (i, &time) in timestamps.iter().enumerate() {
         let start = i * frame_size;
         let end = start + frame_size;
         let rgb = out.stdout[start..end].to_vec();
         frames.push(RawFrame {
-            time: timestamps[i],
+            time,
             width: w,
             height: height as u32,
             rgb,
@@ -968,11 +971,11 @@ fn extract_frames_full_scan(
     }
     let available = (out.stdout.len() / frame_size).min(count);
     let mut frames = Vec::with_capacity(available);
-    for i in 0..available {
+    for (i, &timestamp) in timestamps.iter().take(available).enumerate() {
         let start = i * frame_size;
         let end = start + frame_size;
         let rgb = out.stdout[start..end].to_vec();
-        let time = real_times.get(i).copied().unwrap_or(timestamps[i]);
+        let time = real_times.get(i).copied().unwrap_or(timestamp);
         frames.push(RawFrame {
             time,
             width: output_width,
