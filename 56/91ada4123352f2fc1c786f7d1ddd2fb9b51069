@@ -1,0 +1,50 @@
+src-tauri/src/logger.rs
+  s_e78e0118ab4232::t_5eaeddeebc8347 34-38
+scripts/ui-smoke.mjs
+  s_e78e0118ab4232::t_6b152912908b42 229
+  s_e78e0118ab4232::t_8e538bc43ccf33 150
+src-tauri/src/commands.rs
+  s_e78e0118ab4232::t_9e1288e7509bbd 681-690,1279-1290
+  s_e78e0118ab4232::t_704da8c76a3444 1291
+src-tauri/src/main.rs
+  s_e78e0118ab4232::t_5eaeddeebc8347 6,77
+src/shared/types.ts
+  s_e78e0118ab4232::t_9e1288e7509bbd 372-373,437
+src-tauri/Cargo.toml
+  s_e78e0118ab4232::t_eca22da1842e67 27
+src/renderer/src/lib/tauri-api.ts
+  s_e78e0118ab4232::t_9e1288e7509bbd 39
+src/renderer/src/hooks/useLibrary.ts
+  s_e78e0118ab4232::t_6b152912908b42 241-246
+src/renderer/src/App.tsx
+  s_e78e0118ab4232::t_6b152912908b42 143
+README.md
+  s_e78e0118ab4232::t_36df256f2624f7 360-364
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_36df256f2624f7 99,101-103,105-106
+src/renderer/src/components/SettingsPanel.tsx
+  s_e78e0118ab4232::t_6b152912908b42 14,25-26,170-172,197
+src-tauri/src/diagnostics.rs
+  s_e78e0118ab4232::t_37ee2aef390401 9-10,91-99
+  s_e78e0118ab4232::t_17cec72f7c0d49 216,218-222,225-226,235-241
+  s_e78e0118ab4232::t_5eaeddeebc8347 1-8,11-90,100-145,150-156,158-215,217,223-224,227-234,261-262
+  s_e78e0118ab4232::t_13067339ee9f5b 146-149,157,242-260
+src-tauri/Cargo.lock
+  s_e78e0118ab4232::t_545f2fe2f5e7ac 85-87,925-935,5651,6427-6441,6454-6465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5691ada4123352f2fc1c786f7d1ddd2fb9b51069",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
