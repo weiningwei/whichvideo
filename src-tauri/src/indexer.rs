@@ -357,6 +357,27 @@ fn finish_ready(app: AppHandle, video_id: i64) {
 /* 单视频处理                                                          */
 /* ------------------------------------------------------------------ */
 
+const THUMBNAIL_REUSE_WINDOW_SECONDS: f64 = 2.0;
+
+fn consider_thumbnail_frame(
+    candidate: &mut Option<media::RawFrame>,
+    frame: &media::RawFrame,
+    target_time: f64,
+) {
+    let distance = (frame.time - target_time).abs();
+    if distance > THUMBNAIL_REUSE_WINDOW_SECONDS
+        || candidate.as_ref().is_some_and(|saved| (saved.time - target_time).abs() <= distance)
+    {
+        return;
+    }
+    *candidate = Some(media::RawFrame {
+        time: frame.time,
+        width: frame.width,
+        height: frame.height,
+        rgb: frame.rgb.clone(),
+    });
+}
+
 fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     if is_cancelled(&app, video_id) {
         finish_cancelled(app, video_id);
@@ -523,6 +544,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         32
     };
     let mut current_processed = processed.clone();
+    let thumb_time = duration
+        .map(|d| d * 0.12)
+        .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
+    let mut thumbnail_candidate = None;
 
     let mut bi = start_index;
     while bi < timestamps.len() {
@@ -559,6 +584,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         if !frames.is_empty() {
             let mut new_frames = Vec::with_capacity(frames.len());
             for (i, fr) in frames.iter().enumerate() {
+                consider_thumbnail_frame(&mut thumbnail_candidate, fr, thumb_time);
                 let img = hash::ImageDataLike {
                     width: fr.width,
                     height: fr.height,
@@ -623,10 +649,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         finish_cancelled(app, video_id);
         return;
     }
-    let thumb_time = duration
-        .map(|d| d * 0.12)
-        .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
-    let thumb = media::make_thumbnail(&video.path, thumb_time, constants::EXTRACT_WIDTH);
+    let thumb = thumbnail_candidate
+        .as_ref()
+        .and_then(|frame| frames_store::encode_jpeg(&frame.rgb, frame.width, frame.height).ok())
+        .or_else(|| media::make_thumbnail(&video.path, thumb_time, constants::EXTRACT_WIDTH));
     if is_cancelled(&app, video_id) {
         frames_store::remove_video(video_id);
         finish_cancelled(app, video_id);
@@ -953,7 +979,25 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{plan_detected_scenes, resume_start_index, IndexerState};
+    use super::{consider_thumbnail_frame, plan_detected_scenes, resume_start_index, IndexerState};
+    use crate::media::RawFrame;
+
+    #[test]
+    fn thumbnail_reuses_only_the_closest_nearby_indexed_frame() {
+        let frame = |time, value| RawFrame {
+            time,
+            width: 2,
+            height: 2,
+            rgb: vec![value; 12],
+        };
+        let mut selected = None;
+        consider_thumbnail_frame(&mut selected, &frame(8.0, 1), 12.0);
+        assert!(selected.is_none());
+        consider_thumbnail_frame(&mut selected, &frame(10.5, 2), 12.0);
+        consider_thumbnail_frame(&mut selected, &frame(11.5, 3), 12.0);
+        consider_thumbnail_frame(&mut selected, &frame(13.0, 4), 12.0);
+        assert_eq!(selected.unwrap().rgb, vec![3; 12]);
+    }
 
     #[test]
     fn scene_detection_without_cuts_uses_uniform_extraction_path() {

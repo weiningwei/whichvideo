@@ -10,7 +10,7 @@ fn video_dir(video_id: i64) -> PathBuf {
     db::data_dir().join("frames").join(video_id.to_string())
 }
 
-fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+pub fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
     if rgb.len() != width as usize * height as usize * 3 {
         return Err(format!(
             "rgb 长度 {} != {}x{}x3",
