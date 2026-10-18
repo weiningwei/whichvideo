@@ -40,6 +40,16 @@ pub struct IndexerState {
 }
 
 impl IndexerState {
+    /// 新批次从独立的进度与错误状态开始，避免上一次任务的结果污染状态栏。
+    fn start_new_batch(&mut self) {
+        self.done = 0;
+        self.failed = 0;
+        self.current_path = None;
+        self.started_at = Some(db::now_ms());
+        self.finished_at = None;
+        self.last_error = None;
+    }
+
     fn schedule(&mut self, video_id: i64, force: bool) -> Option<bool> {
         if force {
             self.reset_before_run.insert(video_id);
@@ -192,12 +202,10 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
     let scheduled = {
         let state = app.state::<AppState>();
         let mut idx = state.indexer.lock().unwrap();
+        let was_idle = idx.active == 0 && idx.queue.is_empty();
         let scheduled = idx.schedule(video_id, force);
-        if scheduled.is_some() {
-            if idx.started_at.is_none() {
-                idx.started_at = Some(db::now_ms());
-            }
-            idx.finished_at = None;
+        if scheduled.is_some() && was_idle {
+            idx.start_new_batch();
         }
         scheduled
     };
@@ -303,6 +311,10 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
             let _ = db::set_video_status(c, video_id, "failed", Some(error));
         }
     }
+    {
+        let state = app.state::<AppState>();
+        state.indexer.lock().unwrap().last_error = Some(error.to_string());
+    }
     app.state::<AppState>().rebuild_search_index();
     emit_video_updated(&app, video_id);
     emit(
@@ -401,7 +413,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             if is_cancelled(&app, video_id) {
                 finish_cancelled(app, video_id);
             } else {
-                finish(app, video_id, Some(false));
+                fail(app, video_id, "视频记录不存在");
             }
             return;
         }
@@ -1116,5 +1128,25 @@ mod tests {
 
         state.cancel_one(1);
         assert!(state.cancelled.contains(&1));
+    }
+
+    #[test]
+    fn a_new_indexing_batch_resets_stale_progress_and_error() {
+        let mut state = IndexerState {
+            done: 8,
+            failed: 2,
+            current_path: Some("old.mp4".to_string()),
+            started_at: Some(1),
+            finished_at: Some(2),
+            last_error: Some("旧错误".to_string()),
+            ..Default::default()
+        };
+        state.start_new_batch();
+        assert_eq!(state.done, 0);
+        assert_eq!(state.failed, 0);
+        assert!(state.current_path.is_none());
+        assert!(state.started_at.is_some());
+        assert!(state.finished_at.is_none());
+        assert!(state.last_error.is_none());
     }
 }
