@@ -15,6 +15,10 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
+
+const FFMPEG_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const FFPROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Default)]
 #[allow(dead_code)]
@@ -133,13 +137,10 @@ fn paths_in_dir(dir: &std::path::Path) -> Option<ToolPaths> {
 }
 
 fn tools_are_usable(tools: &ToolPaths) -> bool {
+    let args = ["-version".to_string()];
     [&tools.ffmpeg, &tools.ffprobe].into_iter().all(|path| {
-        Command::new(path)
-            .no_window()
-            .arg("-version")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+        run_media_command(path, &args, "媒体工具探测", Duration::from_secs(5))
+            .is_ok_and(|output| output.success)
     })
 }
 
@@ -545,8 +546,9 @@ pub fn decode_frame_at(file_path: &str, time_ms: i64, width: u32) -> Option<Stri
         "-dn",
         "pipe:1",
     ];
-    let out = Command::new(&tools.ffmpeg).no_window().args(args).output().ok()?;
-    if !out.status.success() || out.stdout.is_empty() {
+    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    let out = run_media_command(&tools.ffmpeg, &args, "ffmpeg", FFMPEG_TIMEOUT).ok()?;
+    if !out.success || out.stdout.is_empty() {
         return None;
     }
     let w = width as usize;
@@ -577,34 +579,86 @@ pub struct FfmpegOutput {
     pub stderr: String,
 }
 
+/// 运行媒体子进程并持续读取两个输出管道，防止大输出塞满管道导致假死。
+/// 超时后终止子进程，避免损坏媒体或卡死的网络盘永久占住索引槽位。
+fn run_media_command(
+    executable: &str,
+    args: &[String],
+    label: &str,
+    timeout: Duration,
+) -> Result<FfmpegOutput, String> {
+    let mut child = Command::new(executable)
+        .no_window()
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("启动 {label} 失败：{e}"))?;
+    let Some(mut stdout_pipe) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("无法读取 {label} 输出"));
+    };
+    let Some(mut stderr_pipe) = child.stderr.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("无法读取 {label} 错误输出"));
+    };
+    let stdout_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout_pipe.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr_pipe.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("{label} 超时（已终止）"));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("等待 {label} 失败：{e}"));
+            }
+        }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| format!("读取 {label} 输出的线程失败"))?
+        .map_err(|e| format!("读取 {label} 输出失败：{e}"))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| format!("读取 {label} 错误输出的线程失败"))?
+        .map_err(|e| format!("读取 {label} 错误输出失败：{e}"))?;
+    Ok(FfmpegOutput {
+        success: status.success(),
+        stdout,
+        stderr: String::from_utf8_lossy(&stderr).to_string(),
+    })
+}
+
 /// 同步跑一次 ffmpeg，收集 stdout / stderr。失败（进程无法启动）返回 Err。
 pub fn run_ffmpeg(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
-    let out = Command::new(&tools.ffmpeg)
-        .no_window()
-        .args(args)
-        .output()
-        .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
-    Ok(FfmpegOutput {
-        success: out.status.success(),
-        stdout: out.stdout,
-        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-    })
+    run_media_command(&tools.ffmpeg, args, "ffmpeg", FFMPEG_TIMEOUT)
 }
 
 /// 同步跑一次 ffprobe。
 pub fn run_ffprobe(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffprobe".to_string())?;
-    let out = Command::new(&tools.ffprobe)
-        .no_window()
-        .args(args)
-        .output()
-        .map_err(|e| format!("启动 ffprobe 失败：{e}"))?;
-    Ok(FfmpegOutput {
-        success: out.status.success(),
-        stdout: out.stdout,
-        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-    })
+    run_media_command(&tools.ffprobe, args, "ffprobe", FFPROBE_TIMEOUT)
 }
 
 /// 探测到的视频基础信息（镜像 VideoProbeInfo）。
@@ -725,12 +779,19 @@ fn run_ffmpeg_null_output_cancellable(
         let mut bytes = Vec::new();
         stderr_pipe.read_to_end(&mut bytes).map(|_| bytes)
     });
+    let started = Instant::now();
     let status = loop {
         if cancelled() {
             let _ = child.kill();
             let _ = child.wait();
             let _ = stderr_reader.join();
             return Err("场景检测已取消".to_string());
+        }
+        if started.elapsed() >= FFMPEG_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stderr_reader.join();
+            return Err("ffmpeg 超时（已终止）".to_string());
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,
@@ -1089,7 +1150,7 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_scenes, parse_scene_times, parse_showinfo, resolve_tools, run_ffmpeg_null_output_cancellable, sha256_of_file};
+    use super::{detect_scenes, parse_scene_times, parse_showinfo, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file};
     use std::fs;
     use std::time::{Duration, Instant};
 
@@ -1111,6 +1172,35 @@ mod tests {
         let result = run_ffmpeg_null_output_cancellable(&args, || started.elapsed() >= Duration::from_millis(150));
         assert_eq!(result.err().as_deref(), Some("场景检测已取消"));
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn media_command_timeout_terminates_hung_process() {
+        let (executable, args) = if cfg!(windows) {
+            (
+                "powershell.exe",
+                vec![
+                    "-NoProfile".to_string(),
+                    "-Command".to_string(),
+                    "Start-Sleep -Seconds 3".to_string(),
+                ],
+            )
+        } else {
+            ("sh", vec!["-c".to_string(), "sleep 3".to_string()])
+        };
+        let started = Instant::now();
+        let result = run_media_command(
+            executable,
+            &args,
+            "测试媒体进程",
+            Duration::from_millis(100),
+        );
+        let error = match result {
+            Ok(_) => panic!("超时命令意外成功"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "测试媒体进程 超时（已终止）");
+        assert!(started.elapsed() < Duration::from_secs(3));
     }
 
     #[test]
