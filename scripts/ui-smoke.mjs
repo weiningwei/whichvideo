@@ -182,6 +182,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('行内低频动作放入更多菜单', rowSource.includes('查看索引帧') && rowSource.includes('按${sampling') && rowSource.includes('从视频库移除'))
   check('索引进度仍区分检测与抽帧', rowSource.includes('检测场景') && rowSource.includes('抽取帧'))
   check('行菜单由视频库统一管理并在外部点击、滚动、Escape 时关闭', source('LibraryView.tsx').includes('openMenuId') && source('LibraryView.tsx').includes("document.addEventListener('pointerdown', dismiss, true)") && source('LibraryView.tsx').includes("window.addEventListener('scroll', scroll, true)"))
+  check('行内操作先对齐当前选中视频', source('LibraryView.tsx').includes('handleRowClick(row.video.id, false, false)') && source('LibraryView.tsx').includes('!selectedVideoIds.has(openMenuId)'))
 
   console.log('\n=== 设置与基础能力 ===')
   const settingsHtml = render(settings)

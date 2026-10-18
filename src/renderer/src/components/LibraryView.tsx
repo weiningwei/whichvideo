@@ -107,7 +107,9 @@ export function LibraryView(props: Props) {
   useEffect(() => { setClosedFilteredPaths(new Set()) }, [query.keyword, query.status])
   useEffect(() => { clearSelection() }, [query.keyword, query.status, clearSelection])
   useEffect(() => { setOpenMenuId(null) }, [treeVisible, query.keyword, query.status, query.sort])
-  useEffect(() => { setOpenMenuId(null) }, [selectedVideoIds])
+  useEffect(() => {
+    if (openMenuId !== null && !selectedVideoIds.has(openMenuId)) setOpenMenuId(null)
+  }, [selectedVideoIds, openMenuId])
   useEffect(() => { setOpenMenuId(null) }, [drawer, duplicates, framesVideo])
   useEffect(() => {
     if (openMenuId === null) return
@@ -227,8 +229,8 @@ export function LibraryView(props: Props) {
                   depth={row.depth}
                   roots={roots}
                   focused={focusedVideoId === row.video.id}
-                  onOpen={props.onOpen}
-                  onReveal={props.onReveal}
+                  onOpen={(id) => { handleRowClick(id, false, false); props.onOpen(id) }}
+                  onReveal={(id) => { handleRowClick(id, false, false); props.onReveal(id) }}
                   onRemove={props.onRemoveVideo}
                   onViewFrames={openFramesViewer}
                   globalSampling={props.globalSampling}
@@ -237,7 +239,13 @@ export function LibraryView(props: Props) {
                   onRowClick={(shiftKey, ctrlKey) => { setOpenMenuId(null); handleRowClick(row.video.id, shiftKey, ctrlKey) }}
                   onOpenDouble={(id) => props.onOpen(id)}
                   menuOpen={openMenuId === row.video.id}
-                  onToggleMenu={() => setOpenMenuId((id) => id === row.video.id ? null : row.video.id)}
+                  onToggleMenu={() => {
+                    if (openMenuId === row.video.id) setOpenMenuId(null)
+                    else {
+                      handleRowClick(row.video.id, false, false)
+                      setOpenMenuId(row.video.id)
+                    }
+                  }}
                   onCloseMenu={() => setOpenMenuId(null)}
                 />
               ))}
