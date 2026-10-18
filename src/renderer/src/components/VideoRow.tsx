@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 
 export function VideoRow({
-  video, roots, focused, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
-  onSamplingChange, isVideoSelected, onRowClick, onToggleCheck, onOpenDouble
+  video, roots, focused, depth = 0, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
+  onSamplingChange, isVideoSelected, onRowClick, onToggleCheck, onOpenDouble,
+  menuOpen, onToggleMenu, onCloseMenu
 }: {
   video: VideoRecord
   roots: string[]
   focused: boolean
+  depth?: number
   onOpen: (id: number) => void
   onReveal: (id: number) => void
   onRemove: (id: number) => void
@@ -20,11 +23,14 @@ export function VideoRow({
   onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
   onToggleCheck: (id: number) => void
   onOpenDouble: (id: number) => void
+  menuOpen: boolean
+  onToggleMenu: () => void
+  onCloseMenu: () => void
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
   const startTimeRef = useRef<number | null>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const prevDoneRef = useRef(0)
 
   useEffect(() => {
@@ -103,6 +109,7 @@ export function VideoRow({
       </td>
       <td className={`px-3 py-2 transition-colors ${rowBg}`}>
         <div className="flex items-center gap-3">
+          {depth > 0 && <span className="shrink-0" style={{ width: `${Math.max(0, depth - 1) * 22}px` }} />}
           <div className="h-11 w-[72px] shrink-0 overflow-hidden rounded-md border border-line bg-surface-inset">
             {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
           </div>
@@ -121,19 +128,22 @@ export function VideoRow({
       <td className={`whitespace-nowrap px-2 py-2 text-[11.5px] tabular-nums text-secondary transition-colors ${rowBg}`}>{video.duration == null ? '—' : formatDuration(video.duration)}</td>
       <td className={`whitespace-nowrap px-2 py-2 text-[11.5px] tabular-nums text-secondary transition-colors ${rowBg}`}>{formatBytes(video.size)}</td>
       <td className={`sticky right-0 px-3 py-2 transition-colors ${rowBg}`} onClick={(e) => e.stopPropagation()}>
-        <div className="relative flex items-center justify-end gap-1">
+        <div className="relative flex items-center justify-end gap-1" data-video-menu={video.id}>
           <button className="icon-btn h-7 w-7 text-[11px]" onClick={() => onOpen(video.id)} title="播放" aria-label={`播放 ${video.name}`}>▶</button>
           <button className="icon-btn h-7 w-7 text-[13px]" onClick={() => onReveal(video.id)} title="在资源管理器中显示" aria-label={`定位 ${video.name}`}>⌖</button>
-          <button className="icon-btn h-7 w-7 text-[15px]" onClick={() => setMenuOpen((v) => !v)} title="更多" aria-label={`更多操作 ${video.name}`}>···</button>
-          {menuOpen && (
-            <div className="popover absolute right-0 top-8 z-30 w-44 p-1.5 text-left">
-              <RowMenu label="查看索引帧" onClick={() => { setMenuOpen(false); onViewFrames(video.id) }} />
-              <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { setMenuOpen(false); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
-              <RowMenu label="重新索引" onClick={() => { setMenuOpen(false); onSamplingChange(video.id, sampling) }} />
+          <button ref={menuButtonRef} className="icon-btn h-7 w-7 text-[15px]" onClick={onToggleMenu} title="更多" aria-expanded={menuOpen} aria-label={`更多操作 ${video.name}`}>···</button>
+          {menuOpen && createPortal((() => {
+            const rect = menuButtonRef.current?.getBoundingClientRect()
+            const top = rect ? (rect.bottom + 176 > window.innerHeight ? rect.top - 176 : rect.bottom + 4) : 0
+            const left = rect ? Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)) : 0
+            return <div data-video-menu={video.id} className="popover fixed z-50 w-44 p-1.5 text-left" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
+              <RowMenu label="查看索引帧" onClick={() => { onCloseMenu(); onViewFrames(video.id) }} />
+              <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
+              <RowMenu label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
               <div className="my-1 border-t border-line" />
-              <RowMenu label="从视频库移除" danger onClick={() => { setMenuOpen(false); onRemove(video.id) }} />
+              <RowMenu label="从视频库移除" danger onClick={() => { onCloseMenu(); onRemove(video.id) }} />
             </div>
-          )}
+          })(), document.body)}
         </div>
       </td>
     </tr>

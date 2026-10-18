@@ -75,10 +75,18 @@ export function useVideoList(): UseVideoListReturn {
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     const q = query ?? queryRef.current
     const seq = ++seqRef.current
-    const page: VideoPage = await window.whichvideo.videos.list(q)
+    // 文件夹视图需要完整目录内容；单页 500 条会让后面的目录和视频凭空消失。
+    const limit = 500
+    const first: VideoPage = await window.whichvideo.videos.list({ ...q, offset: 0, limit })
+    const items = [...first.items]
+    while (items.length < first.total && seq === seqRef.current) {
+      const next = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
+      if (next.items.length === 0) break
+      items.push(...next.items)
+    }
     if (seq !== seqRef.current) return
-    setVideos(page.items)
-    setTotal(page.total)
+    setVideos(items)
+    setTotal(first.total)
   }, [])
 
   const setVideoQuery = useCallback((next: VideoQuery) => {

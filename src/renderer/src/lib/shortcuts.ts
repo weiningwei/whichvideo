@@ -60,8 +60,8 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { group: '列表导航', keys: 'End', label: '跳到最后一行' },
   { group: '列表导航', keys: 'PageUp', label: '上翻一页' },
   { group: '列表导航', keys: 'PageDown', label: '下翻一页' },
-  { group: '列表导航', keys: '→', label: '展开光标所在分组', onlyGrouped: true },
-  { group: '列表导航', keys: '←', label: '收起光标所在分组', onlyGrouped: true },
+  { group: '列表导航', keys: '→', label: '展开已聚焦的文件夹', onlyGrouped: true },
+  { group: '列表导航', keys: '←', label: '收起已聚焦的文件夹', onlyGrouped: true },
 
   // ---- 选择 ----
   { group: '选择', keys: 'Space', label: '在光标处切换选中（不移动光标）' },
@@ -75,10 +75,10 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { group: '操作', keys: 'Ctrl+R', label: '重建焦点视频的索引' },
 
   // ---- 视频库 ----
-  { group: '视频库', keys: 'G', label: '分组 / 平铺切换' },
+  { group: '视频库', keys: 'G', label: '文件夹 / 全部视频切换' },
   { group: '视频库', keys: 'I', label: '导入视频文件' },
   { group: '视频库', keys: 'Ctrl+Shift+I', label: '一次性导入文件夹（不监视）' },
-  { group: '视频库', keys: 'S', label: '重新扫描监听目录' },
+  { group: '视频库', keys: 'S', label: '重新扫描所有文件夹' },
   { group: '视频库', keys: 'B', label: '重建全部索引' }
 ]
 

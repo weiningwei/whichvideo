@@ -16,7 +16,7 @@ export interface LibraryShortcutsArgs {
   // 选中相关
   selectAll: () => void
   clearSelection: () => void
-  /** G 键：切换左侧文件夹树显隐 */
+  /** G 键：切换文件夹 / 全部视频视图 */
   onToggleTree: () => void
   // 业务动作（来自 props）
   onOpen: (videoId: number, atSeconds?: number) => void
@@ -67,11 +67,6 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
       // 焦点在按钮上时，空格与回车应触发按钮本身，否则会出现"点一下按钮没反应又改了选中态"
       const onButton = e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement
       const mod = e.ctrlKey || e.metaKey
-      // 焦点在左侧文件夹树内时，方向键 / Enter 交给树自身处理，全局快捷键让位
-      // （仅 G 键切换树显隐仍由本 handler 处理）
-      const inTree = e.target instanceof HTMLElement && !!e.target.closest('[data-folder-tree]')
-      if (inTree && e.key.toLowerCase() !== 'g') return
-
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()

@@ -535,7 +535,7 @@ pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportR
         return Ok(events::ImportResult::default());
     };
     logger::log(&format!("[import] 一次性导入文件夹：{dir}"));
-    let result = indexer::import_folder_once(app, dir, true);
+    let result = indexer::import_folder_once(app, dir, true)?;
     logger::log(&format!(
         "[import] 文件夹导入完成：扫描 {}，新增 {}，已存在 {}，跳过 {}",
         result.scanned, result.added, result.duplicates, result.skipped

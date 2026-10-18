@@ -5,7 +5,6 @@ import { useSearch } from './useSearch'
 import { useSelection } from './useSelection'
 import { useNotices } from './useNotices'
 import { useBusy } from './useBusy'
-import { videosUnderDir } from '../lib/libraryTree'
 import {
   type AppSettings,
   type DataDirInfo,
@@ -29,17 +28,15 @@ export interface Notice {
 }
 
 /**
- * 左侧文件夹树的显隐与当前选中目录的持久化键（wv- 前缀，与 useTheme 同款）。
- * `treeVisible` 取代旧的「分组/平铺」视图切换（wv-library-group-by-folder）；
- * `selectedDir` 记录地址栏当前所在目录（null = 整库）。
+ * 文件夹 / 全部视频视图选择。使用新键，避免旧导航窗格的“隐藏”设置
+ * 让升级后的默认视图意外变成平铺。
  */
-const TREE_VISIBLE_KEY = 'wv-tree-visible'
-const SELECTED_DIR_KEY = 'wv-selected-dir'
+const TREE_VISIBLE_KEY = 'wv-library-folder-view'
 
 function readTreeVisible(): boolean {
   try {
     const v = localStorage.getItem(TREE_VISIBLE_KEY)
-    // 缺省视为 true：默认展示导航树（资源管理器默认就有导航窗格）
+    // 默认是文件夹视图，导入目录初始折叠。
     if (v === '0') return false
   } catch {
     /* 隐私模式 localStorage 抛错，用默认 */
@@ -50,25 +47,6 @@ function readTreeVisible(): boolean {
 function writeTreeVisible(value: boolean): void {
   try {
     localStorage.setItem(TREE_VISIBLE_KEY, value ? '1' : '0')
-  } catch {
-    /* 存不下不影响本次会话 */
-  }
-}
-
-function readSelectedDir(): string | null {
-  try {
-    const v = localStorage.getItem(SELECTED_DIR_KEY)
-    return v && v.length > 0 ? v : null
-  } catch {
-    /* 隐私模式，当作整库 */
-  }
-  return null
-}
-
-function writeSelectedDir(value: string | null): void {
-  try {
-    if (value === null) localStorage.removeItem(SELECTED_DIR_KEY)
-    else localStorage.setItem(SELECTED_DIR_KEY, value)
   } catch {
     /* 存不下不影响本次会话 */
   }
@@ -91,14 +69,8 @@ export interface LibraryState {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
-  /** 左侧文件夹树是否可见（取代旧的「分组」视图切换） */
+  /** true = 文件夹视图，false = 全部视频平铺视图 */
   treeVisible: boolean
-  /** 地址栏当前选中目录（null = 整库） */
-  selectedDir: string | null
-  /** 当前可见视频（按 selectedDir 过滤后的列表，供右栏与导航用） */
-  visibleVideos: VideoRecord[]
-  /** 当前可见视频数（与 visibleVideos 同步，供工具栏计数） */
-  visibleTotal: number
   selectedVideoIds: Set<number>
   expandedFolderIds: Set<number>
 }
@@ -112,26 +84,13 @@ export function useLibrary() {
   const search = useSearch()
   const busy = useBusy(notices.pushNotice)
 
-  // 左侧文件夹树显隐（取代旧的「分组」视图切换）。默认显示。
+  // 文件夹 / 全部视频视图。默认显示文件夹。
   const [treeVisible, setTreeVisible] = useState<boolean>(readTreeVisible)
   useEffect(() => {
     writeTreeVisible(treeVisible)
   }, [treeVisible])
 
-  // 地址栏当前选中目录（null = 整库）。切换后右侧只显示该目录下的视频。
-  const [selectedDir, setSelectedDirState] = useState<string | null>(readSelectedDir)
-  useEffect(() => {
-    writeSelectedDir(selectedDir)
-  }, [selectedDir])
-
-  // 当前可见视频：整库视频按 selectedDir 递归过滤。selectedDir 为 null 时即整库。
-  // 选中操作（单选跟随、Shift 连选、全选）都作用在这一子集上，与资源管理器
-  // 「在过滤后的视图里选」一致。
-  const visibleVideos = useMemo(
-    () => videosUnderDir(videoList.videos, selectedDir, true),
-    [videoList.videos, selectedDir]
-  )
-  const selection = useSelection(visibleVideos)
+  const selection = useSelection(videoList.videos)
 
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     await videoList.refreshVideos(query)
@@ -286,14 +245,6 @@ export function useLibrary() {
       },
       setVideoQuery(next: VideoQuery): void {
         videoList.setVideoQuery(next)
-      },
-      /** 切换左侧文件夹树显隐（资源管理器「导航窗格」开关，G 键同效） */
-      toggleTreeVisible(): void {
-        setTreeVisible((v) => !v)
-      },
-      /** 地址栏定位到某目录（null = 整库） */
-      setSelectedDir(dir: string | null): void {
-        setSelectedDirState(dir)
       }
     }),
     [withBusy, notices, refreshAll, core, videoList]
@@ -317,9 +268,6 @@ export function useLibrary() {
     queryLabel: search.queryLabel,
     hasIndexedFrames: (core.stats?.frames ?? 0) > 0,
     treeVisible,
-    selectedDir,
-    visibleVideos,
-    visibleTotal: visibleVideos.length,
     selectedVideoIds: selection.selectedVideoIds,
     expandedFolderIds: selection.expandedFolderIds
   }
@@ -331,7 +279,6 @@ export function useLibrary() {
       ...actions,
       reSearch: search.reSearch,
       toggleTreeVisible: () => setTreeVisible((v) => !v),
-      setSelectedDir: (dir: string | null) => setSelectedDirState(dir),
       toggleVideoSelection: selection.toggleVideoSelection,
       clearSelection: selection.clearSelection,
       selectAll: selection.selectAll,
@@ -340,6 +287,7 @@ export function useLibrary() {
       expandAllFolders: selection.expandAllFolders,
       collapseAllFolders: selection.collapseAllFolders,
       isVideoSelected: selection.isVideoSelected,
+      setSelectionOrder: selection.setSelectionOrder,
       isFolderExpanded: selection.isFolderExpanded
     },
     runSearch: search.runSearch,

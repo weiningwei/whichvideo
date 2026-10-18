@@ -13,8 +13,8 @@ export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
   const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice, pauseNotice, resumeNotice } =
     useLibrary()
-  const { hasIndexedFrames, treeVisible, selectedDir, visibleVideos, visibleTotal, selectedVideoIds } = state
-  const { reSearch, toggleTreeVisible, setSelectedDir, toggleVideoSelection, clearSelection, selectAll,
+  const { hasIndexedFrames, treeVisible, selectedVideoIds } = state
+  const { reSearch, toggleTreeVisible, toggleVideoSelection, clearSelection, setSelectionOrder,
     setSelectedIds, isVideoSelected } = actions
   // 主题：深色 / 浅色 / 跟随系统。落在 <html data-theme> 上，CSS 侧自动换色值
   const { mode: themeMode, resolved: themeResolved, cycle: cycleTheme } = useTheme()
@@ -102,8 +102,8 @@ export default function App() {
           <div className="flex min-h-0 min-w-0 flex-1">
             <LibraryView
               folders={state.folders}
-              videos={visibleVideos}
-              total={visibleTotal}
+              videos={state.videos}
+              total={state.total}
               query={videoQuery}
               onSetQuery={actions.setVideoQuery}
               onAddFolder={() => void actions.watchFolder()}
@@ -123,16 +123,14 @@ export default function App() {
               onReindex={(ids, mode) => void actions.reindex(ids, mode)}
               globalSampling={state.settings?.samplingMode ?? 'uniform'}
               onFindDuplicates={(minScore) => actions.findDuplicates(minScore)}
-              selectedDir={selectedDir}
-              onSelectDir={setSelectedDir}
               treeVisible={treeVisible}
               onToggleTree={toggleTreeVisible}
               selectedVideoIds={selectedVideoIds}
               isVideoSelected={isVideoSelected}
               toggleVideoSelection={toggleVideoSelection}
               clearSelection={clearSelection}
-              selectAll={selectAll}
               setSelectedIds={setSelectedIds}
+              setSelectionOrder={setSelectionOrder}
               sideSettings={
                 <SettingsPanel
                   settings={state.settings}

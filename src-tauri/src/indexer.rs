@@ -785,9 +785,25 @@ pub fn import_files(app: AppHandle, files: Vec<String>, folder_id: Option<i64>) 
 }
 
 /// 递归导入目录内的视频，但不登记目录、不启动文件系统监听。
-pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> ImportResult {
-    let files = scan_video_files(&dir_path, recursive);
-    import_files(app, files, None)
+pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> Result<ImportResult, String> {
+    let folder = {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().unwrap();
+        let conn = guard.as_ref().ok_or("数据库未初始化")?;
+        db::insert_imported_folder(conn, &dir_path, recursive).map_err(|e| e.to_string())?
+    };
+    let result = import_files(app.clone(), scan_video_files(&folder.path, recursive), Some(folder.id));
+    {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().unwrap();
+        if let Some(conn) = guard.as_ref() {
+            let _ = db::mark_folder_scanned(conn, folder.id);
+            if let Ok(Some(updated)) = db::get_folder(conn, folder.id) {
+                emit(&app, LibraryEvent::FolderUpdated { folder: updated });
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// 导入并持续监听一个目录（递归扫描视频文件）。
@@ -816,7 +832,7 @@ pub fn import_folder(
         let mut guard = state.db.lock().unwrap();
         if let Some(c) = guard.as_mut() {
             let _ = db::mark_folder_scanned(c, folder.id);
-            let _ = db::update_folder_state(c, folder.id, "watching", None);
+                let _ = db::update_folder_state(c, folder.id, if folder.enabled { "watching" } else { "idle" }, None);
         }
     }
     let refreshed = {

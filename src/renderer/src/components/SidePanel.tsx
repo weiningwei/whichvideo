@@ -28,7 +28,7 @@ export function SidePanel({
       >
         <header className="flex h-14 shrink-0 items-center border-b border-line px-4">
           <div>
-            <div className="text-[14px] font-semibold text-primary">{foldersMode ? '监视目录' : '索引设置'}</div>
+            <div className="text-[14px] font-semibold text-primary">{foldersMode ? '管理文件夹' : '索引设置'}</div>
             {foldersMode && <div className="text-[10.5px] text-tertiary">{folderCount} 个目录</div>}
           </div>
           {foldersMode && <button className="btn ml-auto py-1.5 text-[12px]" onClick={onAddFolder}>＋ 添加</button>}

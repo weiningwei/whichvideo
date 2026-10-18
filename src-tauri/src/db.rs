@@ -338,8 +338,8 @@ pub fn insert_folder(
     let normalized = normalize_path(dir_path);
     let key = path_key(&normalized);
     if let Some(existing) = find_folder_by_path(conn, &normalized)? {
-        if pinned {
-            conn.execute("UPDATE image_folders SET pinned = 1 WHERE id = ?", [existing.id])?;
+        if pinned && !existing.pinned {
+            conn.execute("UPDATE image_folders SET pinned = 1, enabled = 1 WHERE id = ?", [existing.id])?;
         }
         return get_folder(conn, existing.id)?
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows);
@@ -363,6 +363,16 @@ pub fn insert_folder(
     )?;
     let id = conn.last_insert_rowid();
     get_folder(conn, id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)
+}
+
+/// 一次性导入也保留目录身份，但不启动文件监视。已有监视目录保持原设置。
+pub fn insert_imported_folder(conn: &Connection, dir_path: &str, recursive: bool) -> SqlResult<WatchedFolder> {
+    if let Some(existing) = find_folder_by_path(conn, dir_path)? {
+        return Ok(existing);
+    }
+    let folder = insert_folder(conn, dir_path, false, recursive)?;
+    set_folder_enabled(conn, folder.id, false)?;
+    get_folder(conn, folder.id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
 
 pub fn set_folder_enabled(conn: &Connection, id: i64, enabled: bool) -> SqlResult<bool> {
@@ -1243,6 +1253,23 @@ mod tests {
         assert_eq!(normalize_path("C:\\"), "C:\\");
         assert_eq!(normalize_path("D:////"), "D:\\");
         assert_eq!(normalize_path("C:\\Media\\\\"), "C:\\Media");
+    }
+
+    #[test]
+    fn one_time_folder_is_recorded_without_watching_and_can_be_promoted() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let imported = insert_imported_folder(&conn, "C:\\Media", true).unwrap();
+        assert!(!imported.pinned);
+        assert!(!imported.enabled);
+        assert_eq!(insert_imported_folder(&conn, "C:\\Media", true).unwrap().id, imported.id);
+
+        let watched = insert_folder(&conn, "C:\\Media", true, true).unwrap();
+        assert_eq!(watched.id, imported.id);
+        assert!(watched.pinned && watched.enabled);
+        set_folder_enabled(&conn, watched.id, false).unwrap();
+        // 手动重扫不得把用户暂停的监听重新打开。
+        assert!(!insert_folder(&conn, "C:\\Media", true, true).unwrap().enabled);
     }
 
     #[test]

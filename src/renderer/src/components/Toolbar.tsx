@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord } from '@shared/types'
 
 interface ToolbarProps {
@@ -33,6 +33,29 @@ export function Toolbar(props: ToolbarProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
+  useEffect(() => { setAddOpen(false); setMoreOpen(false) }, [selectedVideoIds])
+  useEffect(() => {
+    if (!addOpen && !moreOpen) return
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('[data-toolbar-menu]')) {
+        setAddOpen(false)
+        setMoreOpen(false)
+      }
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopImmediatePropagation()
+        setAddOpen(false)
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    window.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true)
+      window.removeEventListener('keydown', escape, true)
+    }
+  }, [addOpen, moreOpen])
 
   const runDuplicateScan = () => {
     if (scanningDuplicates) return
@@ -44,21 +67,13 @@ export function Toolbar(props: ToolbarProps) {
   return (
     <div className="shrink-0 border-b border-line bg-surface-1">
       <div className="flex h-14 items-center gap-3 px-4">
-        <button
-          className={`icon-btn ${treeVisible ? 'bg-surface-3 text-primary' : ''}`}
-          onClick={onToggleTree}
-          title="显示或隐藏文件夹 (G)"
-          aria-label="切换文件夹导航"
-        >
-          ☰
-        </button>
         <div>
           <h1 className="text-[15px] font-semibold text-primary">视频库</h1>
           <div className="text-[10.5px] tabular-nums text-tertiary">{total} 个视频</div>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <div className="relative">
+          <div className="relative" data-toolbar-menu>
             <button
               className="btn border-accent-strong bg-accent px-3.5 text-surface-0 hover:opacity-90"
               onClick={() => { setAddOpen((v) => !v); setMoreOpen(false) }}
@@ -74,9 +89,9 @@ export function Toolbar(props: ToolbarProps) {
               </Menu>
             )}
           </div>
-          <button className="btn px-3" onClick={onManageFolders}>监视目录</button>
+          <button className="btn px-3" onClick={onManageFolders}>管理文件夹</button>
           <button className="icon-btn" onClick={onOpenSettings} title="索引设置" aria-label="索引设置">⚙</button>
-          <div className="relative">
+          <div className="relative" data-toolbar-menu>
             <button
               className="icon-btn text-[16px]"
               onClick={() => { setMoreOpen((v) => !v); setAddOpen(false) }}
@@ -88,7 +103,7 @@ export function Toolbar(props: ToolbarProps) {
             {moreOpen && (
               <Menu align="right">
                 <MenuItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} onClick={runDuplicateScan} />
-                <MenuItem label="重新扫描监视目录" onClick={() => { setMoreOpen(false); onRescan() }} />
+                <MenuItem label="重新扫描所有文件夹" onClick={() => { setMoreOpen(false); onRescan() }} />
                 <MenuItem label="重建全部索引" onClick={() => { setMoreOpen(false); onReindex() }} />
               </Menu>
             )}
@@ -96,26 +111,9 @@ export function Toolbar(props: ToolbarProps) {
         </div>
       </div>
 
-      <div className="flex min-h-12 items-center gap-2 border-t border-line/60 px-4 py-2">
-        {selectedVideoIds.size > 0 ? (
-          <>
-            <span className="mr-2 text-[12px] font-medium text-accent">已选 {selectedVideoIds.size} 项</span>
-            <button className="btn py-1.5 text-[12px]" onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
-            <button
-              className="btn btn-danger py-1.5 text-[12px] hover:bg-bad/10"
-              onClick={() => {
-                const ids = [...selectedVideoIds]
-                if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件）`)) return
-                onRemoveVideos(ids)
-                clearSelection()
-              }}
-            >
-              移除
-            </button>
-            <button className="ml-auto text-[11.5px] text-tertiary hover:text-primary" onClick={clearSelection}>取消选择</button>
-          </>
-        ) : (
-          <>
+      <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-line/60 px-4 py-2">
+            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${treeVisible ? 'border-accent/50 text-accent' : ''}`} onClick={() => !treeVisible && onToggleTree()} aria-pressed={treeVisible}>文件夹</button>
+            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${!treeVisible ? 'border-accent/50 text-accent' : ''}`} onClick={() => treeVisible && onToggleTree()} aria-pressed={!treeVisible}>全部视频</button>
             <div className="relative min-w-[180px] max-w-sm flex-1">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tertiary">⌕</span>
               <input
@@ -145,9 +143,19 @@ export function Toolbar(props: ToolbarProps) {
               <option value="added">最近添加</option><option value="name">名称</option>
               <option value="size">大小</option><option value="duration">时长</option>
             </select>
-            <span className="ml-1 text-[11px] tabular-nums text-tertiary">显示 {videos.length}</span>
-          </>
-        )}
+            {selectedVideoIds.size > 0 ? (
+              <div className="flex items-center gap-2 border-l border-line pl-2">
+                <span className="whitespace-nowrap text-[11.5px] font-medium text-accent">已选 {selectedVideoIds.size}</span>
+                <button className="btn py-1.5 text-[11.5px]" onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
+                <button className="btn btn-danger py-1.5 text-[11.5px]" onClick={() => {
+                  const ids = [...selectedVideoIds]
+                  if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件）`)) return
+                  onRemoveVideos(ids)
+                  clearSelection()
+                }}>移除</button>
+                <button className="text-[11.5px] text-tertiary hover:text-primary" onClick={clearSelection}>取消</button>
+              </div>
+            ) : <span className="ml-1 text-[11px] tabular-nums text-tertiary">显示 {videos.length}</span>}
       </div>
     </div>
   )

@@ -1,12 +1,11 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
 import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
-import { buildFolderTree, pathSegments } from '../lib/libraryTree'
+import { buildExplorerTree, explorerPathKey, visibleExplorerRows } from '../lib/libraryExplorer'
 import { SidePanel } from './SidePanel'
 import { VideoRow } from './VideoRow'
-import { FolderTree } from './FolderTree'
 import { Toolbar } from './Toolbar'
 import { DuplicatesModal } from './DuplicatesModal'
 import { FrameGallery } from './FrameGallery'
@@ -36,9 +35,7 @@ interface Props {
   globalSampling: 'uniform' | 'scene'
   /** 库内查重：返回相似对。耗时长（每视频一次全帧扫描），由按钮显式触发 */
   onFindDuplicates: (minScore?: number) => Promise<DuplicatePair[]>
-  // 地址栏 / 树
-  selectedDir: string | null
-  onSelectDir: (dir: string | null) => void
+  // 文件夹视图 / 平铺视图
   treeVisible: boolean
   onToggleTree: () => void
   // 选中
@@ -46,8 +43,8 @@ interface Props {
   isVideoSelected: (videoId: number) => boolean
   toggleVideoSelection: (videoId: number, shiftKey: boolean, ctrlKey: boolean) => void
   clearSelection: () => void
-  selectAll: () => void
   setSelectedIds: (ids: number[], selected: boolean) => void
+  setSelectionOrder: (ids: number[]) => void
   /** 右侧「索引设置」页的内容（由 App 传入，合并到同一栏切换） */
   sideSettings: ReactNode
 }
@@ -61,13 +58,16 @@ const STATE_STYLE: Record<string, { text: string; cls: string }> = {
 
 export function LibraryView(props: Props) {
   const {
-    folders, videos, total, query, onSetQuery, selectedDir, onSelectDir,
+    folders, videos, total, query, onSetQuery,
     treeVisible, onToggleTree, selectedVideoIds, isVideoSelected,
-    toggleVideoSelection, clearSelection, selectAll, setSelectedIds
+    toggleVideoSelection, clearSelection, setSelectedIds
   } = props
 
   const [folderDrop, setFolderDrop] = useState(false)
   const [drawer, setDrawer] = useState<'folders' | 'settings' | null>(null)
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
@@ -83,15 +83,53 @@ export function LibraryView(props: Props) {
   }
 
   const roots = useMemo(() => folders.map((f) => f.path), [folders])
-  // 地址栏面包屑：从监听根到当前选中目录的路径段
-  const treeRoots = useMemo(() => buildFolderTree(folders, videos), [folders, videos])
-  const breadcrumb = useMemo(
-    () => (selectedDir === null ? [] : pathSegments(selectedDir, treeRoots)),
-    [selectedDir, treeRoots]
+  const explorerRoots = useMemo(() => buildExplorerTree(folders, videos), [folders, videos])
+  const filtering = Boolean(query.keyword?.trim()) || (query.status != null && query.status !== 'all')
+  const rows = useMemo(
+    () => treeVisible ? visibleExplorerRows(filtering ? explorerRoots.filter((root) => root.count > 0) : explorerRoots, expandedPaths, filtering, closedFilteredPaths) : videos.map((video) => ({ type: 'video' as const, video, depth: 0 })),
+    [treeVisible, explorerRoots, expandedPaths, filtering, closedFilteredPaths, videos]
   )
+  const shownVideos = useMemo(() => rows.flatMap((row) => row.type === 'video' ? [row.video] : []), [rows])
+  useEffect(() => { props.setSelectionOrder(shownVideos.map((video) => video.id)) }, [props.setSelectionOrder, shownVideos])
+  const toggleFolder = (path: string) => {
+    const key = explorerPathKey(path)
+    const wasOpen = filtering ? !closedFilteredPaths.has(key) : expandedPaths.has(key)
+    setOpenMenuId(null)
+    if (wasOpen) clearSelection()
+    const setter = filtering ? setClosedFilteredPaths : setExpandedPaths
+    setter((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  useEffect(() => { setClosedFilteredPaths(new Set()) }, [query.keyword, query.status])
+  useEffect(() => { clearSelection() }, [query.keyword, query.status, clearSelection])
+  useEffect(() => { setOpenMenuId(null) }, [treeVisible, query.keyword, query.status, query.sort])
+  useEffect(() => { setOpenMenuId(null) }, [selectedVideoIds])
+  useEffect(() => { setOpenMenuId(null) }, [drawer, duplicates, framesVideo])
+  useEffect(() => {
+    if (openMenuId === null) return
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(`[data-video-menu="${openMenuId}"]`)) setOpenMenuId(null)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.stopImmediatePropagation(); setOpenMenuId(null) }
+    }
+    const scroll = () => setOpenMenuId(null)
+    document.addEventListener('pointerdown', dismiss, true)
+    window.addEventListener('keydown', escape, true)
+    window.addEventListener('scroll', scroll, true)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true)
+      window.removeEventListener('keydown', escape, true)
+      window.removeEventListener('scroll', scroll, true)
+    }
+  }, [openMenuId])
 
   // 表头全选框状态：可见视频是否全部选中 / 部分选中
-  const visibleIds = useMemo(() => videos.map((v) => v.id), [videos])
+  const visibleIds = useMemo(() => shownVideos.map((v) => v.id), [shownVideos])
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedVideoIds.has(id))
   const someSelected = visibleIds.some((id) => selectedVideoIds.has(id))
 
@@ -99,16 +137,17 @@ export function LibraryView(props: Props) {
   const {
     navigableItems, focusedIndex, focusedVideoId,
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
-  } = useVideoCursor({ videos, toggleVideoSelection })
+  } = useVideoCursor({ videos: shownVideos, toggleVideoSelection })
 
   /**
    * 全局键盘快捷键（光标移动 + 操作键）。「键 → 行为」集中在 useLibraryShortcuts，
    * 这里只负责把当前状态/动作喂给它。
    */
   useLibraryShortcuts({
-    videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
+    videos: shownVideos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
     moveCursor, jumpCursor, toggleFocusedSelection,
-    selectAll, clearSelection, onToggleTree,
+    selectAll: () => setSelectedIds(visibleIds, true), clearSelection,
+    onToggleTree: () => { clearSelection(); setOpenMenuId(null); onToggleTree() },
     onOpen: props.onOpen, onReveal: props.onReveal, onReindex: props.onReindex,
     onImportFolder: props.onImportFolder, onImportFiles: props.onImportFiles, onRescan: props.onRescan,
     onRemoveVideo: props.onRemoveVideo, onRemoveVideos: props.onRemoveVideos, filterInputRef
@@ -118,23 +157,15 @@ export function LibraryView(props: Props) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
-      {treeVisible && (
-        <FolderTree
-          folders={folders}
-          videos={videos}
-          selectedDir={selectedDir}
-          onSelectDir={onSelectDir}
-        />
-      )}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar
           query={query}
           onSetQuery={onSetQuery}
-          videos={videos}
+          videos={shownVideos}
           total={total}
           selectedVideoIds={selectedVideoIds}
           treeVisible={treeVisible}
-          onToggleTree={onToggleTree}
+          onToggleTree={() => { clearSelection(); setOpenMenuId(null); onToggleTree() }}
           onImportFiles={props.onImportFiles}
           onImportFolder={props.onImportFolder}
           onWatchFolder={props.onAddFolder}
@@ -148,33 +179,6 @@ export function LibraryView(props: Props) {
           clearSelection={clearSelection}
           filterInputRef={filterInputRef}
         />
-
-        {/* 地址栏（面包屑）：当前所在目录，点段回跳；非整库时提供「整库」入口 */}
-        {selectedDir !== null && (
-          <div className="flex min-w-0 items-center gap-1 border-b border-line/70 bg-surface-1 px-4 py-1.5 text-[11px]">
-              <button
-                className="rounded px-1 text-secondary hover:bg-ink-700/70 hover:text-primary"
-                onClick={() => onSelectDir(null)}
-                title="回到整库"
-              >
-                全部视频
-              </button>
-              {breadcrumb.map((seg, i) => (
-                <span key={seg.path} className="flex min-w-0 items-center gap-1">
-                  <span className="text-tertiary">/</span>
-                  <button
-                    className={`max-w-[180px] truncate rounded px-1 hover:bg-ink-700/70 ${
-                      i === breadcrumb.length - 1 ? 'font-medium text-accent' : 'text-secondary'
-                    }`}
-                    onClick={() => onSelectDir(seg.path)}
-                    title={seg.path}
-                  >
-                    {seg.name}
-                  </button>
-                </span>
-              ))}
-          </div>
-        )}
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface-1">
           <table className="w-full min-w-[650px] border-separate border-spacing-0 text-[12px]">
@@ -202,12 +206,44 @@ export function LibraryView(props: Props) {
               </tr>
             </thead>
             <tbody>
-              {videos.map((video) => (
+              {rows.map((row) => row.type === 'folder' ? (
+                <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path}>
+                  <td colSpan={5} className="border-b border-line/50 bg-surface-1 p-0">
+                    <button
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-row-hover focus-visible:outline-accent"
+                      style={{ paddingLeft: `${16 + row.depth * 22}px` }}
+                      onClick={() => toggleFolder(row.node.path)}
+                      onKeyDown={(event) => {
+                        const open = filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))
+                        if ((event.key === 'ArrowRight' && !open) || (event.key === 'ArrowLeft' && open)) {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          toggleFolder(row.node.path)
+                        }
+                      }}
+                      aria-expanded={filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))}
+                      aria-label={`${row.node.name}，${row.node.count} 个视频`}
+                    >
+                      <span className="w-3 text-[11px] text-tertiary">{(filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))) ? '⌄' : '›'}</span>
+                      <span className="text-[17px] text-accent" aria-hidden="true">▣</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-medium text-primary" title={row.node.path}>{row.node.name}</span>
+                        {row.depth === 0 && <span className="block truncate text-[10.5px] text-tertiary" title={row.node.path}>{row.node.path}</span>}
+                      </span>
+                      <span className="shrink-0 text-[11px] tabular-nums text-tertiary">{row.node.count} 个视频</span>
+                    </button>
+                  </td>
+                  <td className="sticky right-0 border-b border-line/50 bg-surface-1 px-3 text-right text-[10.5px] text-tertiary">
+                    {row.node.folder && !row.node.folder.pinned ? '一次性导入' : row.node.folder ? '自动同步' : ''}
+                  </td>
+                </tr>
+              ) : (
                 <VideoRow
-                  key={video.id}
-                  video={video}
+                  key={row.video.id}
+                  video={row.video}
+                  depth={row.depth}
                   roots={roots}
-                  focused={focusedVideoId === video.id}
+                  focused={focusedVideoId === row.video.id}
                   onOpen={props.onOpen}
                   onReveal={props.onReveal}
                   onRemove={props.onRemoveVideo}
@@ -215,14 +251,17 @@ export function LibraryView(props: Props) {
                   globalSampling={props.globalSampling}
                   onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                   isVideoSelected={isVideoSelected}
-                  onRowClick={(shiftKey, ctrlKey) => handleRowClick(video.id, shiftKey, ctrlKey)}
-                  onToggleCheck={(id) => toggleVideoSelection(id, false, true)}
+                  onRowClick={(shiftKey, ctrlKey) => { setOpenMenuId(null); handleRowClick(row.video.id, shiftKey, ctrlKey) }}
+                  onToggleCheck={(id) => { setOpenMenuId(null); toggleVideoSelection(id, false, true) }}
                   onOpenDouble={(id) => props.onOpen(id)}
+                  menuOpen={openMenuId === row.video.id}
+                  onToggleMenu={() => setOpenMenuId((id) => id === row.video.id ? null : row.video.id)}
+                  onCloseMenu={() => setOpenMenuId(null)}
                 />
               ))}
             </tbody>
           </table>
-          {videos.length === 0 && (
+          {rows.length === 0 && (
             <div className="mx-auto flex max-w-sm flex-col items-center px-6 py-20 text-center">
               <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-3 text-xl text-tertiary">▶</div>
               <div className="mt-4 text-[14px] font-medium text-primary">{total ? '没有符合条件的视频' : '开始建立你的视频库'}</div>
@@ -326,8 +365,8 @@ function FolderCard({
             {folder.path}
           </div>
         </div>
-        <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] ${style.cls}`}>
-          {style.text}
+        <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] ${folder.pinned ? style.cls : 'border-line bg-surface-2 text-secondary'}`}>
+          {folder.pinned ? style.text : '一次性导入'}
         </span>
       </div>
 
@@ -338,19 +377,19 @@ function FolderCard({
       )}
 
       <div className="mt-2 flex items-center gap-1">
-        <button
+        {folder.pinned && <button
           className="btn px-2 py-1 text-[11px]"
           onClick={() => onToggle(folder.id, !folder.enabled)}
         >
           {folder.enabled ? '暂停监听' : '恢复监听'}
-        </button>
+        </button>}
         <button className="btn px-2 py-1 text-[11px]" onClick={() => onRescan(folder.id)}>
           扫描
         </button>
         <button
           className="ml-auto rounded-lg px-2 py-1 text-[11px] text-bad hover:bg-bad/10"
           onClick={() => onRemove(folder.id)}
-          title="只停止监听该目录，已入库的视频记录保留"
+          title="移除文件夹记录，已入库的视频保留"
         >
           移除
         </button>

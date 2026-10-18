@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { type VideoRecord } from '@shared/types'
 
 export interface UseSelectionReturn {
@@ -15,23 +15,40 @@ export interface UseSelectionReturn {
   isVideoSelected: (videoId: number) => boolean
   isFolderExpanded: (folderId: number) => boolean
   lastSelectedRef: React.MutableRefObject<number | null>
+  setSelectionOrder: (ids: number[]) => void
 }
 
 export function useSelection(videos: VideoRecord[]): UseSelectionReturn {
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set())
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<number>>(new Set())
   const lastSelectedRef = useRef<number | null>(null)
+  const selectionOrderRef = useRef<number[] | null>(null)
+  const setSelectionOrder = useCallback((ids: number[]) => { selectionOrderRef.current = ids }, [])
+
+  useEffect(() => {
+    const available = new Set(videos.map((video) => video.id))
+    setSelectedVideoIds((current) => {
+      const remaining = new Set([...current].filter((id) => available.has(id)))
+      return remaining.size === current.size ? current : remaining
+    })
+    if (lastSelectedRef.current !== null && !available.has(lastSelectedRef.current)) lastSelectedRef.current = null
+  }, [videos])
 
   const toggleVideoSelection = useCallback((videoId: number, shiftKey = false, ctrlKey = false) => {
     const anchor = lastSelectedRef.current
     setSelectedVideoIds((prev) => {
       const next = new Set(prev)
       if (shiftKey && anchor !== null) {
-        const allIds = videos.map((v) => v.id)
+        const allIds = selectionOrderRef.current ?? videos.map((v) => v.id)
         const start = allIds.indexOf(anchor)
         const end = allIds.indexOf(videoId)
-        const [min, max] = start < end ? [start, end] : [end, start]
-        for (let i = min; i <= max; i++) next.add(allIds[i])
+        if (start < 0 || end < 0) {
+          next.clear()
+          next.add(videoId)
+        } else {
+          const [min, max] = start < end ? [start, end] : [end, start]
+          for (let i = min; i <= max; i++) next.add(allIds[i])
+        }
       } else if (ctrlKey) {
         if (next.has(videoId)) next.delete(videoId)
         else next.add(videoId)
@@ -50,7 +67,7 @@ export function useSelection(videos: VideoRecord[]): UseSelectionReturn {
   }, [])
 
   const selectAll = useCallback(() => {
-    setSelectedVideoIds(new Set(videos.map((v) => v.id)))
+    setSelectedVideoIds(new Set(selectionOrderRef.current ?? videos.map((v) => v.id)))
   }, [videos])
 
   /**
@@ -102,6 +119,7 @@ export function useSelection(videos: VideoRecord[]): UseSelectionReturn {
     collapseAllFolders,
     isVideoSelected,
     isFolderExpanded,
-    lastSelectedRef
+    lastSelectedRef,
+    setSelectionOrder
   }
 }

@@ -81,10 +81,11 @@ check(
   importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
 )
 check(
-  '一次性导入文件夹只扫描文件、不登记监听目录',
+  '一次性导入文件夹保留目录记录但不建立监听',
   importFolderOnce.includes('scan_video_files') &&
     importFolderOnce.includes('import_files') &&
-    !importFolderOnce.includes('insert_folder')
+    importFolderOnce.includes('insert_imported_folder') &&
+    dbSource.includes('set_folder_enabled(conn, folder.id, false)')
 )
 check(
   '重建索引延迟到工作线程开始时清理旧数据',

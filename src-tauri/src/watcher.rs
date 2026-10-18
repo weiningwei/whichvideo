@@ -93,7 +93,9 @@ pub fn sync_all(app: &AppHandle) -> Result<(), String> {
 
     for folder in &folders {
         if !folder.enabled {
-            set_folder_state(app, folder.id, "idle", Some("已暂停监听"));
+            if folder.pinned {
+                set_folder_state(app, folder.id, "idle", Some("已暂停监听"));
+            }
             continue;
         }
         let need_start = {

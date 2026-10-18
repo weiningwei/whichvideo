@@ -83,6 +83,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const { SettingsPanel } = await load('SettingsPanel')
   const { MediaToolsSetup } = await load('MediaToolsSetup')
   const format = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'format.js')).href)
+  const explorer = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'libraryExplorer.js')).href)
   const render = (element) => renderToStaticMarkup(element)
   const noop = () => {}
 
@@ -137,37 +138,48 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     onAddFolder: noop, onAddFolderPath: noop, onImportFolder: noop, onImportFiles: noop,
     onRemoveFolder: noop, onRescan: noop, onToggleFolder: noop, onOpen: noop, onReveal: noop,
     onRemoveVideo: noop, onRemoveVideos: noop, onReindex: noop, globalSampling: 'uniform', onFindDuplicates: async () => [],
-    selectedDir: null, onSelectDir: noop, treeVisible: true, onToggleTree: noop,
+    treeVisible: true, onToggleTree: noop,
     selectedVideoIds: selected, isVideoSelected: (id) => selected.has(id), toggleVideoSelection: noop,
-    clearSelection: noop, selectAll: noop, setSelectedIds: noop, sideSettings: settings
+    clearSelection: noop, selectAll: noop, setSelectedIds: noop, setSelectionOrder: noop, sideSettings: settings
   }
   const library = render(jsx(LibraryView, libraryProps))
+  const flatLibrary = render(jsx(LibraryView, { ...libraryProps, treeVisible: false }))
   const libraryUnselected = render(jsx(LibraryView, {
     ...libraryProps,
     selectedVideoIds: new Set(),
     isVideoSelected: () => false
   }))
-  check('默认布局只有文件夹导航和视频内容两栏', library.includes('浏览') && library.includes('全部视频') && !library.includes('w-[360px]'))
+  check('默认只显示可展开的导入目录，不铺满视频文件', library.includes('Movies') && library.includes('aria-expanded="false"') && !library.includes(`播放 ${video.name}`))
+  check('显式提供文件夹和全部视频视图', library.includes('文件夹</button>') && library.includes('全部视频</button>'))
   check('主操作收进单个添加菜单入口', library.includes('＋ 添加') && !library.includes('导入文件夹'))
   check('工具栏保持搜索、状态筛选和排序', libraryUnselected.includes('搜索视频') && libraryUnselected.includes('全部状态') && libraryUnselected.includes('最近添加'))
   check('表格精简为六列', /视频<\/th>[\s\S]*状态<\/th>[\s\S]*时长<\/th>[\s\S]*大小<\/th>[\s\S]*操作<\/th>/.test(library) && !library.includes('采样</th>'))
-  check('视频行只露出三个高频图标操作', library.includes(`播放 ${video.name}`) && library.includes(`定位 ${video.name}`) && library.includes(`更多操作 ${video.name}`))
-  check('索引状态内显示采样帧数且不增加表格列', library.includes(`已索引 · ${video.frameCount} 帧`) && library.includes(`已建立 ${video.frameCount} 个索引采样帧`))
-  check('选中态仍有强调色和左侧标记', library.includes('bg-row-selected') && library.includes('w-[2px] bg-accent') && library.includes('text-accent'))
-  check('选中后切换为专用批量操作栏', library.includes('已选 1 项') && library.includes('重建索引') && library.includes('取消选择'))
+  check('平铺视图的视频行保留三个高频操作', flatLibrary.includes(`播放 ${video.name}`) && flatLibrary.includes(`定位 ${video.name}`) && flatLibrary.includes(`更多操作 ${video.name}`))
+  check('索引状态内显示采样帧数且不增加表格列', flatLibrary.includes(`已索引 · ${video.frameCount} 帧`) && flatLibrary.includes(`已建立 ${video.frameCount} 个索引采样帧`))
+  check('选中态仍有强调色和左侧标记', flatLibrary.includes('bg-row-selected') && flatLibrary.includes('w-[2px] bg-accent') && flatLibrary.includes('text-accent'))
+  check('选中后搜索筛选仍在，批量操作可见', library.includes('搜索视频') && library.includes('已选 1') && library.includes('重建索引'))
+
+  const nested = { ...video, id: 8, name: 'nested.mp4', path: 'E:\\Media\\Movies\\A\\nested.mp4', dir: 'E:\\Media\\Movies\\A' }
+  const roots = explorer.buildExplorerTree([folder], [video, nested])
+  const collapsed = explorer.visibleExplorerRows(roots, new Set())
+  const expanded = explorer.visibleExplorerRows(roots, new Set([explorer.explorerPathKey(folder.path)]))
+  const fullyExpanded = explorer.visibleExplorerRows(roots, new Set([explorer.explorerPathKey(folder.path), explorer.explorerPathKey(nested.dir)]))
+  check('文件夹逐层展开且收起时不显示子视频', collapsed.length === 1 && expanded.some((row) => row.type === 'folder' && row.depth === 1) && expanded.some((row) => row.type === 'video' && row.video.id === 7) && !expanded.some((row) => row.type === 'video' && row.video.id === 8) && fullyExpanded.some((row) => row.type === 'video' && row.video.id === 8))
+  const oneTime = { ...folder, id: 2, pinned: false, enabled: false }
+  const importedRoots = explorer.buildExplorerTree([oneTime], [{ ...video, folderId: 2 }])
+  const legacyRoots = explorer.buildExplorerTree([], [{ ...video, folderId: null }])
+  check('一次性导入和旧库视频都能归入文件夹', importedRoots.length === 1 && importedRoots[0].folder?.id === 2 && importedRoots[0].count === 1 && legacyRoots.length === 1 && legacyRoots[0].path === video.dir)
 
   const source = (name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
   const toolbarSource = source('Toolbar.tsx')
   const rowSource = source('VideoRow.tsx')
   const drawerSource = source('SidePanel.tsx')
-  const treeSource = source('FolderTree.tsx')
   check('添加菜单明确区分三种导入方式', ['视频文件', '导入文件夹', '监视文件夹'].every((text) => toolbarSource.includes(text)))
   check('监视管理和设置改为按需抽屉', toolbarSource.includes("setDrawer") || (toolbarSource.includes('onManageFolders') && toolbarSource.includes('onOpenSettings')))
   check('抽屉覆盖内容而非永久占宽', drawerSource.includes('absolute inset-0') && drawerSource.includes('if (!mode) return null'))
   check('行内低频动作放入更多菜单', rowSource.includes('查看索引帧') && rowSource.includes('按${sampling') && rowSource.includes('从视频库移除'))
   check('索引进度仍区分检测与抽帧', rowSource.includes('检测场景') && rowSource.includes('抽取帧'))
-  check('文件夹树保留键盘导航', treeSource.includes('ArrowDown') && treeSource.includes('ArrowRight') && treeSource.includes('Enter'))
-  check('文件夹树不再混入批量复选框', !treeSource.includes('type="checkbox"'))
+  check('行菜单由视频库统一管理并在外部点击、滚动、Escape 时关闭', source('LibraryView.tsx').includes('openMenuId') && source('LibraryView.tsx').includes("document.addEventListener('pointerdown', dismiss, true)") && source('LibraryView.tsx').includes("window.addEventListener('scroll', scroll, true)"))
 
   console.log('\n=== 设置与基础能力 ===')
   const settingsHtml = render(settings)
