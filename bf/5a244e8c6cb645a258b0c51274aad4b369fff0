@@ -1,0 +1,25 @@
+src-tauri/src/sampling.rs
+  s_e78e0118ab4232::t_2eb0aac74c3e2f 68-70,73,76,81,88-102,130-131,146-172
+  s_e78e0118ab4232::t_7622b23b752178 173
+docs/how-search-works.md
+  s_e78e0118ab4232::t_2eb0aac74c3e2f 200-202
+README.md
+  s_e78e0118ab4232::t_2eb0aac74c3e2f 214,312,331
+  s_e78e0118ab4232::t_48b8dc6131832b 332-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf5a244e8c6cb645a258b0c51274aad4b369fff0",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
