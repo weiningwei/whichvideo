@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const compDir = join(root, 'src', 'renderer', 'src', 'components')
+const rendererDir = join(root, 'src', 'renderer', 'src')
 
 let failed = 0
 let passed = 0
@@ -65,13 +66,13 @@ function isException(file, hex) {
 function main() {
   const css = readFileSync(join(root, 'src', 'renderer', 'src', 'index.css'), 'utf8')
 
-  console.log('=== 组件里不得有固定色 ===')
-  const files = readdirSync(compDir).filter((f) => f.endsWith('.tsx'))
+  console.log('=== 渲染 UI 里不得有固定色 ===')
+  const files = ['App.tsx', ...readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => join('components', f))]
   const hexHits = []
   const exemptUsed = new Set()
   const builtinHits = []
   for (const f of files) {
-    const src = readFileSync(join(compDir, f), 'utf8')
+    const src = readFileSync(join(rendererDir, f), 'utf8')
     src.split('\n').forEach((line, i) => {
       // 剥掉行注释再匹配，避免把说明文字当成违规
       const code = line.replace(/\/\/.*$/, '').replace(/\{[^{}]*\/\*.*?\*\/[^{}]*\}/g, '')
@@ -89,12 +90,12 @@ function main() {
     })
   }
   check(
-    `组件里没有十六进制颜色字面量（${files.length} 个文件）`,
+    `渲染 UI 里没有十六进制颜色字面量（${files.length} 个文件）`,
     hexHits.length === 0,
     hexHits.length ? hexHits.join(' | ') : '已清零'
   )
   check(
-    '组件里没有 Tailwind 内置固定色（slate-100 / gray-500 等）',
+    '渲染 UI 里没有 Tailwind 内置固定色（slate-100 / gray-500 等）',
     builtinHits.length === 0,
     builtinHits.length ? builtinHits.slice(0, 4).join(' | ') : '已清零'
   )

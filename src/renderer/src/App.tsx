@@ -168,7 +168,7 @@ export default function App() {
                   ? 'border-bad/50 bg-bad/15 text-bad'
                   : notice.level === 'warn'
                     ? 'border-warn/50 bg-warn/15 text-warn'
-                    : 'border-line bg-ink-850/90 text-slate-300'
+                    : 'border-line bg-surface-2/95 text-secondary'
               }`}
             >
               {notice.message}
