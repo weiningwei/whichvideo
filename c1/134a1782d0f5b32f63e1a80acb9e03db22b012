@@ -1,0 +1,21 @@
+scripts/test-path-format.mjs
+  s_e78e0118ab4232::t_3e76acdee82172 126
+src/renderer/src/lib/format.ts
+  s_e78e0118ab4232::t_3e76acdee82172 60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1134a1782d0f5b32f63e1a80acb9e03db22b012",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
