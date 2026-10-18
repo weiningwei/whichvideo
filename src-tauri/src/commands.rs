@@ -685,6 +685,9 @@ pub fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, Stri
         return Ok(None);
     };
     crate::diagnostics::write_archive(&app, &path)?;
+    if let Some(parent) = path.parent() {
+        let _ = platform_open::open(parent);
+    }
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
@@ -1281,12 +1284,37 @@ fn native_diagnostic_save_dialog(app: &AppHandle) -> Option<std::path::PathBuf> 
         .dialog()
         .file()
         .set_title("导出诊断包")
-        .set_file_name(format!("whichvideo-diagnostics-{}.zip", db::now_ms()))
+        .set_file_name(diagnostic_file_name(db::now_ms()))
         .add_filter("ZIP 诊断包", &["zip"]);
     if let Some(window) = app.get_webview_window("main") {
         dialog = dialog.set_parent(&window);
     }
     dialog.blocking_save_file()?.into_path().ok()
+}
+
+/// 诊断包按 UTC 时间命名：跨平台稳定、按字典序即可得到时间顺序。
+fn diagnostic_file_name(timestamp_ms: i64) -> String {
+    let seconds = timestamp_ms.div_euclid(1000);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_date_from_unix_days(seconds.div_euclid(86_400));
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    format!("whichvideo-diagnostics-{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z.zip")
+}
+
+/// 公历换算，基准为 Unix epoch；避免仅为文件名引入时间库依赖。
+fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    (year + i64::from(month <= 2), month, day)
 }
 
 /* ================================================================== */
@@ -1357,5 +1385,11 @@ mod tests {
             fetch_image_from_url("file:///C:/secret.png").unwrap_err().0,
             "unsupported-protocol"
         );
+    }
+
+    #[test]
+    fn diagnostic_filename_is_readable_and_chronological() {
+        assert_eq!(diagnostic_file_name(0), "whichvideo-diagnostics-19700101T000000Z.zip");
+        assert_eq!(diagnostic_file_name(1_735_689_599_000), "whichvideo-diagnostics-20241231T235959Z.zip");
     }
 }

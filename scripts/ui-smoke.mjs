@@ -227,6 +227,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('五个滑块仍完整保留', (settingsHtml.match(/type="range"/g) ?? []).length === 5)
   check('说明改为悬停提示而非大段常驻文字', settingsHtml.includes('title="实际帧数') && !settingsHtml.includes('适合镜头切换密集'))
   check('数据目录、诊断导出与危险操作仍可访问', settingsHtml.includes('数据目录') && settingsHtml.includes('打开索引库位置') && settingsHtml.includes('导出诊断包') && settingsHtml.includes('清空索引库'))
+  const settingsSource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'SettingsPanel.tsx'), 'utf8')
+  check('诊断导出先说明隐私范围并在完成后打开目录', settingsSource.includes('不会导出日志') && settingsSource.includes('完成后会打开保存目录') && settingsSource.includes('选择保存位置'))
   check('FFmpeg 状态与手动目录入口可访问', settingsHtml.includes('FFmpeg 可用') && settingsHtml.includes('更换目录'))
   const missingTools = render(jsx(MediaToolsSetup, {
     status: { ready: false, source: 'missing', directory: null, ffmpeg: null, ffprobe: null, message: '未找到 FFmpeg' },
