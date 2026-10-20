@@ -666,7 +666,25 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
             _ => {}
         }
     }
+    clamp_settings(&mut s);
     Ok(s)
+}
+
+/// 把设置收敛到安全范围。界面本来就有上下限，但后端不能依赖调用方：
+/// 负数帧数转 usize 会变成天文数字，并发数过大则会拉起同样多的索引线程。
+fn clamp_settings(s: &mut AppSettings) {
+    s.frames_per_video = s.frames_per_video.clamp(1, 400);
+    s.concurrency = s.concurrency.clamp(1, 8);
+    s.min_hash_score = if s.min_hash_score.is_finite() {
+        s.min_hash_score.clamp(0.0, 1.0)
+    } else {
+        default_settings().min_hash_score
+    };
+    s.max_results = s.max_results.clamp(1, 200);
+    s.await_write_ms = s.await_write_ms.clamp(0, 60_000);
+    if s.sampling_mode != "scene" {
+        s.sampling_mode = "uniform".to_string();
+    }
 }
 
 /// FFmpeg 手动目录单独保存在 settings 表；它属于运行环境配置，不参与索引参数广播。
@@ -754,14 +772,43 @@ pub struct SettingsPatch {
 }
 
 pub fn update_settings(conn: &mut Connection, patch: &SettingsPatch) -> SqlResult<AppSettings> {
+    // 写入前先收敛到安全范围，避免非 UI 调用方把负数帧数或上千并发写进库。
+    let default_score = default_settings().min_hash_score;
     let candidates: Vec<(String, Option<String>)> = vec![
-        ("framesPerVideo".into(), patch.frames_per_video.map(|v| v.to_string())),
-        ("concurrency".into(), patch.concurrency.map(|v| v.to_string())),
-        ("minHashScore".into(), patch.min_hash_score.map(|v| v.to_string())),
-        ("maxResults".into(), patch.max_results.map(|v| v.to_string())),
-        ("awaitWriteMs".into(), patch.await_write_ms.map(|v| v.to_string())),
+        (
+            "framesPerVideo".into(),
+            patch.frames_per_video.map(|v| v.clamp(1, 400).to_string()),
+        ),
+        (
+            "concurrency".into(),
+            patch.concurrency.map(|v| v.clamp(1, 8).to_string()),
+        ),
+        (
+            "minHashScore".into(),
+            patch.min_hash_score.map(|v| {
+                if v.is_finite() {
+                    v.clamp(0.0, 1.0)
+                } else {
+                    default_score
+                }
+                .to_string()
+            }),
+        ),
+        (
+            "maxResults".into(),
+            patch.max_results.map(|v| v.clamp(1, 200).to_string()),
+        ),
+        (
+            "awaitWriteMs".into(),
+            patch.await_write_ms.map(|v| v.clamp(0, 60_000).to_string()),
+        ),
         ("pruneOnDelete".into(), patch.prune_on_delete.map(|v| v.to_string())),
-        ("samplingMode".into(), patch.sampling_mode.clone()),
+        (
+            "samplingMode".into(),
+            patch.sampling_mode.as_deref().map(|mode| {
+                if mode == "scene" { "scene" } else { "uniform" }.to_string()
+            }),
+        ),
         ("updateCheck".into(), patch.update_check.map(|v| v.to_string())),
         ("keepFrameImages".into(), patch.keep_frame_images.map(|v| v.to_string())),
     ];
@@ -1193,6 +1240,28 @@ mod tests {
             .unwrap();
         assert_eq!(foreign_keys, 1);
         assert_eq!(busy_timeout, 5_000);
+    }
+
+    #[test]
+    fn settings_are_clamped_to_safe_ranges() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let patch = SettingsPatch {
+            frames_per_video: Some(-5),
+            concurrency: Some(1_000),
+            min_hash_score: Some(2.5),
+            max_results: Some(100_000),
+            await_write_ms: Some(-1),
+            sampling_mode: Some("bogus".to_string()),
+            ..Default::default()
+        };
+        let settings = update_settings(&mut conn, &patch).unwrap();
+        assert_eq!(settings.frames_per_video, 1);
+        assert_eq!(settings.concurrency, 8);
+        assert_eq!(settings.min_hash_score, 1.0);
+        assert_eq!(settings.max_results, 200);
+        assert_eq!(settings.await_write_ms, 0);
+        assert_eq!(settings.sampling_mode, "uniform");
     }
 
     #[test]
