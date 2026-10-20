@@ -579,6 +579,38 @@ pub struct FfmpegOutput {
     pub stderr: String,
 }
 
+/// Unix 下把子进程放进独立进程组，使 `terminate_child` 能整组发送信号；
+/// 其他平台为 no-op。只杀直接子进程时，`sh -c` 这类包装进程的孙进程会继续
+/// 持有 stdout/stderr 管道，读取线程会挂到孙进程自然退出，超时形同虚设。
+#[cfg(unix)]
+fn set_own_process_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // pgid 传 0 表示以子进程 pid 作为新进程组 id。
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn set_own_process_group(_command: &mut Command) {}
+
+/// 终止子进程及其全部后代并回收，避免管道读取线程无限阻塞。
+#[cfg(unix)]
+fn terminate_child(child: &mut std::process::Child) {
+    extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const SIGKILL: i32 = 9;
+    // set_own_process_group 保证 pgid == 子进程 pid；负 pid 代表整个进程组。
+    unsafe { kill(-(child.id() as i32), SIGKILL) };
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
+fn terminate_child(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// 运行媒体子进程并持续读取两个输出管道，防止大输出塞满管道导致假死。
 /// 超时后终止子进程，避免损坏媒体或卡死的网络盘永久占住索引槽位。
 fn run_media_command(
@@ -587,22 +619,23 @@ fn run_media_command(
     label: &str,
     timeout: Duration,
 ) -> Result<FfmpegOutput, String> {
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .no_window()
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    set_own_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("启动 {label} 失败：{e}"))?;
     let Some(mut stdout_pipe) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        terminate_child(&mut child);
         return Err(format!("无法读取 {label} 输出"));
     };
     let Some(mut stderr_pipe) = child.stderr.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        terminate_child(&mut child);
         return Err(format!("无法读取 {label} 错误输出"));
     };
     let stdout_reader = std::thread::spawn(move || {
@@ -618,16 +651,14 @@ fn run_media_command(
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if started.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_child(&mut child);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(format!("{label} 超时（已终止）"));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_child(&mut child);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(format!("等待 {label} 失败：{e}"));
@@ -766,12 +797,15 @@ fn run_ffmpeg_null_output_cancellable(
         return Err("场景检测已取消".to_string());
     }
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
-    let mut child = Command::new(&tools.ffmpeg)
+    let mut command = Command::new(&tools.ffmpeg);
+    command
         .no_window()
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    set_own_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
     let mut stderr_pipe = child.stderr.take().ok_or_else(|| "无法读取 ffmpeg 日志".to_string())?;
@@ -782,14 +816,12 @@ fn run_ffmpeg_null_output_cancellable(
     let started = Instant::now();
     let status = loop {
         if cancelled() {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child(&mut child);
             let _ = stderr_reader.join();
             return Err("场景检测已取消".to_string());
         }
         if started.elapsed() >= FFMPEG_TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child(&mut child);
             let _ = stderr_reader.join();
             return Err("ffmpeg 超时（已终止）".to_string());
         }
@@ -797,8 +829,7 @@ fn run_ffmpeg_null_output_cancellable(
             Ok(Some(status)) => break status,
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
             Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_child(&mut child);
                 let _ = stderr_reader.join();
                 return Err(format!("等待 ffmpeg 失败：{e}"));
             }
