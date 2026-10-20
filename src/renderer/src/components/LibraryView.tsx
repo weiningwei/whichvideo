@@ -179,7 +179,7 @@ export function LibraryView(props: Props) {
   const {
     navigableItems, focusedIndex, focusedVideoId,
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
-  } = useVideoCursor({ videos: shownVideos, toggleVideoSelection })
+  } = useVideoCursor({ videos: shownVideos, toggleVideoSelection, scrollSignal: renderLimit })
 
   // 键盘光标可以走到还没挂载的行（导航在原表上算），这时把那段补挂上，
   // 否则滚进可视区的查询找不到对应 DOM。（必须放在 useVideoCursor 之后：

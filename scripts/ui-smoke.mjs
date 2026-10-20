@@ -248,6 +248,11 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('滚到底部按 chunk 追加且不超过总行数', tableWindow.growLimit(150, 5000, 150) === 300 && tableWindow.growLimit(150, 160, 150) === 160)
   check('光标走出已挂载窗口时会补挂那一段', tableWindow.limitForFocus(150, 149, 5000) === 150 && tableWindow.limitForFocus(150, 150, 5000) === 300 && tableWindow.limitForFocus(150, 4000, 5000) === 4150)
   check('表格只渲染挂载窗口并提示已显示行数', source('LibraryView.tsx').includes('mountedRows.map(') && source('LibraryView.tsx').includes('growLimit(current, rows.length)') && source('LibraryView.tsx').includes('已显示 {mountedRows.length} / {rows.length} 项'))
+  check(
+    '补挂后重新把焦点行滚进可视区',
+    source('LibraryView.tsx').includes('scrollSignal: renderLimit') &&
+      readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoCursor.ts'), 'utf8').includes('[focusedVideoId, scrollSignal]')
+  )
   check('行内操作先对齐当前选中视频', source('LibraryView.tsx').includes('handleRowClick(row.video.id, false, false)') && source('LibraryView.tsx').includes('!selectedVideoIds.has(openMenuId)'))
 
   console.log('\n=== 设置与基础能力 ===')

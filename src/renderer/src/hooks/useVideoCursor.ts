@@ -25,9 +25,15 @@ export interface UseVideoCursorArgs {
   /** 当前可见视频（已按地址栏目录过滤） */
   videos: VideoRecord[]
   toggleVideoSelection: (videoId: number, shiftKey: boolean, ctrlKey: boolean) => void
+  /**
+   * 表格挂载窗口的大小。光标走出已挂载范围时 LibraryView 会先补挂那一段，
+   * 补挂完成后需要重新执行「把焦点行滚进可视区」；只依赖 focusedVideoId
+   * 的话，补挂属于一次纯扩容渲染，滚动副作用不会重跑，焦点行会停在屏幕外。
+   */
+  scrollSignal?: number
 }
 
-export function useVideoCursor({ videos, toggleVideoSelection }: UseVideoCursorArgs) {
+export function useVideoCursor({ videos, toggleVideoSelection, scrollSignal }: UseVideoCursorArgs) {
   const navigableItems = useMemo<NavigableItem[]>(
     () => videos.map((v, idx) => ({ type: 'video' as const, video: v, index: idx })),
     [videos]
@@ -166,7 +172,7 @@ export function useVideoCursor({ videos, toggleVideoSelection }: UseVideoCursorA
     } else if (rowBottom > viewBottom - margin) {
       box.scrollTop = rowBottom - box.clientHeight + margin
     }
-  }, [focusedVideoId])
+  }, [focusedVideoId, scrollSignal])
 
   return {
     navigableItems,
