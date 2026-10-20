@@ -472,23 +472,36 @@ pub async fn videos_find_duplicates(
 }
 
 /// 命中时间点预览：现场解码一帧 JPEG dataUrl。失败返回 null（调用方回退缩略图）。
+///
+/// 解码要走 ffmpeg，可能耗时数秒（网络盘更长），因此放到阻塞线程，并且只在
+/// 取路径时短暂持有数据库锁；不能在解码期间占着全局连接。
 #[tauri::command]
-pub fn videos_match_frame(
-    state: State<AppState>,
+pub async fn videos_match_frame(
+    app: AppHandle,
     video_id: i64,
     time_ms: i64,
 ) -> Result<Option<String>, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let video = db::get_video(conn, video_id)
+    tauri::async_runtime::spawn_blocking(move || match_frame_sync(&app, video_id, time_ms))
+        .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "视频不存在".to_string())?;
+}
+
+fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Option<String>, String> {
     if time_ms < 0 {
         return Ok(None);
     }
-    Ok(media::decode_frame_at(&video.path, time_ms, crate::constants::EXTRACT_WIDTH))
+    let path = {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_video(conn, video_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "视频不存在".to_string())?
+            .path
+    };
+    Ok(media::decode_frame_at(&path, time_ms, crate::constants::EXTRACT_WIDTH))
 }
 
 /// 视频分页列表（支持 keyword/folderId/status 过滤、排序、分页）。
