@@ -120,6 +120,7 @@ fn main() {
             commands::videos_thumbnail,
             commands::videos_frame_manifest,
             commands::videos_remove,
+            commands::videos_remove_many,
             commands::videos_reveal,
             commands::videos_open,
             commands::videos_match_frame,

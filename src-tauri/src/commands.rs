@@ -276,6 +276,41 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// 批量移除视频（不删除磁盘文件）。
+///
+/// 逐条调用 `videos_remove` 时每个 id 都是一次 IPC + 一次帧目录删除 + 一条事件，
+/// 几百个就会把窗口拖住；这里一次删完、一次摘除索引，前端在命令返回后整体刷新。
+#[tauri::command]
+pub async fn videos_remove_many(app: AppHandle, video_ids: Vec<i64>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || remove_videos_sync(&app, video_ids))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn remove_videos_sync(app: &AppHandle, video_ids: Vec<i64>) -> Result<(), String> {
+    if video_ids.is_empty() {
+        return Ok(());
+    }
+    indexer::cancel_many(app, &video_ids);
+    let state = app.state::<AppState>();
+    {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::remove_video_ids(conn, &video_ids).map_err(|e| e.to_string())?;
+    }
+    for id in &video_ids {
+        frames_store::remove_video(*id);
+    }
+    state
+        .search_index
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove_videos(&video_ids);
+    Ok(())
+}
+
 /// 在资源管理器中定位文件。
 #[tauri::command]
 pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String> {
@@ -709,7 +744,18 @@ pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, Strin
 
 /// 更新用户设置，返回合并后的完整设置。
 #[tauri::command]
-pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Result<db::AppSettings, String> {
+pub async fn library_update_settings(
+    app: AppHandle,
+    patch: db::SettingsPatch,
+) -> Result<db::AppSettings, String> {
+    tauri::async_runtime::spawn_blocking(move || update_settings_sync(&app, patch))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 关掉「保存索引帧图片」要递归删除整个 frames 目录（可能上百万个小文件），
+/// 只能跑在阻塞线程，不能占着窗口主线程。
+fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db::AppSettings, String> {
     let state = app.state::<AppState>();
     let mut guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
@@ -739,7 +785,7 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
             },
         );
     }
-    let _ = watcher::sync_all(&app);
+    let _ = watcher::sync_all(app);
     let _ = app.emit(
         constants::EVENT_CHANNEL,
         events::LibraryEvent::SettingsUpdated { settings: updated.clone() },
@@ -749,9 +795,16 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
 
 /// 重置索引库（清空视频/帧/文件夹，保留设置）。
 #[tauri::command]
-pub fn library_reset(app: AppHandle) -> Result<(), String> {
-    watcher::stop_all(&app)?;
-    indexer::cancel_all(&app);
+pub async fn library_reset(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || reset_library_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 清库要删掉 frames 下的全部目录，跑在阻塞线程；界面只显示一句「正在重置」。
+fn reset_library_sync(app: &AppHandle) -> Result<(), String> {
+    watcher::stop_all(app)?;
+    indexer::cancel_all(app);
     let state = app.state::<AppState>();
     {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
@@ -761,7 +814,7 @@ pub fn library_reset(app: AppHandle) -> Result<(), String> {
         db::clear_all(conn).map_err(|e| e.to_string())?;
     }
     // watcher 析构前已进入回调的事件可能刚刚入队；清库后再收口一次。
-    indexer::cancel_all(&app);
+    indexer::cancel_all(app);
     frames_store::remove_all();
     *state.search_index.lock().map_err(|e| e.to_string())? = search::FrameSearchIndex::new();
     Ok(())

@@ -183,15 +183,16 @@ export function useLibrary() {
        * 后端广播的 video-removed 事件会由 useVideoList 逐条就地删行。
        */
       async removeVideos(videoIds: number[]): Promise<number[]> {
+        if (videoIds.length === 0) return []
+        // 一条命令删完：逐条 invoke 时每个 id 都是一次 IPC + 一次帧目录删除，
+        // 几百个选中就会把窗口拖住，而且事件会一条条刷列表。
         const removedIds: number[] = []
         await withBusy(`正在从库中移除 ${videoIds.length} 个视频…`, async () => {
           try {
-            for (const id of videoIds) {
-              await window.whichvideo.videos.remove(id)
-              removedIds.push(id)
-            }
+            await window.whichvideo.videos.removeMany(videoIds)
+            removedIds.push(...videoIds)
           } finally {
-            // 中途失败也要刷新已成功移除的记录，不能留下陈旧计数。
+            // 失败时保持选中（removedIds 为空），成功则整体刷新一次。
             if (removedIds.length > 0) await refreshAll()
           }
         })

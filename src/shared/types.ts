@@ -399,6 +399,7 @@ export interface WhichVideoApi {
     list(query: VideoQuery): Promise<VideoPage>
     get(videoId: number): Promise<VideoRecord | null>
     remove(videoId: number): Promise<void>
+    removeMany(videoIds: number[]): Promise<void>
     reindex(
       videoIds?: number[],
       mode?: SamplingMode
@@ -459,6 +460,7 @@ export const IPC = {
   videosList: 'videos_list',
   videosGet: 'videos_get',
   videosRemove: 'videos_remove',
+  videosRemoveMany: 'videos_remove_many',
   videosReindex: 'videos_reindex',
   videosFindDuplicates: 'videos_find_duplicates',
   videosImport: 'videos_import',

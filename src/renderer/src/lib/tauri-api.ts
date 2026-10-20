@@ -52,6 +52,7 @@ export const tauriApi: WhichVideoApi = {
     list: (query) => invoke<VideoPage>(IPC.videosList, { query: query ?? {} }),
     get: (videoId) => invoke<VideoRecord | null>(IPC.videosGet, { videoId }),
     remove: (videoId) => invoke<void>(IPC.videosRemove, { videoId }),
+    removeMany: (videoIds) => invoke<void>(IPC.videosRemoveMany, { videoIds }),
     reindex: (videoIds, mode) => invoke<{ count: number }>(IPC.videosReindex, { videoIds, mode }),
     findDuplicates: (minScore) =>
       invoke<DuplicatePair[]>(IPC.videosFindDuplicates, { minScore }),

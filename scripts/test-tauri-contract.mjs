@@ -136,7 +136,7 @@ const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enable
 const foldersAddDialogCommand = commandsSource.match(/pub async fn folders_add_dialog\([\s\S]*?\n}\n\n\/\/\/ 从索引库移除文件夹/)?.[0] ?? ''
 const foldersRescanCommand = commandsSource.match(/pub (?:async )?fn folders_rescan\([\s\S]*?\n}\n\n\/\/\/ 启用\/停用/)?.[0] ?? ''
 const videosRemoveCommand = commandsSource.match(/pub fn videos_remove\([\s\S]*?\n}\n\n\/\/\/ 在资源管理器/)?.[0] ?? ''
-const libraryResetCommand = commandsSource.match(/pub fn library_reset\([\s\S]*?\n}\n\n\/\/\/ 打开数据目录/)?.[0] ?? ''
+const libraryResetCommand = commandsSource.match(/fn reset_library_sync\([\s\S]*?\n}\n\n\/\/\/ 打开数据目录/)?.[0] ?? ''
 check(
   '导入视频不再隐式登记监听目录',
   importFilesCommand.includes('indexer::import_files') && !importFilesCommand.includes('indexer::import_folder(')
@@ -191,8 +191,8 @@ check(
 )
 check(
   '清空资料库会停止监听并取消全部索引任务',
-  libraryResetCommand.includes('watcher::stop_all(&app)?') &&
-    libraryResetCommand.includes('indexer::cancel_all(&app)')
+  /watcher::stop_all\(&?app\)\?/.test(libraryResetCommand) &&
+    /indexer::cancel_all\(&?app\)/.test(libraryResetCommand)
 )
 check(
   '文件监听遵循写入等待与删除清理设置',
@@ -248,6 +248,15 @@ check(
     removeFolderBody.includes('remove_videos(&ids)') &&
     !removeFolderBody.includes('VideoRemoved'),
   '逐条删除 + 逐条事件 + 全量重建索引是大文件夹卡死的原因'
+)
+check(
+  '批量移除/重置/改设置不占用窗口主线程',
+  ['videos_remove_many', 'library_reset', 'library_update_settings'].every((name) => {
+    const start = commandsSource.indexOf(`pub async fn ${name}`)
+    if (start < 0) return false
+    return commandsSource.slice(start, start + 500).includes('spawn_blocking')
+  }) && commandsSource.includes('db::remove_video_ids(conn, &video_ids)'),
+  '删除帧目录与递归删 frames 可能持续几十秒'
 )
 check(
   '重建索引批量入队，统计事件节流',
