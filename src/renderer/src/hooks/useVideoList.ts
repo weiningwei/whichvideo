@@ -18,26 +18,48 @@ export interface UseVideoListReturn {
  * 直到手动切换查询或重开窗口才恢复。
  *
  * 规则：
- * - `video-updated`：行在列表里就**整条替换**（status / frameCount 随之刷新）；
- *   不在就返回原列表 —— 新增行由导入后的 `refreshAll` 负责，这里乱插入会
- *   破坏排序、也会绕过当前查询的过滤条件。
+ * - `video-updated`：行在列表里就**整条替换**（status / frameCount 随之刷新）。
+ * - `video-updated` 且行不在列表里：只有能确定插入位置时才插入（见
+ *   {@link canInsertNewRow}）。导入一个几千个视频的目录时，逐条插入让用户在
+ *   扫描过程中就能看到视频进库，而不是等命令返回后一次性刷出来；其余视图
+ *   （筛选、按名称/大小排序、指定目录）插入位置不确定，留给导入结束后的刷新。
  * - 过滤视图下，若当前查询只看某状态、而这条已变成别的状态（如正看着
  *   「索引中」过滤、这条完成了）→ 从视图移除，而不是以旧状态赖着。
  * - `video-removed`：直接移除。后端移除单条后只广播这一条事件，
  *   不删的话列表会留一行"库里没了、界面还在"的僵尸行。
  * - 其余事件类型与列表无关，原样返回。
  */
+
+/** 新行只有在「不筛选 + 按最近添加排序」的视图里才有确定的插入位置。 */
+export function canInsertNewRow(query: VideoQuery): boolean {
+  if (query.keyword?.trim()) return false
+  if (query.status && query.status !== 'all') return false
+  if (query.folderId != null) return false
+  return query.sort == null || query.sort === 'added'
+}
+
+function insertByAddedAt(prev: VideoRecord[], video: VideoRecord, ascending: boolean): VideoRecord[] {
+  // 升序（最早在前）直接追加；降序插到第一个更早的行之前。时间相同保持原有
+  // 顺序，避免同一批导入的视频在列表里反复换位。
+  const at = ascending ? prev.length : prev.findIndex((item) => item.addedAt < video.addedAt)
+  const next = [...prev]
+  next.splice(at < 0 ? prev.length : at, 0, video)
+  return next
+}
+
 export function applyVideoEvent(
   prev: VideoRecord[],
   event: LibraryEvent,
-  statusFilter: VideoQuery['status']
+  query: VideoQuery
 ): VideoRecord[] {
   if (event.type === 'video-updated') {
     const next = event.video
     const idx = prev.findIndex((v) => v.id === next.id)
-    if (idx < 0) return prev
+    if (idx < 0) {
+      return canInsertNewRow(query) ? insertByAddedAt(prev, next, query.order === 'asc') : prev
+    }
     const updated = [...prev]
-    if (statusFilter !== 'all' && statusFilter !== next.status) {
+    if (query.status && query.status !== 'all' && query.status !== next.status) {
       updated.splice(idx, 1)
       return updated
     }
@@ -51,8 +73,12 @@ export function applyVideoEvent(
 }
 
 export function useVideoList(): UseVideoListReturn {
-  const [videos, setVideos] = useState<VideoRecord[]>([])
-  const [total, setTotal] = useState(0)
+  /**
+   * 列表与总数放在同一个 state 里：插入/移除一行时总数要跟着变（工具栏显示
+   * 「N 个视频」），拆成两个 setState 会在渲染之间短暂不一致，也没法在更新
+   * 函数里安全地推导总数。
+   */
+  const [list, setList] = useState<{ items: VideoRecord[]; total: number }>({ items: [], total: 0 })
   const [videoQuery, setVideoQueryState] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
 
   /**
@@ -80,13 +106,12 @@ export function useVideoList(): UseVideoListReturn {
     const first: VideoPage = await window.whichvideo.videos.list({ ...q, offset: 0, limit })
     const items = [...first.items]
     while (items.length < first.total && seq === seqRef.current) {
-      const next = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
+      const next: VideoPage = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
       if (next.items.length === 0) break
       items.push(...next.items)
     }
     if (seq !== seqRef.current) return
-    setVideos(items)
-    setTotal(first.total)
+    setList({ items, total: first.total })
   }, [])
 
   const setVideoQuery = useCallback((next: VideoQuery) => {
@@ -102,14 +127,21 @@ export function useVideoList(): UseVideoListReturn {
   /** 订阅索引事件并就地更新行；规则见 {@link applyVideoEvent}。 */
   useEffect(() => {
     const unsubscribe = window.whichvideo.events.subscribe((event: LibraryEvent) => {
-      setVideos((prev) => applyVideoEvent(prev, event, queryRef.current.status))
+      setList((prev) => {
+        const items = applyVideoEvent(prev.items, event, queryRef.current)
+        // 行数变化同步到总数（插入的新行 / 被移除或不再匹配筛选的行）。
+        // 拉取回来时会用后端总数整体覆盖。
+        const total = Math.max(0, prev.total + items.length - prev.items.length)
+        if (items === prev.items && total === prev.total) return prev
+        return { items, total }
+      })
     })
     return unsubscribe
   }, [])
 
   return {
-    videos,
-    total,
+    videos: list.items,
+    total: list.total,
     videoQuery,
     refreshVideos,
     setVideoQuery

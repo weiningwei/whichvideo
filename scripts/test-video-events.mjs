@@ -68,18 +68,20 @@ const { applyImportProgress } = await import(
   pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
 )
 
-/** 最小 VideoRecord：applyVideoEvent 只读 id/status，其余字段透传 */
-const video = (id, status, frameCount) => ({
+/** 最小 VideoRecord：applyVideoEvent 只读 id/status/addedAt，其余字段透传 */
+const video = (id, status, frameCount, addedAt = id) => ({
   id,
   status,
   frameCount,
+  addedAt,
   path: `F:\\Media\\v${id}.mp4`,
   name: `v${id}.mp4`
 })
 const indexed = (id, frameCount) => video(id, 'ready', frameCount)
 
-const list = [video(1, 'indexing', 0), video(2, 'indexing', 0), video(3, 'ready', 10)]
-const ALL = 'all'
+// 默认视图：全部视频、按最近添加倒序（addedAt 递减）
+const list = [video(1, 'indexing', 0, 30), video(2, 'indexing', 0, 20), video(3, 'ready', 10, 10)]
+const ALL = { status: 'all' }
 
 console.log('=== video-updated：索引完成后行内数据要刷新 ===')
 {
@@ -90,19 +92,41 @@ console.log('=== video-updated：索引完成后行内数据要刷新 ===')
   check('行数不变、顺序不变', out.length === 3 && out[0].id === 1)
 }
 
-console.log('=== video-updated：不在当前列表的行不能乱插 ===')
+console.log('=== video-updated：导入中的新视频按最近添加插入 ===')
 {
-  const out = applyVideoEvent(list, { type: 'video-updated', video: indexed(99, 5) }, ALL)
-  check('列表原样返回（不插入）', out.length === 3 && !out.some((v) => v.id === 99))
+  const fresh = (id, addedAt) => video(id, 'pending', 0, addedAt)
+  const out = applyVideoEvent(list, { type: 'video-updated', video: fresh(99, 40) }, ALL)
+  check('默认视图插入新行并排在最前', out.length === 4 && out[0].id === 99)
+  const middle = applyVideoEvent(list, { type: 'video-updated', video: fresh(98, 25) }, ALL)
+  check('按 addedAt 降序插到中间', middle.map((v) => v.id).join(',') === '1,98,2,3')
+  const asc = applyVideoEvent(
+    list,
+    { type: 'video-updated', video: fresh(97, 0) },
+    { status: 'all', sort: 'added', order: 'asc' }
+  )
+  check('升序视图追加到末尾', asc[asc.length - 1].id === 97)
+  const duplicate = applyVideoEvent(
+    list,
+    { type: 'video-updated', video: { ...indexed(2, 7), addedAt: 999 } },
+    ALL
+  )
+  check('同一 id 只替换不重复插入', duplicate.length === 3 && duplicate[1].frameCount === 7)
+  check(
+    '筛选 / 其它排序 / 指定目录视图不插入（位置不确定）',
+    applyVideoEvent(list, { type: 'video-updated', video: fresh(96, 9) }, { status: 'indexing' }).length === 3 &&
+      applyVideoEvent(list, { type: 'video-updated', video: fresh(95, 9) }, { status: 'all', keyword: 'v' }).length === 3 &&
+      applyVideoEvent(list, { type: 'video-updated', video: fresh(94, 9) }, { status: 'all', sort: 'name' }).length === 3 &&
+      applyVideoEvent(list, { type: 'video-updated', video: fresh(93, 9) }, { status: 'all', folderId: 1 }).length === 3
+  )
 }
 
 console.log('=== 过滤视图：状态变了就从视图移除 ===')
 {
   // 正看着「索引中」过滤，这条完成了 → 应消失而不是以旧状态赖着
-  const out = applyVideoEvent(list, { type: 'video-updated', video: indexed(1, 64) }, 'indexing')
+  const out = applyVideoEvent(list, { type: 'video-updated', video: indexed(1, 64) }, { status: 'indexing' })
   check('完成的行从「索引中」视图移除', out.length === 2 && !out.some((v) => v.id === 1))
   // 状态变为 failed → 不再属于「索引中」视图（status 是精确匹配，非包含）→ 移除
-  const out2 = applyVideoEvent(list, { type: 'video-updated', video: video(1, 'failed', 0) }, 'indexing')
+  const out2 = applyVideoEvent(list, { type: 'video-updated', video: video(1, 'failed', 0) }, { status: 'indexing' })
   check('变失败同样从「索引中」视图移除（status 精确匹配）', out2.length === 2 && !out2.some((v) => v.id === 1))
 }
 
@@ -127,8 +151,13 @@ console.log('=== 静态守卫：订阅真的接上了 ===')
   check(
     'hook 内订阅了 events 并把事件交给 applyVideoEvent',
     src.includes('window.whichvideo.events.subscribe') &&
-      /applyVideoEvent\(prev, event, queryRef\.current\.status\)/.test(src),
+      /applyVideoEvent\(prev\.items, event, queryRef\.current\)/.test(src),
     '删掉订阅这个修复就失效'
+  )
+  check(
+    '行数变化折算进工具栏总数（插入的新行不会与 N 个视频对不上）',
+    src.includes('prev.total + items.length - prev.items.length'),
+    ''
   )
   const coreSrc = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryCore.ts'), 'utf8')
   check(
