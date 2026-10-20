@@ -74,6 +74,18 @@ export function applyVideoEvent(
 
 type VideoListEvent = Extract<LibraryEvent, { type: 'video-updated' | 'video-removed' }>
 
+/** 筛选或其它排序视图无法安全插入新行时，按需从数据库校正。 */
+export function shouldRefreshForUnseenVideo(
+  knownIds: Set<number>,
+  event: VideoListEvent,
+  query: VideoQuery
+): boolean {
+  if (event.type !== 'video-updated' || canInsertNewRow(query) || knownIds.has(event.video.id)) return false
+  if (query.status && query.status !== 'all' && query.status !== event.video.status) return false
+  if (query.folderId != null && query.folderId !== event.video.folderId) return false
+  return true
+}
+
 /** 同一批事件只遍历一次列表；同一视频以最后一条事件为准。 */
 export function applyVideoEvents(prev: VideoRecord[], events: VideoListEvent[], query: VideoQuery): VideoRecord[] {
   const changes = new Map<number, VideoListEvent>()
@@ -145,6 +157,10 @@ export function useVideoList(): UseVideoListReturn {
    * 或闪回旧数据）。序号守卫让晚到的旧响应直接丢弃。
    */
   const seqRef = useRef(0)
+  const knownIdsRef = useRef(new Set<number>())
+  useEffect(() => {
+    knownIdsRef.current = new Set(list.items.map((video) => video.id))
+  }, [list.items])
 
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     const q = query ?? queryRef.current
@@ -174,8 +190,34 @@ export function useVideoList(): UseVideoListReturn {
 
   /** 批量合并索引事件，最多约每 150ms 更新一次列表。 */
   useEffect(() => {
+    let alive = true
     let pending: VideoListEvent[] = []
     let timer: ReturnType<typeof setTimeout> | null = null
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+    let refreshing = false
+    let refreshAgain = false
+    const scheduleRefresh = () => {
+      if (!alive || refreshTimer !== null) return
+      refreshTimer = setTimeout(async () => {
+        refreshTimer = null
+        if (refreshing) {
+          refreshAgain = true
+          return
+        }
+        refreshing = true
+        try {
+          await refreshVideos()
+        } catch {
+          // 下一条相关事件仍可重试；保留当前列表供用户继续操作。
+        } finally {
+          refreshing = false
+          if (alive && refreshAgain) {
+            refreshAgain = false
+            scheduleRefresh()
+          }
+        }
+      }, 500)
+    }
     const flush = () => {
       timer = null
       const events = pending
@@ -188,14 +230,17 @@ export function useVideoList(): UseVideoListReturn {
     }
     const unsubscribe = window.whichvideo.events.subscribe((event: LibraryEvent) => {
       if (event.type !== 'video-updated' && event.type !== 'video-removed') return
+      if (shouldRefreshForUnseenVideo(knownIdsRef.current, event, queryRef.current)) scheduleRefresh()
       pending.push(event)
       if (timer === null) timer = setTimeout(flush, 150)
     })
     return () => {
+      alive = false
       unsubscribe()
       if (timer !== null) clearTimeout(timer)
+      if (refreshTimer !== null) clearTimeout(refreshTimer)
     }
-  }, [])
+  }, [refreshVideos])
 
   return {
     videos: list.items,

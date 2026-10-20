@@ -63,7 +63,7 @@ if (!existsSync(target)) {
   console.error(`转译产物缺失：${target}`)
   process.exit(1)
 }
-const { applyVideoEvent, applyVideoEvents } = await import(pathToFileURL(target).href)
+const { applyVideoEvent, applyVideoEvents, shouldRefreshForUnseenVideo } = await import(pathToFileURL(target).href)
 const { applyImportProgress } = await import(
   pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
 )
@@ -161,6 +161,18 @@ console.log('=== 批量事件：同一轮只应用最终状态 ===')
     { type: 'video-removed', videoId: 2, path: '' }
   ], { status: 'indexing' })
   check('批量更新仍遵守状态筛选', filtered.length === 1 && filtered[0].id === 3)
+}
+
+console.log('=== 筛选视图：新视频触发数据库校正 ===')
+{
+  const known = new Set([1, 2, 3])
+  const ready = { type: 'video-updated', video: { ...video(4, 'ready', 10), folderId: 7 } }
+  check('新匹配行触发刷新', shouldRefreshForUnseenVideo(known, ready, { status: 'ready' }))
+  check('已在列表中的行直接更新', !shouldRefreshForUnseenVideo(known, { type: 'video-updated', video: indexed(1, 10) }, { status: 'ready' }))
+  check('状态和文件夹不匹配时不刷新',
+    !shouldRefreshForUnseenVideo(known, ready, { status: 'pending' }) &&
+    !shouldRefreshForUnseenVideo(known, ready, { folderId: 8 }))
+  check('默认视图继续直接插入', !shouldRefreshForUnseenVideo(known, ready, ALL))
 }
 
 console.log('=== 静态守卫：订阅真的接上了 ===')
