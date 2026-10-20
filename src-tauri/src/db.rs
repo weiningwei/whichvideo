@@ -546,7 +546,7 @@ pub fn list_videos(conn: &Connection, q: &VideoQuery) -> SqlResult<VideoPage> {
     let sort = match q.sort.as_deref() {
         Some("name") => "name",
         Some("size") => "size",
-        Some("duration") => "COALESCE(duration, 0)",
+        Some("duration") => "duration",
         _ => "added_at",
     };
     let order = match q.order.as_deref() {
@@ -563,9 +563,14 @@ pub fn list_videos(conn: &Connection, q: &VideoQuery) -> SqlResult<VideoPage> {
         |row| row.get(0),
     )?;
 
+    let order_by = if q.sort.as_deref() == Some("duration") {
+        format!("duration IS NULL ASC, duration {order}, id {order}")
+    } else {
+        format!("{sort} {order}, id {order}")
+    };
     let select_sql = format!(
-        "SELECT {} FROM videos {} ORDER BY {} {} LIMIT ? OFFSET ?",
-        VIDEO_COLUMNS, where_sql, sort, order
+        "SELECT {} FROM videos {} ORDER BY {} LIMIT ? OFFSET ?",
+        VIDEO_COLUMNS, where_sql, order_by
     );
     params.push(Box::new(limit));
     params.push(Box::new(offset));
@@ -1243,6 +1248,35 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duration_sort_keeps_unknown_lengths_last_in_both_directions() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        for (id, duration) in [(1, None), (2, Some(10.0)), (3, Some(10.0)), (4, Some(20.0))] {
+            conn.execute(
+                "INSERT INTO videos (id, path, path_key, name, dir, ext, duration, added_at) \
+                 VALUES (?1, ?2, ?2, ?2, 'library', 'mp4', ?3, 1)",
+                rusqlite::params![id, format!("video{id}"), duration],
+            )
+            .unwrap();
+        }
+
+        for (order, expected) in [("asc", [2, 3, 4, 1]), ("desc", [4, 3, 2, 1])] {
+            let query = VideoQuery {
+                sort: Some("duration".into()),
+                order: Some(order.into()),
+                ..Default::default()
+            };
+            let ids: Vec<i64> = list_videos(&conn, &query)
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|video| video.id)
+                .collect();
+            assert_eq!(ids, expected);
+        }
+    }
 
     #[test]
     fn database_connection_configuration_enforces_constraints_and_waits_for_locks() {

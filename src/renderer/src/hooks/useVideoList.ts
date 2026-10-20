@@ -38,10 +38,13 @@ export function canInsertNewRow(query: VideoQuery): boolean {
   return query.sort == null || query.sort === 'added'
 }
 
+function compareAdded(a: VideoRecord, b: VideoRecord, ascending: boolean): number {
+  const difference = a.addedAt - b.addedAt || a.id - b.id
+  return ascending ? difference : -difference
+}
+
 function insertByAddedAt(prev: VideoRecord[], video: VideoRecord, ascending: boolean): VideoRecord[] {
-  // 升序（最早在前）直接追加；降序插到第一个更早的行之前。时间相同保持原有
-  // 顺序，避免同一批导入的视频在列表里反复换位。
-  const at = ascending ? prev.length : prev.findIndex((item) => item.addedAt < video.addedAt)
+  const at = prev.findIndex((item) => compareAdded(video, item, ascending) < 0)
   const next = [...prev]
   next.splice(at < 0 ? prev.length : at, 0, video)
   return next
@@ -117,13 +120,11 @@ export function applyVideoEvents(prev: VideoRecord[], events: VideoListEvent[], 
   }
   if (fresh.length === 0) return changed ? existing : prev
   const ascending = query.order === 'asc'
-  fresh.sort((a, b) => ascending ? a.addedAt - b.addedAt : b.addedAt - a.addedAt)
+  fresh.sort((a, b) => compareAdded(a, b, ascending))
   const merged: VideoRecord[] = []
   let nextFresh = 0
   for (const video of existing) {
-    while (nextFresh < fresh.length && (ascending
-      ? fresh[nextFresh].addedAt < video.addedAt
-      : fresh[nextFresh].addedAt > video.addedAt)) {
+    while (nextFresh < fresh.length && compareAdded(fresh[nextFresh], video, ascending) < 0) {
       merged.push(fresh[nextFresh++])
     }
     merged.push(video)

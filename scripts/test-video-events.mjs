@@ -64,6 +64,9 @@ if (!existsSync(target)) {
   process.exit(1)
 }
 const { applyVideoEvent, applyVideoEvents, shouldRefreshForUnseenVideo, reconcileFetchedPage } = await import(pathToFileURL(target).href)
+const { sortVideoQuery, reverseVideoSort } = await import(
+  pathToFileURL(join(js, 'renderer', 'src', 'lib', 'videoSort.js')).href
+)
 const { applyImportProgress } = await import(
   pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
 )
@@ -100,11 +103,11 @@ console.log('=== video-updated：导入中的新视频按最近添加插入 ==='
   const middle = applyVideoEvent(list, { type: 'video-updated', video: fresh(98, 25) }, ALL)
   check('按 addedAt 降序插到中间', middle.map((v) => v.id).join(',') === '1,98,2,3')
   const asc = applyVideoEvent(
-    list,
+    [...list].reverse(),
     { type: 'video-updated', video: fresh(97, 0) },
     { status: 'all', sort: 'added', order: 'asc' }
   )
-  check('升序视图追加到末尾', asc[asc.length - 1].id === 97)
+  check('升序视图按添加时间插入', asc[0].id === 97)
   const duplicate = applyVideoEvent(
     list,
     { type: 'video-updated', video: { ...indexed(2, 7), addedAt: 999 } },
@@ -118,6 +121,15 @@ console.log('=== video-updated：导入中的新视频按最近添加插入 ==='
       applyVideoEvent(list, { type: 'video-updated', video: fresh(94, 9) }, { status: 'all', sort: 'name' }).length === 3 &&
       applyVideoEvent(list, { type: 'video-updated', video: fresh(93, 9) }, { status: 'all', folderId: 1 }).length === 3
   )
+}
+
+console.log('=== 排序方向：字段默认顺序和重复点击 ===')
+{
+  const byName = sortVideoQuery({ sort: 'added', order: 'desc' }, 'name')
+  check('切换名称默认升序', byName.sort === 'name' && byName.order === 'asc')
+  check('再次点击名称切换为降序', sortVideoQuery(byName, 'name', true).order === 'desc')
+  check('大小和时长默认降序', sortVideoQuery(byName, 'size').order === 'desc' && sortVideoQuery(byName, 'duration').order === 'desc')
+  check('方向按钮反转当前字段', reverseVideoSort(byName).sort === 'name' && reverseVideoSort(byName).order === 'desc')
 }
 
 console.log('=== 过滤视图：状态变了就从视图移除 ===')

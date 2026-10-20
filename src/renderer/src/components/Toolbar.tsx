@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord } from '@shared/types'
+import { reverseVideoSort, sortVideoQuery } from '../lib/videoSort'
 
 interface ToolbarProps {
   query: VideoQuery
@@ -140,13 +141,21 @@ export function Toolbar(props: ToolbarProps) {
             </select>
             <select
               value={query.sort ?? 'added'}
-              onChange={(e) => onSetQuery({ ...query, sort: e.target.value as VideoQuery['sort'] })}
+              onChange={(e) => onSetQuery(sortVideoQuery(query, e.target.value as NonNullable<VideoQuery['sort']>))}
               className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] outline-none"
               aria-label="排序视频"
             >
               <option value="added">最近添加</option><option value="name">名称</option>
               <option value="size">大小</option><option value="duration">时长</option>
             </select>
+            <button
+              className="btn px-2.5 py-1.5 text-[11.5px]"
+              onClick={() => onSetQuery(reverseVideoSort(query))}
+              title={query.order === 'asc' ? '当前升序，切换为降序' : '当前降序，切换为升序'}
+              aria-label={query.order === 'asc' ? '升序，切换为降序' : '降序，切换为升序'}
+            >
+              {query.order === 'asc' ? '↑ 升序' : '↓ 降序'}
+            </button>
             {videos.length > 0 && <button className="btn px-2.5 py-1.5 text-[11.5px]" onClick={onSelectAll} title="选择当前展开的所有视频">全选</button>}
             {selectedVideoIds.size > 0 ? (
               <div className="flex items-center gap-2 border-l border-line pl-2">
