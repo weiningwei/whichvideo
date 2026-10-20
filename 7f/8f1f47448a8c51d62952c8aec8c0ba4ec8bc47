@@ -1,0 +1,14 @@
+README.md
+  h_ab7185b88fbcdb 270-271,274-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f8f1f47448a8c51d62952c8aec8c0ba4ec8bc47",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
