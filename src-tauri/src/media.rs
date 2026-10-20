@@ -1207,17 +1207,20 @@ mod tests {
 
     #[test]
     fn media_command_timeout_terminates_hung_process() {
+        // 子进程睡 10 秒，断言只给 2 秒：一旦终止逻辑只杀直接子进程、
+        // 让孙进程继续持有管道，耗时就会退回接近 10 秒并稳定失败；
+        // 正常路径只有「100ms 超时 + 轮询与进程启动开销」的量级。
         let (executable, args) = if cfg!(windows) {
             (
                 "powershell.exe",
                 vec![
                     "-NoProfile".to_string(),
                     "-Command".to_string(),
-                    "Start-Sleep -Seconds 3".to_string(),
+                    "Start-Sleep -Seconds 10".to_string(),
                 ],
             )
         } else {
-            ("sh", vec!["-c".to_string(), "sleep 3".to_string()])
+            ("sh", vec!["-c".to_string(), "sleep 10".to_string()])
         };
         let started = Instant::now();
         let result = run_media_command(
@@ -1231,7 +1234,9 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error, "测试媒体进程 超时（已终止）");
-        assert!(started.elapsed() < Duration::from_secs(3));
+        // 2 秒足够兜住 Windows powershell 冷启动（CI 上可达数百毫秒），
+        // 同时远小于子进程自身的 10 秒。
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
