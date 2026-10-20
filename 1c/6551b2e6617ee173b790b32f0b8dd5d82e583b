@@ -1,0 +1,18 @@
+README.md
+  h_ab7185b88fbcdb 287
+src-tauri/src/db.rs
+  h_ab7185b88fbcdb 159-160
+src-tauri/src/main.rs
+  h_ab7185b88fbcdb 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c6551b2e6617ee173b790b32f0b8dd5d82e583b",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
