@@ -125,7 +125,7 @@ fn emit(app: &AppHandle, event: LibraryEvent) {
 fn broadcast_status(app: &AppHandle) {
     let state = app.state::<AppState>();
     let status = {
-        let idx = state.indexer.lock().unwrap();
+        let idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         idx.status()
     };
     emit(app, LibraryEvent::Status { status });
@@ -134,7 +134,7 @@ fn broadcast_status(app: &AppHandle) {
 fn broadcast_stats(app: &AppHandle) {
     let state = app.state::<AppState>();
     let stats = {
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::stats(c).ok(),
             None => None,
@@ -148,7 +148,7 @@ fn broadcast_stats(app: &AppHandle) {
 fn emit_video_updated(app: &AppHandle, id: i64) {
     let state = app.state::<AppState>();
     let video = {
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::get_video(c, id).ok().flatten(),
             None => None,
@@ -161,27 +161,27 @@ fn emit_video_updated(app: &AppHandle, id: i64) {
 
 fn set_current_path(app: &AppHandle, path: String) {
     let state = app.state::<AppState>();
-    let mut idx = state.indexer.lock().unwrap();
+    let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     idx.current_path = Some(path);
 }
 
 fn set_frame_progress(app: &AppHandle, video_id: i64, done: i64, total: i64, phase: Option<&str>) {
     let state = app.state::<AppState>();
-    let mut idx = state.indexer.lock().unwrap();
+    let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     idx.frame_progress
         .insert(video_id, (done, total, phase.map(|s| s.to_string())));
 }
 
 fn clear_frame_progress(app: &AppHandle, video_id: i64) {
     let state = app.state::<AppState>();
-    let mut idx = state.indexer.lock().unwrap();
+    let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     idx.frame_progress.remove(&video_id);
 }
 
 /// 查询单视频帧进度（供 videos.frameProgress 命令）。
 pub fn get_frame_progress(app: &AppHandle, video_id: i64) -> Option<crate::events::FrameProgress> {
     let state = app.state::<AppState>();
-    let idx = state.indexer.lock().unwrap();
+    let idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     idx.frame_progress.get(&video_id).map(|(done, total, phase)| crate::events::FrameProgress {
         video_id,
         done: *done,
@@ -199,7 +199,7 @@ pub fn get_frame_progress(app: &AppHandle, video_id: i64) -> Option<crate::event
 pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
     let scheduled = {
         let state = app.state::<AppState>();
-        let mut idx = state.indexer.lock().unwrap();
+        let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let was_idle = idx.active == 0 && idx.queue.is_empty();
         let scheduled = idx.schedule(video_id, force);
         if scheduled.is_some() && was_idle {
@@ -212,7 +212,7 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
     };
     if !deferred {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::set_video_status(c, video_id, "pending", None);
         }
@@ -225,20 +225,20 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
 /// 取消一个视频的待处理任务，并通知已经运行的工作线程尽快退出。
 pub fn cancel(app: &AppHandle, video_id: i64) {
     let state = app.state::<AppState>();
-    state.indexer.lock().unwrap().cancel_one(video_id);
+    state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).cancel_one(video_id);
     broadcast_status(app);
 }
 
 /// 清空全部待处理任务；活动任务会在当前外部进程返回后的检查点退出。
 pub fn cancel_all(app: &AppHandle) {
     let state = app.state::<AppState>();
-    state.indexer.lock().unwrap().cancel_all_jobs();
+    state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).cancel_all_jobs();
     broadcast_status(app);
 }
 
 fn is_cancelled(app: &AppHandle, video_id: i64) -> bool {
     let state = app.state::<AppState>();
-    let cancelled = state.indexer.lock().unwrap().cancelled.contains(&video_id);
+    let cancelled = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).cancelled.contains(&video_id);
     cancelled
 }
 
@@ -246,7 +246,7 @@ fn is_cancelled(app: &AppHandle, video_id: i64) -> bool {
 pub fn pump(app: AppHandle) {
     let concurrency = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::get_settings(c)
                 .map(|s| (s.concurrency.max(1)) as usize)
@@ -257,7 +257,7 @@ pub fn pump(app: AppHandle) {
     loop {
         let job = {
             let state = app.state::<AppState>();
-            let mut idx = state.indexer.lock().unwrap();
+            let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             idx.take_next(concurrency)
         };
         let Some((id, reset_before_run)) = job else {
@@ -275,7 +275,7 @@ pub fn pump(app: AppHandle) {
 fn finish(app: AppHandle, video_id: i64, outcome: Option<bool>) {
     {
         let state = app.state::<AppState>();
-        let mut idx = state.indexer.lock().unwrap();
+        let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         idx.active_ids.remove(&video_id);
         idx.cancelled.remove(&video_id);
         idx.active = idx.active.saturating_sub(1);
@@ -304,14 +304,14 @@ fn finish_cancelled(app: AppHandle, video_id: i64) {
 fn fail(app: AppHandle, video_id: i64, error: &str) {
     {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::set_video_status(c, video_id, "failed", Some(error));
         }
     }
     {
         let state = app.state::<AppState>();
-        state.indexer.lock().unwrap().last_error = Some(error.to_string());
+        state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_error = Some(error.to_string());
     }
     app.state::<AppState>().rebuild_search_index();
     emit_video_updated(&app, video_id);
@@ -328,13 +328,13 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
 fn update_search_index_for_video(app: &AppHandle, video_id: i64) {
     let state = app.state::<AppState>();
     let frames = {
-        let guard = state.db.lock().unwrap();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         guard
             .as_ref()
             .and_then(|conn| db::load_video_frame_matrix(conn, video_id).ok())
     };
     if let Some(frames) = frames {
-        state.search_index.lock().unwrap().replace_video_frames(video_id, frames);
+        state.search_index.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).replace_video_frames(video_id, frames);
     } else {
         // 读取增量帧失败时回退全量重建，优先保持搜索结果与数据库一致。
         state.rebuild_search_index();
@@ -379,7 +379,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     }
     let settings = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::get_settings(c).unwrap_or_else(|_| db::default_settings()),
             None => db::default_settings(),
@@ -389,7 +389,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     if reset_before_run {
         frames_store::remove_video(video_id);
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::clear_frames(c, &[video_id]);
             let _ = db::update_processed_timestamps(c, video_id, &[]);
@@ -399,7 +399,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
 
     let video = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::get_video(c, video_id).ok().flatten(),
             None => None,
@@ -420,7 +420,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     set_current_path(&app, video.path.clone());
     {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::set_video_status(c, video_id, "indexing", None);
         }
@@ -449,7 +449,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 };
                 {
                     let state = app.state::<AppState>();
-                    let mut guard = state.db.lock().unwrap();
+                    let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     if let Some(c) = guard.as_mut() {
                         let _ = db::upsert_video(c, &input);
                     }
@@ -513,7 +513,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     if start_index == 0 {
         let reset_result = {
             let state = app.state::<AppState>();
-            let mut guard = state.db.lock().unwrap();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             guard.as_mut()
                 .ok_or_else(|| "数据库未初始化".to_string())
                 .and_then(|c| db::reset_frame_index_progress(c, video_id).map_err(|e| e.to_string()))
@@ -603,7 +603,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             }
             {
                 let state = app.state::<AppState>();
-                let mut guard = state.db.lock().unwrap();
+                let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(c) = guard.as_mut() {
                     let _ = db::upsert_frames_incremental(c, video_id, &new_frames);
                     let _ = db::add_processed_ms(c, video_id, elapsed);
@@ -614,7 +614,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             );
             {
                 let state = app.state::<AppState>();
-                let mut guard = state.db.lock().unwrap();
+                let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(c) = guard.as_mut() {
                     let _ = db::update_processed_timestamps(c, video_id, &current_processed);
                     let _ = db::set_video_status(c, video_id, "indexing", None);
@@ -654,7 +654,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     }
     {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::set_ready_with_thumbnail(c, video_id, thumb.as_deref());
         }
@@ -692,7 +692,7 @@ fn plan_detected_scenes(scenes: &[f64], duration: Option<f64>, budget: usize) ->
 
 fn set_sampling_override(app: &AppHandle, ids: &[i64], mode: &str) {
     let state = app.state::<AppState>();
-    let mut guard = state.db.lock().unwrap();
+    let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(c) = guard.as_mut() {
         let _ = db::set_sampling_override(c, ids, mode);
     }
@@ -778,7 +778,7 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         return;
     }
     let existing = {
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => match db::find_by_path(c, &path) {
                 Ok(video) => video,
@@ -823,7 +823,7 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         file_hash,
     };
     let (video, created, changed) = {
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => match db::upsert_video(c, &input) {
                 Ok(r) => r,
@@ -871,14 +871,14 @@ pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> 
     let files = scan_video_files(&dir_path, recursive)?;
     let folder = {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().unwrap();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
         db::insert_imported_folder(conn, &dir_path, recursive).map_err(|e| e.to_string())?
     };
     let result = import_files(app.clone(), files, Some(folder.id));
     {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().unwrap();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(conn) = guard.as_ref() {
             let _ = db::mark_folder_scanned(conn, folder.id);
             if let Ok(Some(updated)) = db::get_folder(conn, folder.id) {
@@ -899,7 +899,7 @@ pub fn import_folder(
     let files = scan_video_files(&dir_path, recursive)?;
     let folder = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::insert_folder(c, &dir_path, pinned, recursive).map_err(|e| e.to_string())?,
             None => return Err("数据库未初始化".to_string()),
@@ -914,7 +914,7 @@ pub fn import_folder(
     }
     {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::mark_folder_scanned(c, folder.id);
                 let _ = db::update_folder_state(c, folder.id, if folder.enabled { "watching" } else { "idle" }, None);
@@ -922,7 +922,7 @@ pub fn import_folder(
     }
     let refreshed = {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().unwrap();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         guard
             .as_ref()
             .and_then(|c| db::get_folder(c, folder.id).ok())
@@ -939,7 +939,7 @@ pub fn import_folder(
 pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>) -> i64 {
     let targets: Vec<i64> = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => match &video_ids {
                 Some(ids) => ids
@@ -956,7 +956,7 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
     if let Some(m) = &mode {
         let ids = targets.clone();
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             let _ = db::set_sampling_override(c, &ids, m);
         }
@@ -978,7 +978,7 @@ pub fn resume_pending(app: AppHandle) {
     }
     let pending = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
             Some(c) => db::list_pending_videos(c).unwrap_or_default(),
             None => Vec::new(),
@@ -987,7 +987,7 @@ pub fn resume_pending(app: AppHandle) {
     for v in &pending {
         if v.status == "indexing" {
             let state = app.state::<AppState>();
-            let mut guard = state.db.lock().unwrap();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(c) = guard.as_mut() {
                 let _ = db::set_video_status(c, v.id, "pending", None);
             }
