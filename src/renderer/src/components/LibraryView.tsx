@@ -5,6 +5,7 @@ import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
 import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
 import { buildExplorerTree, explorerPathKey, visibleExplorerRows } from '../lib/libraryExplorer'
+import { ROW_CHUNK, growLimit, limitForFocus } from '../lib/tableWindow'
 import { SidePanel } from './SidePanel'
 import { VideoRow } from './VideoRow'
 import { Toolbar } from './Toolbar'
@@ -69,6 +70,8 @@ export function LibraryView(props: Props) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+  /** 实际挂进 DOM 的行数：几千行的表格一次挂全会同时发几千个缩略图请求 */
+  const [renderLimit, setRenderLimit] = useState(ROW_CHUNK)
   // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
   // 缓存旧结果反而误导（刚删掉的视频还会出现在列表里）。
   const [duplicates, setDuplicates] = useState<DuplicatePair[] | null>(null)
@@ -92,6 +95,14 @@ export function LibraryView(props: Props) {
     [treeVisible, explorerTree, expandedPaths, filtering, closedFilteredPaths, videos]
   )
   const shownVideos = useMemo(() => rows.flatMap((row) => row.type === 'video' ? [row.video] : []), [rows])
+  /** 只挂载窗口内的行；选择/全选/快捷键仍按 rows 全量计算 */
+  const mountedRows = useMemo(() => rows.slice(0, renderLimit), [rows, renderLimit])
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  // 切视图、换筛选后从第一屏开始，避免沿用上一个大列表的挂载上限
+  useEffect(() => {
+    setRenderLimit(ROW_CHUNK)
+  }, [treeVisible, query.keyword, query.status, query.sort, query.order, query.folderId])
   useEffect(() => { props.setSelectionOrder(shownVideos.map((video) => video.id)) }, [props.setSelectionOrder, shownVideos])
   const toggleFolder = (path: string) => {
     const key = explorerPathKey(path)
@@ -170,6 +181,17 @@ export function LibraryView(props: Props) {
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
   } = useVideoCursor({ videos: shownVideos, toggleVideoSelection })
 
+  // 键盘光标可以走到还没挂载的行（导航在原表上算），这时把那段补挂上，
+  // 否则滚进可视区的查询找不到对应 DOM。（必须放在 useVideoCursor 之后：
+  // 依赖数组在渲染期间求值，提前引用会命中 const 的 TDZ。）
+  useEffect(() => {
+    if (focusedVideoId === null) return
+    const rowsNow = rowsRef.current
+    const index = rowsNow.findIndex((row) => row.type === 'video' && row.video.id === focusedVideoId)
+    if (index < 0) return
+    setRenderLimit((current) => limitForFocus(current, index, rowsNow.length))
+  }, [focusedVideoId])
+
   const handleEntryKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     const box = scrollRef.current
     if (!box || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -229,7 +251,18 @@ export function LibraryView(props: Props) {
           filterInputRef={filterInputRef}
         />
 
-        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface-1">
+        <div
+          ref={scrollRef}
+          className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface-1"
+          onScroll={(event) => {
+            if (renderLimit >= rows.length) return
+            const box = event.currentTarget
+            // 接近底部时再挂下一段；列表数据本身早已全部在内存里。
+            if (box.scrollTop + box.clientHeight >= box.scrollHeight - 360) {
+              setRenderLimit((current) => growLimit(current, rows.length))
+            }
+          }}
+        >
           <table className="w-full min-w-[650px] border-separate border-spacing-0 text-[12px]">
             <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[10.5px] text-tertiary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
@@ -241,7 +274,7 @@ export function LibraryView(props: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => row.type === 'folder' ? (
+              {mountedRows.map((row) => row.type === 'folder' ? (
                 <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path}>
                   <td colSpan={4} className="border-b border-line/50 bg-surface-1 p-0">
                     <button
@@ -318,6 +351,13 @@ export function LibraryView(props: Props) {
                   onNavigateKey={handleEntryKeyDown}
                 />
               ))}
+              {mountedRows.length < rows.length && (
+                <tr>
+                  <td colSpan={5} className="border-b border-line/40 px-4 py-3 text-[10.5px] text-tertiary">
+                    已显示 {mountedRows.length} / {rows.length} 项 · 继续向下滚动加载
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
           {rows.length === 0 && (

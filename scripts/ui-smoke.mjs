@@ -87,6 +87,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const { DuplicatesModal } = await load('DuplicatesModal')
   const format = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'format.js')).href)
   const explorer = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'libraryExplorer.js')).href)
+  const tableWindow = await import(pathToFileURL(join(js, 'renderer', 'src', 'lib', 'tableWindow.js')).href)
   const render = (element) => renderToStaticMarkup(element)
   const noop = () => {}
 
@@ -243,6 +244,10 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('定位和索引等低频动作放入更多菜单', rowSource.includes('查看索引帧') && rowSource.includes('在资源管理器中显示') && rowSource.includes('按${sampling') && rowSource.includes('从视频库移除'))
   check('索引进度仍区分检测与抽帧', rowSource.includes('检测场景') && rowSource.includes('抽取帧'))
   check('行菜单由视频库统一管理并在外部点击、滚动、Escape 时关闭', source('LibraryView.tsx').includes('openMenuId') && source('LibraryView.tsx').includes("document.addEventListener('pointerdown', dismiss, true)") && source('LibraryView.tsx').includes("window.addEventListener('scroll', scroll, true)"))
+  check('表格首屏只挂一屏行，避免几千行同时请求缩略图', tableWindow.ROW_CHUNK > 0 && tableWindow.ROW_CHUNK <= 200)
+  check('滚到底部按 chunk 追加且不超过总行数', tableWindow.growLimit(150, 5000, 150) === 300 && tableWindow.growLimit(150, 160, 150) === 160)
+  check('光标走出已挂载窗口时会补挂那一段', tableWindow.limitForFocus(150, 149, 5000) === 150 && tableWindow.limitForFocus(150, 150, 5000) === 300 && tableWindow.limitForFocus(150, 4000, 5000) === 4150)
+  check('表格只渲染挂载窗口并提示已显示行数', source('LibraryView.tsx').includes('mountedRows.map(') && source('LibraryView.tsx').includes('growLimit(current, rows.length)') && source('LibraryView.tsx').includes('已显示 {mountedRows.length} / {rows.length} 项'))
   check('行内操作先对齐当前选中视频', source('LibraryView.tsx').includes('handleRowClick(row.video.id, false, false)') && source('LibraryView.tsx').includes('!selectedVideoIds.has(openMenuId)'))
 
   console.log('\n=== 设置与基础能力 ===')
