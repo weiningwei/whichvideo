@@ -1,0 +1,14 @@
+src-tauri/src/watcher.rs
+  h_ab7185b88fbcdb 17,19,22-33,35,58-60,63-101,103-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c84370e7f3dc32e1914bef7bd7faa21a3fe5a976",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
