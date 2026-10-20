@@ -1,0 +1,16 @@
+scripts/test-video-events.mjs
+  h_ab7185b88fbcdb 71-72,76,82-84,95,97-120,126,129,154,157-161
+src/renderer/src/hooks/useVideoList.ts
+  h_ab7185b88fbcdb 21-25,32-49,53,58-60,62,76-81,109,114,130-137,143-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74f9f5010c13d7e6453bef29f71d83efe2c8fd75",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
