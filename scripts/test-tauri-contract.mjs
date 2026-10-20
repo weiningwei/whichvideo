@@ -49,7 +49,7 @@ check('渲染入口安装 Tauri API', rendererMain.includes('window.whichvideo =
 check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.includes('尚未实现'))
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
-check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(resolution.dir.join("session"))'))
+check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(paths::webview_dir())'))
 check(
   '前后端路径规范化保留 Windows 盘符根目录',
   shared.includes("/^[a-z]:\\\\+$/i.test(normalized)") &&

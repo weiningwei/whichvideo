@@ -1,13 +1,13 @@
 //! 可选的索引帧 JPEG 存储：<dataDir>/frames/<videoId>/<timeMs>.jpg。
 
-use crate::{db, logger};
+use crate::{logger, paths};
 use image::codecs::jpeg::JpegEncoder;
 use image::ExtendedColorType;
 use std::fs;
 use std::path::PathBuf;
 
 fn video_dir(video_id: i64) -> PathBuf {
-    db::data_dir().join("frames").join(video_id.to_string())
+    paths::video_frames_dir(video_id)
 }
 
 pub fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
@@ -52,7 +52,7 @@ pub fn remove_video(video_id: i64) {
 }
 
 pub fn remove_all() -> bool {
-    let dir = db::data_dir().join("frames");
+    let dir = paths::frames_dir();
     if !dir.exists() {
         return false;
     }

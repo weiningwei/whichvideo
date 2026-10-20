@@ -6,6 +6,7 @@ use crate::hash;
 use crate::indexer;
 use crate::logger;
 use crate::media;
+use crate::paths;
 use crate::platform_open;
 use crate::process_ext::CommandNoWindow;
 use crate::search;
@@ -670,10 +671,10 @@ pub fn library_reset(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 打开数据目录（含 whichvideo.db）。
+/// 打开数据目录（db、logs、frames、session 都在这下面）。
 #[tauri::command]
 pub fn library_open_database_folder() -> Result<String, String> {
-    let dir = db::data_dir();
+    let dir = paths::data_dir();
     let dir_str = dir.to_string_lossy().to_string();
     platform_open::open(&dir)?;
     Ok(dir_str)
@@ -694,8 +695,8 @@ pub fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, Stri
 
 /// 运行时数据目录信息（toolsReady 由媒体探测结果决定）。
 #[tauri::command]
-pub fn library_data_dir() -> Result<db::DataDirInfo, String> {
-    Ok(db::data_dir_info(media::tools_ready()))
+pub fn library_data_dir() -> Result<paths::DataDirInfo, String> {
+    Ok(paths::data_dir_info(media::tools_ready()))
 }
 
 /// FFmpeg/ffprobe 当前探测结果与来源。

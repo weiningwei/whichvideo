@@ -2,6 +2,7 @@
 
 use crate::db;
 use crate::media;
+use crate::paths;
 use crate::state::AppState;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -110,7 +111,7 @@ pub fn write_archive(app: &AppHandle, output: &Path) -> Result<(), String> {
         }
     };
     let tools = media::tools_status();
-    let data_dir = db::data_dir_info(tools.ready);
+    let data_dir = paths::data_dir_info(tools.ready);
     let report = DiagnosticReport {
         schema_version: 1,
         generated_at_ms: db::now_ms(),

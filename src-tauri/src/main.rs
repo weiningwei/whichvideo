@@ -11,6 +11,7 @@ mod hash;
 mod indexer;
 mod logger;
 mod media;
+mod paths;
 mod platform_open;
 mod process_ext;
 mod sampling;
@@ -35,8 +36,8 @@ fn main() {
             }
         }))
         .setup(|app| {
-            let resolution = db::initialize_data_dir()?;
-            let log_path = logger::init(&resolution.dir);
+            let resolution = paths::initialize()?;
+            let log_path = logger::init();
             logger::install_panic_hook();
             logger::log(&format!(
                 "数据目录：{}（source={}）",
@@ -51,7 +52,7 @@ fn main() {
                 .first()
                 .ok_or_else(|| "缺少主窗口配置".to_string())?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?
-                .data_directory(resolution.dir.join("session"))
+                .data_directory(paths::webview_dir())
                 .build()?;
             app.manage(AppState::new());
             if let Err(error) = watcher::sync_all(app.handle()) {

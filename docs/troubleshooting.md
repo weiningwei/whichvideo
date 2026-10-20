@@ -8,14 +8,14 @@
 
 | 运行形态 | 默认位置 |
 | --- | --- |
-| 便携版 | `exe 同级/data/whichvideo.log` |
-| 安装版 | `exe 同级/data/whichvideo.log` |
-| 指定 `WHICHVIDEO_DATA_DIR` | `<指定目录>/whichvideo.log` |
+| 便携版 | `exe 同级/data/logs/whichvideo.log` |
+| 安装版 | `exe 同级/data/logs/whichvideo.log` |
+| 指定 `WHICHVIDEO_DATA_DIR` | `<指定目录>/logs/whichvideo.log` |
 
 日志会记录数据目录、数据库初始化、监听恢复和窗口生命周期。常见处理：
 
 - 已有实例运行：从任务栏恢复原窗口，或在任务管理器结束旧进程后重试。
-- 数据库损坏：先备份整个数据目录，再移走 `whichvideo.db`、`-wal`、`-shm` 后重启；
+- 数据库损坏：先备份整个数据目录，再移走 `db/whichvideo.db`、`db/whichvideo.db-wal`、`db/whichvideo.db-shm` 后重启；
   这样会丢失索引状态，但不会删除视频源文件。
 - 安装目录只读：应用不会回退到用户目录，请把软件安装或移动到当前用户可写的位置。
 - 缺少 WebView2 Runtime：安装微软 WebView2 Runtime 后重试。Windows 10/11 通常已预装。

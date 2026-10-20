@@ -1,6 +1,7 @@
 //! Rust 后端日志：GUI 子系统没有可见控制台，关键启动与索引消息必须落盘。
 
 use crate::constants::MAX_LOG_BYTES;
+use crate::paths;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -23,9 +24,10 @@ fn rotate_if_needed(path: &Path, max_bytes: u64) {
     }
 }
 
-pub fn init(data_dir: &Path) -> PathBuf {
-    let _ = fs::create_dir_all(data_dir);
-    let path = data_dir.join("whichvideo.log");
+pub fn init() -> PathBuf {
+    let dir = paths::logs_dir();
+    let _ = fs::create_dir_all(&dir);
+    let path = paths::log_path();
     rotate_if_needed(&path, MAX_LOG_BYTES);
     let _ = LOG_FILE.set(path.clone());
     path

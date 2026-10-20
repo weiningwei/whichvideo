@@ -14,7 +14,8 @@ writeFileSync(sourceExe, 'tauri-exe')
 for (const parent of [release, outside]) {
   const data = join(parent, 'WhichVideo-portable', 'data')
   mkdirSync(data, { recursive: true })
-  writeFileSync(join(data, 'whichvideo.db'), `keep-${parent}`)
+  mkdirSync(join(data, 'db'), { recursive: true })
+  writeFileSync(join(data, 'db', 'whichvideo.db'), `keep-${parent}`)
 }
 
 const run = spawnSync(process.execPath, [join(root, 'scripts', 'build-tauri-portable.mjs')], {
@@ -34,7 +35,7 @@ for (const parent of [release, outside]) {
   if (!existsSync(join(portable, 'WhichVideo.exe'))) throw new Error('缺少 WhichVideo.exe')
   if (existsSync(join(portable, 'resources', 'bin', 'ffmpeg.exe'))) throw new Error('不应内置 ffmpeg')
   if (existsSync(join(portable, 'resources', 'bin', 'ffprobe.exe'))) throw new Error('不应内置 ffprobe')
-  if (!readFileSync(join(portable, 'data', 'whichvideo.db'), 'utf8').startsWith('keep-')) {
+  if (!readFileSync(join(portable, 'data', 'db', 'whichvideo.db'), 'utf8').startsWith('keep-')) {
     throw new Error('data 未保留')
   }
   const note = readFileSync(join(portable, '便携版说明.txt'), 'utf8')

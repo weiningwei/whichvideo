@@ -29,7 +29,8 @@ pnpm fetch:ffmpeg     # Windows 下载 ffmpeg/ffprobe 到 resources/bin；其他
 ```text
 src-tauri/src/main.rs         Tauri 初始化、窗口、状态装配与生命周期
 src-tauri/src/commands.rs     前端命令入口
-src-tauri/src/db.rs           SQLite 持久层与数据目录判定（rusqlite）
+src-tauri/src/db.rs           SQLite 持久层（rusqlite）
+src-tauri/src/paths.rs        数据目录判定与全部落盘路径
 src-tauri/src/indexer.rs      抽帧与索引队列
 src-tauri/src/search.rs       常驻内存帧索引、检索与时间纠偏
 src-tauri/src/media.rs        ffmpeg/ffprobe 调用
@@ -49,7 +50,8 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 
 ## 后端关键约束
 
-- 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到程序同级 `data`（macOS `.app` 和 Linux AppImage 取包文件同级）。
+- 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到程序同级 `data`（macOS `.app` 和 Linux AppImage 取包文件同级），
+  按用途分 `db/`、`logs/`、`frames/`、`session/` 四个子目录；路径只在 `paths.rs` 拼接，不要在别处硬编码文件名。
   `WHICHVIDEO_DATA_DIR` 可显式覆盖；目标不可写时启动失败，不得回退到用户目录。
 - SQLite 使用 WAL。改变表结构时必须保留已有库的迁移路径，不能靠删库升级。
 - 帧指纹固定为 16×16 灰度（256 字节）；查询图和视频帧必须使用相同的缩放、

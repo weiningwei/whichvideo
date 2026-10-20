@@ -265,16 +265,16 @@ Windows 的 `build:portable` 产出两份目录：`dist\WhichVideo-portable\`（
 
 ```
 data\
-├─ whichvideo.db      索引库（SQLite）
-├─ whichvideo.log     运行日志
+├─ db\                索引库（whichvideo.db）
+├─ logs\              运行日志（whichvideo.log）
 ├─ frames\            索引帧图（开启「保留索引帧」后才生成）
 └─ session\           WebView 缓存（Windows WebView2 / Linux WebKitGTK）
 ```
 
 运行时还会出现两种伴生文件，正常退出后一般会自动清理：
 
-- `whichvideo.db-wal`、`whichvideo.db-shm`：SQLite 的 WAL 附属文件，正常退出时合并回 `whichvideo.db`，异常退出可能残留
-- `whichvideo.log.1`：日志超过 512 KiB 时轮转出的上一份
+- `db\whichvideo.db-wal`、`db\whichvideo.db-shm`：SQLite 的 WAL 附属文件，正常退出时合并回 `whichvideo.db`，异常退出可能残留
+- `logs\whichvideo.log.1`：日志超过 512 KiB 时轮转出的上一份
 
 `session\` 保存 WebView 的用户数据，包括主题和文件夹树展开状态这类界面偏好（`localStorage`）。
 **macOS 例外**：WKWebView 不支持自定义数据目录，这部分内容写在 `~/Library/WebKit/com.weiningwei.whichvideo/`，
