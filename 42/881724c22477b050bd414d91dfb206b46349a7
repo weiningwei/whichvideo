@@ -1,0 +1,14 @@
+src-tauri/src/indexer.rs
+  h_ab7185b88fbcdb 128,137,151,164,170,177,184,202,215,228,235,241,249,260,278,307,314,331,337,382,392,402,423,452,516,606,617,657,695,781,826,874,881,902,917,925,942,959,981,990
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42881724c22477b050bd414d91dfb206b46349a7",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
