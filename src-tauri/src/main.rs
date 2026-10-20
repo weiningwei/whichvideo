@@ -24,6 +24,18 @@ mod watcher;
 use state::AppState;
 use tauri::Manager;
 
+/// 启动早期还没有窗口和日志，release 又没有控制台：必须弹原生提示，
+/// 否则数据目录不可写时用户只会看到「双击没反应」。
+fn show_startup_error(app: &tauri::AppHandle, message: &str) {
+    use tauri_plugin_dialog::DialogExt;
+    eprintln!("[FATAL] {message}");
+    let _ = app
+        .dialog()
+        .message(message)
+        .title("WhichVideo 无法启动")
+        .blocking_show();
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -36,7 +48,18 @@ fn main() {
             }
         }))
         .setup(|app| {
-            let resolution = paths::initialize()?;
+            let resolution = match paths::initialize() {
+                Ok(resolution) => resolution,
+                Err(error) => {
+                    show_startup_error(
+                        app.handle(),
+                        &format!(
+                            "数据目录不可用：{error}\n\n请把程序放到当前用户可写的位置，或用 WHICHVIDEO_DATA_DIR 指定一个可写目录。"
+                        ),
+                    );
+                    std::process::exit(1);
+                }
+            };
             let log_path = logger::init();
             logger::install_panic_hook();
             logger::log(&format!(
