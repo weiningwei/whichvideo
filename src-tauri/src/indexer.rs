@@ -418,7 +418,7 @@ fn finish_cancelled(app: AppHandle, video_id: i64) {
     finish(app, video_id, None);
 }
 
-fn fail(app: AppHandle, video_id: i64, error: &str) {
+fn fail(app: AppHandle, video_id: i64, error: &str, frames_changed: bool) {
     {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -430,7 +430,11 @@ fn fail(app: AppHandle, video_id: i64, error: &str) {
         let state = app.state::<AppState>();
         state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_error = Some(error.to_string());
     }
-    app.state::<AppState>().rebuild_search_index();
+    // 失败前若未动过帧，内存索引已经与数据库一致；若已清空或写入部分帧，
+    // 只同步这个视频。单视频读取失败时由该函数回退到全量恢复。
+    if frames_changed {
+        update_search_index_for_video(&app, video_id);
+    }
     emit_video_updated(&app, video_id);
     emit(
         &app,
@@ -503,12 +507,15 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         }
     };
 
+    let mut frames_changed = false;
     if reset_before_run {
         frames_store::remove_video(video_id);
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
-            let _ = db::clear_frames(c, &[video_id]);
+            if let Ok(removed) = db::clear_frames(c, &[video_id]) {
+                frames_changed = removed > 0;
+            }
             let _ = db::update_processed_timestamps(c, video_id, &[]);
             let _ = db::set_video_status(c, video_id, "pending", None);
         }
@@ -528,7 +535,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             if is_cancelled(&app, video_id) {
                 finish_cancelled(app, video_id);
             } else {
-                fail(app, video_id, "视频记录不存在");
+                fail(app, video_id, "视频记录不存在", frames_changed);
             }
             return;
         }
@@ -545,7 +552,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     emit_video_updated(&app, video_id);
 
     if !std::path::Path::new(&video.path).exists() {
-        fail(app, video_id, "文件已不存在");
+        fail(app, video_id, "文件已不存在", frames_changed);
         return;
     }
 
@@ -578,7 +585,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                     finish_cancelled(app, video_id);
                     return;
                 }
-                fail(app, video_id, &format!("探测失败：{e}"));
+                fail(app, video_id, &format!("探测失败：{e}"), frames_changed);
                 return;
             }
         }
@@ -635,9 +642,12 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 .ok_or_else(|| "数据库未初始化".to_string())
                 .and_then(|c| db::reset_frame_index_progress(c, video_id).map_err(|e| e.to_string()))
         };
-        if let Err(e) = reset_result {
-            fail(app, video_id, &format!("重置索引进度失败：{e}"));
-            return;
+        match reset_result {
+            Ok(removed) => frames_changed |= removed > 0,
+            Err(e) => {
+                fail(app, video_id, &format!("重置索引进度失败：{e}"), frames_changed);
+                return;
+            }
         }
         frames_store::remove_video(video_id);
     }
@@ -680,7 +690,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                     finish_cancelled(app, video_id);
                     return;
                 }
-                fail(app, video_id, &format!("抽帧失败：{e}"));
+                fail(app, video_id, &format!("抽帧失败：{e}"), frames_changed);
                 return;
             }
         };
@@ -722,7 +732,9 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 let state = app.state::<AppState>();
                 let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(c) = guard.as_mut() {
-                    let _ = db::upsert_frames_incremental(c, video_id, &new_frames);
+                    if db::upsert_frames_incremental(c, video_id, &new_frames).is_ok() {
+                        frames_changed = true;
+                    }
                     let _ = db::add_processed_ms(c, video_id, elapsed);
                 }
             }

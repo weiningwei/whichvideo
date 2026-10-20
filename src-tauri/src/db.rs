@@ -1016,9 +1016,9 @@ pub fn migrate_sampling_on_global_change(
 }
 
 /// 清空若干视频的帧（重建索引前调用）。
-pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
+pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<usize> {
     if ids.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
     let sql = format!(
@@ -1026,19 +1026,19 @@ pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
         placeholders.join(",")
     );
     let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
-    conn.execute(&sql, params.as_slice())?;
-    Ok(())
+    conn.execute(&sql, params.as_slice())
 }
 
 /// 原子清除一个视频的帧和续传元数据，避免崩溃后旧时间点指向空帧表。
-pub fn reset_frame_index_progress(conn: &mut Connection, video_id: i64) -> SqlResult<()> {
+pub fn reset_frame_index_progress(conn: &mut Connection, video_id: i64) -> SqlResult<usize> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM frames WHERE video_id = ?", [video_id])?;
+    let removed = tx.execute("DELETE FROM frames WHERE video_id = ?", [video_id])?;
     tx.execute(
         "UPDATE videos SET processed_timestamps = '[]', frame_count = 0 WHERE id = ?",
         [video_id],
     )?;
-    tx.commit()
+    tx.commit()?;
+    Ok(removed)
 }
 
 /// 写入已处理的时间点索引（断点续传）。
@@ -1289,7 +1289,7 @@ mod tests {
              INSERT INTO videos VALUES (1, '[1000]', 1);\
              INSERT INTO frames VALUES (1, 0);",
         ).unwrap();
-        reset_frame_index_progress(&mut conn, 1).unwrap();
+        assert_eq!(reset_frame_index_progress(&mut conn, 1).unwrap(), 1);
         let (processed, count): (String, i64) = conn.query_row(
             "SELECT processed_timestamps, frame_count FROM videos WHERE id = 1",
             [],
@@ -1297,6 +1297,7 @@ mod tests {
         ).unwrap();
         let frames: i64 = conn.query_row("SELECT COUNT(*) FROM frames WHERE video_id = 1", [], |row| row.get(0)).unwrap();
         assert_eq!((processed.as_str(), count, frames), ("[]", 0, 0));
+        assert_eq!(reset_frame_index_progress(&mut conn, 1).unwrap(), 0);
     }
 
     #[cfg(windows)]

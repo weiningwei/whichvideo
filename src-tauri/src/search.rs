@@ -641,6 +641,14 @@ mod tests {
             u32::from_le_bytes(index.buffer[replacement_offset..replacement_offset + 4].try_into().unwrap()),
             9
         );
+
+        // 重建失败且数据库已清空该视频帧时，空快照也必须移除旧指纹。
+        index.replace_video_frames(1, db::FrameMatrix {
+            buffer: Vec::new(),
+            video_ids: Vec::new(),
+        });
+        assert_eq!(index.video_ids, vec![2]);
+        assert_eq!(index.buffer.len(), framepack::FRAME_STRIDE);
     }
 
     #[test]
