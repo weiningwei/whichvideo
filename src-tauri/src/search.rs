@@ -181,22 +181,49 @@ impl FrameSearchIndex {
         }
     }
 
-    /// 全量重建（启动、删除或增量更新失败时调用）。
+    /// 全量重建（启动或增量更新失败时调用）。
     pub fn rebuild_from_db(conn: &Connection) -> Self {
-        let (buffer, video_ids) = match db::load_frame_matrix(conn) {
-            Ok(m) => (m.buffer, m.video_ids),
-            Err(_) => (Vec::new(), Vec::new()),
-        };
-        let words = buffer
+        match db::load_frame_matrix(conn) {
+            Ok(matrix) => Self::from_matrix(matrix),
+            Err(_) => Self::new(),
+        }
+    }
+
+    /// 用数据库快照构建索引。调用方应先在锁内读出快照再调用，
+    /// 这样构建过程（复制 + 分词）不必占着全局数据库连接。
+    pub fn from_matrix(matrix: db::FrameMatrix) -> Self {
+        let words = matrix
+            .buffer
             .chunks_exact(4)
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
         FrameSearchIndex {
-            buffer,
-            video_ids,
+            buffer: matrix.buffer,
+            video_ids: matrix.video_ids,
             words,
             built_at: db::now_ms(),
         }
+    }
+
+    /// 移除单个视频的全部帧。删除一条记录时只动这个视频，避免全量重建。
+    pub fn remove_video(&mut self, video_id: i64) {
+        if !self.video_ids.contains(&video_id) {
+            return;
+        }
+        let stride = framepack::FRAME_STRIDE;
+        let mut buffer = Vec::with_capacity(self.buffer.len());
+        let mut video_ids = Vec::with_capacity(self.video_ids.len());
+        for (index, &id) in self.video_ids.iter().enumerate() {
+            if id == video_id {
+                continue;
+            }
+            let offset = index * stride;
+            buffer.extend_from_slice(&self.buffer[offset..offset + stride]);
+            video_ids.push(id);
+        }
+        self.buffer = buffer;
+        self.video_ids = video_ids;
+        self.rebuild_words();
     }
 
     /// 索引完成时只更新对应视频的帧，避免批量导入中反复从 SQLite 重建全库索引。
@@ -487,6 +514,36 @@ mod tests {
         buffer[off + framepack::META_OFFSET + 4..off + framepack::META_OFFSET + 8]
             .copy_from_slice(&time_ms.to_le_bytes());
         video_ids.push(video_id);
+    }
+
+    #[test]
+    fn removing_one_video_drops_only_its_frames() {
+        let struct_hash = vec![0_u8; framepack::STRUCT_BYTES];
+        let color = vec![0_u8; framepack::COLOR_BYTES];
+        let spatial = vec![0_u8; framepack::SPATIAL_BYTES];
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        append_frame(&mut buffer, &mut video_ids, 1, 0, 1000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 2, 0, 2000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 1, 1, 3000, &struct_hash, &color, &spatial);
+        let mut index = FrameSearchIndex {
+            words: buffer
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+            buffer,
+            video_ids,
+            built_at: 0,
+        };
+
+        index.remove_video(1);
+        assert_eq!(index.video_ids, vec![2]);
+        assert_eq!(index.buffer.len(), framepack::FRAME_STRIDE);
+        assert_eq!(index.words.len(), framepack::FRAME_STRIDE / 4);
+
+        let before = index.buffer.clone();
+        index.remove_video(99);
+        assert_eq!(index.buffer, before);
     }
 
     #[test]

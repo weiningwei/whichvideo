@@ -122,18 +122,19 @@ pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
         db::folder_video_paths(conn, folder_id).map_err(|e| e.to_string())?
     };
     for (id, _) in &videos { indexer::cancel(&app, *id); }
-    let (rebuilt, stats) = {
+    let stats = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
         for (id, _) in &videos { db::remove_video(conn, *id).map_err(|e| e.to_string())?; }
         db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
-        (search::FrameSearchIndex::rebuild_from_db(conn), db::stats(conn).map_err(|e| e.to_string())?)
+        db::stats(conn).map_err(|e| e.to_string())?
     };
     for (id, path) in videos {
         frames_store::remove_video(id);
         let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::VideoRemoved { video_id: id, path });
     }
-    *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
+    // 批量删除后重建一次；读取快照在锁内，构建在锁外。
+    state.rebuild_search_index();
     let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderRemoved { folder_id });
     let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::Stats { stats });
     watcher::sync_all(&app)?;
@@ -223,17 +224,20 @@ pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::Vi
 pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
     indexer::cancel(&app, video_id);
     let state = app.state::<AppState>();
-    let (removed, rebuilt) = {
+    let removed = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard
             .as_ref()
             .ok_or_else(|| "数据库未初始化".to_string())?;
-        let removed = db::remove_video(conn, video_id).map_err(|e| e.to_string())?;
-        let rebuilt = search::FrameSearchIndex::rebuild_from_db(conn);
-        (removed, rebuilt)
+        db::remove_video(conn, video_id).map_err(|e| e.to_string())?
     };
     frames_store::remove_video(video_id);
-    *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
+    // 只摘掉这个视频的帧，不值得为一条删除重建整个常驻索引。
+    state
+        .search_index
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove_video(video_id);
     if let Some(video) = removed {
         let _ = app.emit(
             constants::EVENT_CHANNEL,

@@ -206,7 +206,9 @@ fn remove_by_path(app: &AppHandle, path: &str) {
                 path: v.path.clone(),
             },
         );
-        state.rebuild_search_index();
+        if let Ok(mut index) = state.search_index.lock() {
+            index.remove_video(v.id);
+        }
     }
 }
 
