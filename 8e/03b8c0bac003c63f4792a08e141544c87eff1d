@@ -1,0 +1,14 @@
+src-tauri/src/media.rs
+  h_ab7185b88fbcdb 582-613,622-623,628-630,634,638,654,661,800-801,806-808,819,824,832
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e03b8c0bac003c63f4792a08e141544c87eff1d",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
