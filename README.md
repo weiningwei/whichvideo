@@ -267,11 +267,22 @@ Windows 的 `build:portable` 产出两份目录：`dist\WhichVideo-portable\`（
 data\
 ├─ whichvideo.db      索引库（SQLite）
 ├─ whichvideo.log     运行日志
-├─ frames\            索引帧
-└─ session\           WebView 缓存
+├─ frames\            索引帧图（开启「保留索引帧」后才生成）
+└─ session\           WebView 缓存（Windows WebView2 / Linux WebKitGTK）
 ```
 
-整个程序目录拷走即可迁移。程序不会回退到用户目录；如果程序目录不可写，启动会明确失败，
+运行时还会出现两种伴生文件，正常退出后一般会自动清理：
+
+- `whichvideo.db-wal`、`whichvideo.db-shm`：SQLite 的 WAL 附属文件，正常退出时合并回 `whichvideo.db`，异常退出可能残留
+- `whichvideo.log.1`：日志超过 512 KiB 时轮转出的上一份
+
+`session\` 保存 WebView 的用户数据，包括主题和文件夹树展开状态这类界面偏好（`localStorage`）。
+**macOS 例外**：WKWebView 不支持自定义数据目录，这部分内容写在 `~/Library/WebKit/com.weiningwei.whichvideo/`，
+不在 `.app` 同级；迁移程序目录时它不会跟着走，但只影响界面偏好，索引库不受影响。
+
+除导出诊断包（写到你选择的位置）外，索引、搜图和缩略图都不落临时文件，也不写系统用户目录。
+
+整个程序目录拷走即可迁移；请先退出程序，避免拷到尚未合并的 WAL。程序不会回退到用户目录；如果程序目录不可写，启动会明确失败，
 因此请安装到当前用户可写的位置。macOS 不要直接放在普通用户无写权限的 `/Applications`；Linux AppImage 也请放在可写目录。Windows 卸载程序默认保留未知的 `data\` 目录，但卸载或手工删除前仍建议备份。
 从旧版本首次启动时，如果新目录还没有对应文件，会把原用户目录中的索引库和索引帧复制进来。
 
