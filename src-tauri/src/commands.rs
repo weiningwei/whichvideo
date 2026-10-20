@@ -76,7 +76,13 @@ fn add_folder_path_sync(app: &AppHandle, dir_path: String) -> Result<db::Watched
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
 #[tauri::command]
 pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
-    let Some(picked) = native_folder_dialog(&app, "选择要加入资料库并持续监视的文件夹") else {
+    tauri::async_runtime::spawn_blocking(move || add_folders_from_dialog_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
+    let Some(picked) = native_folder_dialog(app, "选择要加入资料库并持续监视的文件夹") else {
         logger::log("[import] 监视文件夹选择已取消");
         return Ok(Vec::new());
     };
@@ -565,8 +571,15 @@ pub fn videos_frame_progress(
 /// 通过系统文件选择对话框导入视频文件，返回聚合结果。
 #[tauri::command]
 pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || import_videos_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 原生对话框与逐文件探测/哈希都是阻塞调用，不能在异步运行时线程上直接跑。
+fn import_videos_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
     let files = native_files_dialog(
-        &app,
+        app,
         "选择视频文件（可多选）",
         "视频",
         constants::VIDEO_EXTENSIONS,
@@ -576,7 +589,7 @@ pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, Strin
         return Ok(events::ImportResult::default());
     }
     logger::log(&format!("[import] 已选择 {} 个视频文件", files.len()));
-    let result = indexer::import_files(app, files, None);
+    let result = indexer::import_files(app.clone(), files, None);
     logger::log(&format!(
         "[import] 视频文件导入完成：新增 {}，已存在 {}，跳过 {}",
         result.added, result.duplicates, result.skipped
@@ -587,7 +600,13 @@ pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, Strin
 /// 递归导入一个文件夹，但不把它登记为监听目录。
 #[tauri::command]
 pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, String> {
-    let Some(mut dirs) = native_folder_dialog(&app, "选择要一次性导入的文件夹（不会持续监视）") else {
+    tauri::async_runtime::spawn_blocking(move || import_folder_once_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn import_folder_once_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
+    let Some(mut dirs) = native_folder_dialog(app, "选择要一次性导入的文件夹（不会持续监视）") else {
         logger::log("[import] 一次性文件夹选择已取消");
         return Ok(events::ImportResult::default());
     };
@@ -595,7 +614,7 @@ pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportR
         return Ok(events::ImportResult::default());
     };
     logger::log(&format!("[import] 一次性导入文件夹：{dir}"));
-    let result = indexer::import_folder_once(app, dir, true)?;
+    let result = indexer::import_folder_once(app.clone(), dir, true)?;
     logger::log(&format!(
         "[import] 文件夹导入完成：扫描 {}，新增 {}，已存在 {}，跳过 {}",
         result.scanned, result.added, result.duplicates, result.skipped
@@ -606,8 +625,14 @@ pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportR
 /// 通过系统文件选择对话框选择要搜索的图片，返回归一化路径列表（不入库）。
 #[tauri::command]
 pub async fn videos_import_images(app: AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || pick_search_images_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn pick_search_images_sync(app: &AppHandle) -> Result<Vec<String>, String> {
     let files = native_files_dialog(
-        &app,
+        app,
         "选择要搜索的图片",
         "图片",
         &["jpg", "jpeg", "png", "webp", "bmp", "gif", "avif"],
@@ -709,11 +734,17 @@ pub fn library_open_database_folder() -> Result<String, String> {
 
 /// 导出可分享的本地诊断包；只包含脱敏后的运行状态与日志末尾，不含视频或路径清单。
 #[tauri::command]
-pub fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, String> {
-    let Some(path) = native_diagnostic_save_dialog(&app) else {
+pub async fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || export_diagnostics_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn export_diagnostics_sync(app: &AppHandle) -> Result<Option<String>, String> {
+    let Some(path) = native_diagnostic_save_dialog(app) else {
         return Ok(None);
     };
-    crate::diagnostics::write_archive(&app, &path)?;
+    crate::diagnostics::write_archive(app, &path)?;
     if let Some(parent) = path.parent() {
         let _ = platform_open::open(parent);
     }
@@ -735,7 +766,13 @@ pub fn library_media_tools() -> Result<media::MediaToolsStatus, String> {
 /// 选择同时包含 ffmpeg 与 ffprobe 的目录，验证后持久化。
 #[tauri::command]
 pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
-    let Some(mut dirs) = native_folder_dialog(&app, "选择 FFmpeg 的 bin 目录") else {
+    tauri::async_runtime::spawn_blocking(move || select_media_tools_dir_sync(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatus, String> {
+    let Some(mut dirs) = native_folder_dialog(app, "选择 FFmpeg 的 bin 目录") else {
         return Ok(media::tools_status());
     };
     let Some(dir) = dirs.pop() else {
