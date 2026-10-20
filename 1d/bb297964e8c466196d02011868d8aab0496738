@@ -1,0 +1,20 @@
+src-tauri/src/commands.rs
+  h_ab7185b88fbcdb 125,130,136-137,227,232,235-240
+src-tauri/src/search.rs
+  h_ab7185b88fbcdb 184,186-196,201-202,208-228,519-548
+src-tauri/src/state.rs
+  h_ab7185b88fbcdb 40,42-43,45-51,53
+src-tauri/src/watcher.rs
+  h_ab7185b88fbcdb 209-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dbb297964e8c466196d02011868d8aab0496738",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
