@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::db;
 use crate::events;
 use crate::framepack;
@@ -117,11 +118,11 @@ pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
     };
     for (id, path) in videos {
         frames_store::remove_video(id);
-        let _ = app.emit("library_event", events::LibraryEvent::VideoRemoved { video_id: id, path });
+        let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::VideoRemoved { video_id: id, path });
     }
     *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
-    let _ = app.emit("library_event", events::LibraryEvent::FolderRemoved { folder_id });
-    let _ = app.emit("library_event", events::LibraryEvent::Stats { stats });
+    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderRemoved { folder_id });
+    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::Stats { stats });
     watcher::sync_all(&app)?;
     Ok(())
 }
@@ -149,7 +150,7 @@ pub fn folders_rescan(
             if let Some(c) = g.as_ref() {
                 let _ = db::update_folder_state(c, folder.id, "missing", Some("目录不存在"));
                 if let Ok(Some(f)) = db::get_folder(c, folder.id) {
-                    let _ = app.emit("library_event", events::LibraryEvent::FolderUpdated { folder: f });
+                    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderUpdated { folder: f });
                 }
             }
             continue;
@@ -216,7 +217,7 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
     *state.search_index.lock().map_err(|e| e.to_string())? = rebuilt;
     if let Some(video) = removed {
         let _ = app.emit(
-            "library_event",
+            constants::EVENT_CHANNEL,
             events::LibraryEvent::VideoRemoved {
                 video_id: video.id,
                 path: video.path,
@@ -336,7 +337,7 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
             Ok(value) => value,
             Err(error) => {
                 let _ = app.emit(
-                    "library_event",
+                    constants::EVENT_CHANNEL,
                     events::LibraryEvent::Notice {
                         level: "warn".to_string(),
                         message: format!("文件指纹计算失败：{error}"),
@@ -420,14 +421,14 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
             let done = position as i64 + 1;
             if done % 16 == 0 || done == total {
                 let _ = app.emit(
-                    "library_event",
+                    constants::EVENT_CHANNEL,
                     events::LibraryEvent::DuplicateScanProgress { done, total },
                 );
             }
         }
         if total == 0 {
             let _ = app.emit(
-                "library_event",
+                constants::EVENT_CHANNEL,
                 events::LibraryEvent::DuplicateScanProgress { done: 0, total: 0 },
             );
         }
@@ -542,7 +543,7 @@ pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, Strin
         &app,
         "选择视频文件（可多选）",
         "视频",
-        &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts", "mpg", "mpeg", "rmvb", "3gp"],
+        constants::VIDEO_EXTENSIONS,
     );
     if files.is_empty() {
         logger::log("[import] 视频文件选择已取消");
@@ -636,7 +637,7 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
     drop(guard);
     if patch.keep_frame_images == Some(false) && previous.keep_frame_images && frames_store::remove_all() {
         let _ = app.emit(
-            "library_event",
+            constants::EVENT_CHANNEL,
             events::LibraryEvent::Notice {
                 level: "info".to_string(),
                 message: "已清空全部索引帧图片".to_string(),
@@ -645,7 +646,7 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
     }
     let _ = watcher::sync_all(&app);
     let _ = app.emit(
-        "library_event",
+        constants::EVENT_CHANNEL,
         events::LibraryEvent::SettingsUpdated { settings: updated.clone() },
     );
     Ok(updated)

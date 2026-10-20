@@ -1,4 +1,6 @@
-//! 跨模块共享的魔法数字，集中在此避免散落。
+//! 跨模块共享的魔法数字、前后端契约枚举与运行参数，集中在此避免散落。
+
+use std::time::Duration;
 
 /// 抽帧、缩略图和查询图统一缩放到的宽度。
 /// 索引侧每一帧、查询侧查询图都按此宽度归一化，保证双方走完全相同的重采样路径。
@@ -51,3 +53,57 @@ pub const DEFAULT_SKIP_DIRS: &[&str] = &[
     "programdata",
     "appdata",
 ];
+
+/* ------------------------------------------------------------------ */
+/* 前后端契约枚举                                                     */
+/* ------------------------------------------------------------------ */
+
+/// 可索引的视频扩展名（小写、不带点）。扫描、文件对话框与前端拖拽共用；
+/// 前端同名单见 src/shared/types.ts 的 VIDEO_EXTENSIONS，契约测试校验两边一致。
+pub const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "ts", "m2ts", "rmvb",
+    "rm", "3gp", "vob", "ogv",
+];
+
+/// 后端事件通道名，必须与 src/shared/types.ts 的 IPC.eventChannel 一致。
+pub const EVENT_CHANNEL: &str = "library_event";
+
+/* ------------------------------------------------------------------ */
+/* 运行参数：外部进程、网络与存储的时限和上限                         */
+/* ------------------------------------------------------------------ */
+
+/// ffmpeg 单次调用上限（抽帧、解码、场景检测）。损坏文件或卡死的网络盘兜底。
+pub const FFMPEG_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// ffprobe 单次探测上限。
+pub const FFPROBE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// 媒体工具版本探测上限（启动时执行一次 --version）。
+pub const MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 等待媒体子进程退出的轮询间隔。
+pub const MEDIA_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// 场景检测等待 ffmpeg 的轮询间隔（输出更密集，放宽一档减少唤醒）。
+pub const SCENE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// SQLite 等锁上限，索引写入与其他连接并发时生效。
+pub const DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 网页取图（图片或 HTML 元数据）的单次请求上限。
+pub const URL_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 网页取图最多跟随的重定向次数。
+pub const URL_MAX_REDIRECTS: usize = 5;
+
+/// 网页图片体积上限（10 MiB）。
+pub const URL_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
+/// 网页 HTML 体积上限（2 MiB）。
+pub const URL_MAX_HTML_BYTES: usize = 2 * 1024 * 1024;
+
+/// 版本检查请求上限。
+pub const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 启动后延迟检查版本，避免与首次索引争抢 CPU 和网络。
+pub const UPDATE_CHECK_DELAY: Duration = Duration::from_secs(3);

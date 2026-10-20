@@ -3,6 +3,9 @@
 //! 仅含「探测」能力：工具路径解析、toolsReady、findSeekablePlayer。
 //! 实际的抽帧/解码/探测命令由后续模块（M6 的 decodeFrameAt、M7 的 indexer）复用这里的 helpers。
 
+use crate::constants::{
+    FFMPEG_TIMEOUT, FFPROBE_TIMEOUT, MEDIA_POLL_INTERVAL, MEDIA_PROBE_TIMEOUT, SCENE_POLL_INTERVAL,
+};
 use crate::process_ext::CommandNoWindow;
 use crate::sampling::should_use_full_scan;
 
@@ -16,9 +19,6 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
-
-const FFMPEG_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-const FFPROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Default)]
 #[allow(dead_code)]
@@ -139,7 +139,7 @@ fn paths_in_dir(dir: &std::path::Path) -> Option<ToolPaths> {
 fn tools_are_usable(tools: &ToolPaths) -> bool {
     let args = ["-version".to_string()];
     [&tools.ffmpeg, &tools.ffprobe].into_iter().all(|path| {
-        run_media_command(path, &args, "媒体工具探测", Duration::from_secs(5))
+        run_media_command(path, &args, "媒体工具探测", MEDIA_PROBE_TIMEOUT)
             .is_ok_and(|output| output.success)
     })
 }
@@ -656,7 +656,7 @@ fn run_media_command(
                 let _ = stderr_reader.join();
                 return Err(format!("{label} 超时（已终止）"));
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Ok(None) => std::thread::sleep(MEDIA_POLL_INTERVAL),
             Err(e) => {
                 terminate_child(&mut child);
                 let _ = stdout_reader.join();
@@ -827,7 +827,7 @@ fn run_ffmpeg_null_output_cancellable(
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Ok(None) => std::thread::sleep(SCENE_POLL_INTERVAL),
             Err(e) => {
                 terminate_child(&mut child);
                 let _ = stderr_reader.join();

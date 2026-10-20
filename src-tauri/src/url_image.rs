@@ -1,14 +1,13 @@
 //! Cross-platform, bounded URL image fetch for explicitly requested searches.
 
+use crate::constants::{
+    URL_FETCH_TIMEOUT, URL_MAX_HTML_BYTES, URL_MAX_IMAGE_BYTES, URL_MAX_REDIRECTS,
+};
 use regex::Regex;
 use reqwest::blocking::Client;
 use reqwest::header::CONTENT_TYPE;
 use std::io::Read;
-use std::time::Duration;
 use url::Url;
-
-const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
-const MAX_HTML_BYTES: usize = 2 * 1024 * 1024;
 
 type FetchError = (String, String);
 
@@ -85,8 +84,8 @@ fn read_limited(response: impl Read, limit: usize) -> Result<Vec<u8>, FetchError
 pub fn fetch(input: &str) -> Result<(Vec<u8>, String), FetchError> {
     let url = http_url(input)?;
     let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .timeout(URL_FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::limited(URL_MAX_REDIRECTS))
         .user_agent("WhichVideo/0.1 (local image search)")
         .build()
         .map_err(|e| error("network", e.to_string()))?;
@@ -104,11 +103,11 @@ pub fn fetch(input: &str) -> Result<(Vec<u8>, String), FetchError> {
         .to_ascii_lowercase();
     if content_type.starts_with("image/") {
         return Ok((
-            read_limited(response, MAX_IMAGE_BYTES)?,
+            read_limited(response, URL_MAX_IMAGE_BYTES)?,
             final_url.to_string(),
         ));
     }
-    let html = String::from_utf8_lossy(&read_limited(response, MAX_HTML_BYTES)?).to_string();
+    let html = String::from_utf8_lossy(&read_limited(response, URL_MAX_HTML_BYTES)?).to_string();
     let image_url =
         image_link(&html, &final_url).ok_or_else(|| error("no-image", "网页里没找到图片"))?;
     let image = client
@@ -117,7 +116,7 @@ pub fn fetch(input: &str) -> Result<(Vec<u8>, String), FetchError> {
         .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|e| error("network", format!("无法下载网页中的图片：{e}")))?;
     let final_image_url = image.url().to_string();
-    Ok((read_limited(image, MAX_IMAGE_BYTES)?, final_image_url))
+    Ok((read_limited(image, URL_MAX_IMAGE_BYTES)?, final_image_url))
 }
 
 #[cfg(test)]

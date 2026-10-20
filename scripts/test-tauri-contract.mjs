@@ -17,6 +17,7 @@ const iconSource = readSource('scripts', 'generate-icon.mjs')
 const processExt = readSource('src-tauri', 'src', 'process_ext.rs')
 const platformOpen = readSource('src-tauri', 'src', 'platform_open.rs')
 const watcherSource = readSource('src-tauri', 'src', 'watcher.rs')
+const constantsSource = readSource('src-tauri', 'src', 'constants.rs')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readSource('src-tauri', 'src', name))
   .join('\n')
@@ -44,7 +45,61 @@ for (const command of commands) {
     command.value
   )
 }
-check('事件频道已桥接', bridge.includes('IPC.eventChannel') && shared.includes("eventChannel: 'library_event'"))
+const rustEventChannel = constantsSource.match(/pub const EVENT_CHANNEL: &str = "([^"]+)"/)?.[1]
+const tsEventChannel = ipcBlock.match(/eventChannel:\s*'([^']+)'/)?.[1]
+check(
+  '事件频道常量前后端一致',
+  !!rustEventChannel &&
+    rustEventChannel === tsEventChannel &&
+    !commandsSource.includes('"library_event"') &&
+    !indexerSource.includes('"library_event"'),
+  rustEventChannel
+)
+
+const rustExtensionBlock =
+  constantsSource.match(/pub const VIDEO_EXTENSIONS: &\[&str\] = &\[([\s\S]*?)\];/)?.[1] ?? ''
+const rustExtensions = [...rustExtensionBlock.matchAll(/"([^"]+)"/g)]
+  .map((match) => match[1].toLowerCase())
+  .sort()
+const tsExtensionBlock = shared.match(/export const VIDEO_EXTENSIONS = \[([\s\S]*?)\] as const/)?.[1] ?? ''
+const tsExtensions = [...tsExtensionBlock.matchAll(/'([^']+)'/g)]
+  .map((match) => match[1].replace(/^\./, '').toLowerCase())
+  .sort()
+check(
+  '视频扩展名前后端一致',
+  rustExtensions.length >= 10 && rustExtensions.join(' ') === tsExtensions.join(' '),
+  rustExtensions.join(' ')
+)
+check(
+  '扫描器与文件对话框复用统一扩展名',
+  indexerSource.includes('constants::VIDEO_EXTENSIONS') &&
+    commandsSource.includes('constants::VIDEO_EXTENSIONS')
+)
+
+const normalizeDefault = (raw) =>
+  raw.replace(/\.to_string\(\)$/, '').replace(/^['"]|['"]$/g, '').trim()
+const parseDefaults = (block) => {
+  const values = {}
+  for (const line of block.split('\n')) {
+    if (line.trim().startsWith('//')) continue
+    const match = line.match(/^\s*([A-Za-z_]+):\s*(.+?),?\s*$/)
+    if (!match) continue
+    const key = match[1].replace(/_([a-z])/g, (_, char) => char.toUpperCase())
+    values[key] = normalizeDefault(match[2])
+  }
+  return values
+}
+const rustDefaultsBlock =
+  dbSource.match(/pub fn default_settings\(\) -> AppSettings \{([\s\S]*?)\n    \}/)?.[1] ?? ''
+const tsDefaultsBlock = shared.match(/export const DEFAULT_SETTINGS: AppSettings = \{([\s\S]*?)\n\}/)?.[1] ?? ''
+const rustDefaults = parseDefaults(rustDefaultsBlock)
+const tsDefaults = parseDefaults(tsDefaultsBlock)
+const defaultKeys = Object.keys(tsDefaults)
+check(
+  '设置默认值前后端一致',
+  defaultKeys.length >= 8 && defaultKeys.every((key) => rustDefaults[key] === tsDefaults[key]),
+  defaultKeys.filter((key) => rustDefaults[key] !== tsDefaults[key]).join(' ')
+)
 check('渲染入口安装 Tauri API', rendererMain.includes('window.whichvideo = tauriApi'))
 check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.includes('尚未实现'))
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))

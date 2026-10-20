@@ -1,10 +1,10 @@
 use base64::Engine;
+use crate::constants::DB_BUSY_TIMEOUT;
 use crate::framepack;
 use crate::paths;
 use rusqlite::{params_from_iter, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::time::Duration;
 
 /// 与 src/shared/types.ts 的 LibraryStats 对齐（serde rename 输出 camelCase）。
 #[derive(Serialize, Clone)]
@@ -119,7 +119,7 @@ pub fn open_db() -> SqlResult<Connection> {
 /// 每个 SQLite 连接都必须有相同的事务约束。配置失败时宁可让启动明确报错，
 /// 也不要静默退回到可能损坏关联数据或频繁报 `database is locked` 的默认设置。
 fn configure_connection(conn: &Connection) -> SqlResult<()> {
-    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.busy_timeout(DB_BUSY_TIMEOUT)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;

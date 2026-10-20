@@ -118,10 +118,8 @@ impl IndexerState {
 /* 事件广播辅助                                                        */
 /* ------------------------------------------------------------------ */
 
-const EVENT_CHANNEL: &str = "library_event";
-
 fn emit(app: &AppHandle, event: LibraryEvent) {
-    let _ = app.emit(EVENT_CHANNEL, event);
+    let _ = app.emit(constants::EVENT_CHANNEL, event);
 }
 
 fn broadcast_status(app: &AppHandle) {
@@ -719,16 +717,12 @@ fn can_reuse_file_hash(stored_size: i64, stored_mtime: i64, size: i64, mtime: i6
 }
 
 pub fn is_video_file(name: &str) -> bool {
-    let dot = match name.rfind('.') {
-        Some(d) => d,
-        None => return false,
+    let Some((_, ext)) = name.rsplit_once('.') else {
+        return false;
     };
-    let ext = &name[dot..];
-    matches!(
-        ext.to_lowercase().as_str(),
-        ".mp4" | ".mkv" | ".avi" | ".mov" | ".wmv" | ".flv" | ".webm" | ".m4v" | ".mpg"
-            | ".mpeg" | ".ts" | ".m2ts" | ".rmvb" | ".rm" | ".3gp" | ".vob" | ".ogv"
-    )
+    constants::VIDEO_EXTENSIONS
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
 fn scan_video_files(root: &str, recursive: bool) -> Result<Vec<String>, String> {

@@ -329,7 +329,9 @@ export const VIDEO_EXTENSIONS = [
   '.m2ts',
   '.rmvb',
   '.rm',
-  '.3gp'
+  '.3gp',
+  '.vob',
+  '.ogv'
 ] as const
 
 export function isVideoFile(filePath: string): boolean {

@@ -1,8 +1,8 @@
 //! 启动后轻量检查 GitHub Releases；失败静默，不参与自动下载或安装。
 
+use crate::constants::{UPDATE_CHECK_DELAY, UPDATE_CHECK_TIMEOUT};
 use crate::{db, logger, platform_open, state::AppState};
 use serde::Deserialize;
-use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
@@ -40,7 +40,7 @@ pub fn is_newer_version(latest: &str, current: &str) -> bool {
 
 fn fetch_latest() -> Option<UpdateInfo> {
     reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(UPDATE_CHECK_TIMEOUT)
         .user_agent("WhichVideo-UpdateCheck")
         .build().ok()?
         .get(UPDATE_URL).send().ok()?
@@ -88,7 +88,7 @@ pub fn start_if_enabled(app: &AppHandle) {
     if enabled {
         let app = app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(3));
+            std::thread::sleep(UPDATE_CHECK_DELAY);
             check_once(&app);
         });
     }
