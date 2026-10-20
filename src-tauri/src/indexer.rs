@@ -16,6 +16,8 @@ use crate::media;
 use crate::sampling;
 use crate::state::AppState;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 索引器队列与实时状态。
@@ -725,13 +727,19 @@ pub fn is_video_file(name: &str) -> bool {
         .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
-fn scan_video_files(root: &str, recursive: bool) -> Result<Vec<String>, String> {
+/// 带发现回调的扫描。每找到一个视频就回报累计数量，让遍历阶段（此时总数
+/// 还未知）也能上报进度，而不是在状态栏里一动不动。
+fn scan_video_files_with(
+    root: &str,
+    recursive: bool,
+    mut on_found: impl FnMut(i64),
+) -> Result<Vec<String>, String> {
     let root_path = std::path::Path::new(root);
     if !root_path.is_dir() {
         return Err("目录不存在或无法读取".to_string());
     }
     let mut out = Vec::new();
-    walk(root_path, 0, recursive, &mut out)?;
+    walk(root_path, 0, recursive, &mut out, &mut on_found)?;
     Ok(out)
 }
 
@@ -740,6 +748,7 @@ fn walk(
     depth: usize,
     recursive: bool,
     out: &mut Vec<String>,
+    on_found: &mut dyn FnMut(i64),
 ) -> Result<(), String> {
     let entries = std::fs::read_dir(dir).map_err(|e| format!("无法读取目录：{e}"))?;
     for entry in entries {
@@ -756,13 +765,14 @@ fn walk(
             if recursive && depth < crate::constants::MAX_SCAN_DEPTH {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
                 if !crate::constants::DEFAULT_SKIP_DIRS.contains(&name.as_str()) {
-                    walk(&path, depth + 1, recursive, out)?;
+                    walk(&path, depth + 1, recursive, out, on_found)?;
                 }
             }
         } else if file_type.is_file() {
             let name = entry.file_name().to_string_lossy().to_string();
             if is_video_file(&name) {
                 out.push(path.to_string_lossy().to_string());
+                on_found(out.len() as i64);
             }
         }
     }
@@ -855,12 +865,118 @@ fn record_import_failure(result: &mut ImportResult, path: &str, step: &str, erro
     log(&format!("导入失败（{step}）：{path}：{error}"));
 }
 
+/* ------------------------------------------------------------------ */
+/* 导入进度                                                            */
+/* ------------------------------------------------------------------ */
+
+/// 目录里上千个文件时不能逐个广播：按时间节流，最后一个文件仍会强制上报。
+const IMPORT_PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+
+/// 批次号单调递增，前端据此丢弃迟到的旧批次事件。
+static IMPORT_BATCH_ID: AtomicU64 = AtomicU64::new(1);
+
+/// 是否该在此时上报（纯函数，便于测试）。
+fn should_emit_import_progress(last: Instant, now: Instant, processed: i64, total: i64) -> bool {
+    if total > 0 && processed >= total {
+        return true;
+    }
+    now.saturating_duration_since(last) >= IMPORT_PROGRESS_INTERVAL
+}
+
+/// 一次导入的进度上报：扫描阶段总数未知（total = 0），遍历完成后用
+/// set_total 切成确定总数，之后按已处理的文件数上报。
+struct ImportProgress {
+    id: u64,
+    total: i64,
+    last_emit: Instant,
+}
+
+impl ImportProgress {
+    fn start(app: &AppHandle) -> Self {
+        let progress = Self {
+            id: IMPORT_BATCH_ID.fetch_add(1, Ordering::Relaxed),
+            total: 0,
+            last_emit: Instant::now(),
+        };
+        progress.report(app, 0, 0, 0, 0, false);
+        progress
+    }
+
+    /// 扫描结束：总数确定，立刻上报一条让用户看到规模。
+    fn set_total(&mut self, app: &AppHandle, total: i64) {
+        self.total = total;
+        self.last_emit = Instant::now();
+        self.report(app, 0, 0, 0, 0, false);
+    }
+
+    /// 遍历到第 discovered 个视频（此时总数还未知，total 保持 0）。
+    fn tick_discovered(&mut self, app: &AppHandle, discovered: i64) {
+        let now = Instant::now();
+        if should_emit_import_progress(self.last_emit, now, discovered, 0) {
+            self.last_emit = now;
+            self.report(app, discovered, 0, 0, 0, false);
+        }
+    }
+
+    fn tick(&mut self, app: &AppHandle, result: &ImportResult) {
+        let now = Instant::now();
+        if should_emit_import_progress(self.last_emit, now, result.scanned, self.total) {
+            self.last_emit = now;
+            self.report(app, result.scanned, result.added, result.skipped, result.failed, false);
+        }
+    }
+
+    fn finish(&mut self, app: &AppHandle, result: &ImportResult) {
+        self.report(app, result.scanned, result.added, result.skipped, result.failed, true);
+    }
+
+    fn report(&self, app: &AppHandle, processed: i64, added: i64, skipped: i64, failed: i64, finished: bool) {
+        emit(
+            app,
+            LibraryEvent::ImportProgress {
+                id: self.id,
+                processed,
+                total: self.total,
+                added,
+                skipped,
+                failed,
+                finished,
+            },
+        );
+    }
+}
+
 /// 导入若干视频文件（来自文件对话框或 watcher）。
 pub fn import_files(app: AppHandle, files: Vec<String>, folder_id: Option<i64>) -> ImportResult {
+    import_files_tracked(app, files, folder_id, None)
+}
+
+/// progress 为 None 时按文件数决定是否上报：单个文件（watcher 的常规触发）
+/// 不值得占用状态栏。
+fn import_files_tracked(
+    app: AppHandle,
+    files: Vec<String>,
+    folder_id: Option<i64>,
+    progress: Option<ImportProgress>,
+) -> ImportResult {
     let mut result = ImportResult::default();
+    let mut progress = match progress {
+        Some(progress) => Some(progress),
+        None if files.len() > 1 => Some(ImportProgress::start(&app)),
+        None => None,
+    };
+    if let Some(p) = progress.as_mut() {
+        p.set_total(&app, files.len() as i64);
+    }
     for raw in &files {
         let path = db::normalize_path(raw);
         register_and_enqueue(&app, path, folder_id, &mut result);
+        if let Some(p) = progress.as_mut() {
+            p.tick(&app, &result);
+        }
+    }
+    if let Some(p) = progress.as_mut() {
+        p.finish(&app, &result);
     }
     broadcast_stats(&app);
     result
@@ -868,14 +984,33 @@ pub fn import_files(app: AppHandle, files: Vec<String>, folder_id: Option<i64>) 
 
 /// 递归导入目录内的视频，但不登记目录、不启动文件系统监听。
 pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> Result<ImportResult, String> {
-    let files = scan_video_files(&dir_path, recursive)?;
+    let mut progress = ImportProgress::start(&app);
+    let files = match scan_video_files_with(&dir_path, recursive, |found| {
+        progress.tick_discovered(&app, found);
+    }) {
+        Ok(files) => files,
+        Err(error) => {
+            progress.finish(&app, &ImportResult::default());
+            return Err(error);
+        }
+    };
     let folder = {
         let state = app.state::<AppState>();
         let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let conn = guard.as_ref().ok_or("数据库未初始化")?;
-        db::insert_imported_folder(conn, &dir_path, recursive).map_err(|e| e.to_string())?
+        let inserted = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())
+            .and_then(|conn| db::insert_imported_folder(conn, &dir_path, recursive).map_err(|e| e.to_string()));
+        match inserted {
+            Ok(folder) => folder,
+            Err(error) => {
+                // 提前失败也要收尾，否则状态栏会停在进度文案上。
+                progress.finish(&app, &ImportResult::default());
+                return Err(error);
+            }
+        }
     };
-    let result = import_files(app.clone(), files, Some(folder.id));
+    let result = import_files_tracked(app.clone(), files, Some(folder.id), Some(progress));
     {
         let state = app.state::<AppState>();
         let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -896,22 +1031,42 @@ pub fn import_folder(
     pinned: bool,
     recursive: bool,
 ) -> Result<(ImportResult, i64), String> {
-    let files = scan_video_files(&dir_path, recursive)?;
-    let folder = {
-        let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        match guard.as_mut() {
-            Some(c) => db::insert_folder(c, &dir_path, pinned, recursive).map_err(|e| e.to_string())?,
-            None => return Err("数据库未初始化".to_string()),
+    let mut progress = ImportProgress::start(&app);
+    let files = match scan_video_files_with(&dir_path, recursive, |found| {
+        progress.tick_discovered(&app, found);
+    }) {
+        Ok(files) => files,
+        Err(error) => {
+            progress.finish(&app, &ImportResult::default());
+            return Err(error);
         }
     };
     let mut result = ImportResult {
         folders: 1,
         ..Default::default()
     };
+    let folder = {
+        let state = app.state::<AppState>();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let inserted = match guard.as_mut() {
+            Some(c) => db::insert_folder(c, &dir_path, pinned, recursive).map_err(|e| e.to_string()),
+            None => Err("数据库未初始化".to_string()),
+        };
+        match inserted {
+            Ok(folder) => folder,
+            Err(error) => {
+                // 提前失败也要收尾，否则状态栏会停在进度文案上。
+                progress.finish(&app, &result);
+                return Err(error);
+            }
+        }
+    };
+    progress.set_total(&app, files.len() as i64);
     for file in files {
         register_and_enqueue(&app, file, Some(folder.id), &mut result);
+        progress.tick(&app, &result);
     }
+    progress.finish(&app, &result);
     {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -1008,16 +1163,21 @@ fn log(msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, record_import_failure, resume_start_index, scan_video_files, IndexerState};
+    use super::{
+        can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, record_import_failure,
+        resume_start_index, scan_video_files_with, should_emit_import_progress,
+        IndexerState,
+    };
     use crate::events::ImportResult;
     use crate::media::RawFrame;
     use std::fs;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn folder_scan_reports_missing_directories_and_finds_nested_videos() {
         let missing = std::env::temp_dir().join(format!("whichvideo-missing-{}", crate::db::now_ms()));
         assert_eq!(
-            scan_video_files(&missing.to_string_lossy(), true).unwrap_err(),
+            scan_video_files_with(&missing.to_string_lossy(), true, |_| {}).unwrap_err(),
             "目录不存在或无法读取"
         );
 
@@ -1027,11 +1187,39 @@ mod tests {
         fs::write(root.join("clip.mp4"), b"").unwrap();
         fs::write(nested.join("episode.MKV"), b"").unwrap();
         fs::write(nested.join("notes.txt"), b"").unwrap();
-        let files = scan_video_files(&root.to_string_lossy(), true).unwrap();
+        let files = scan_video_files_with(&root.to_string_lossy(), true, |_| {}).unwrap();
         assert_eq!(files.len(), 2);
         assert!(files.iter().any(|path| path.ends_with("clip.mp4")));
         assert!(files.iter().any(|path| path.ends_with("episode.MKV")));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 遍历阶段就要回报「已发现几个」，否则大目录扫描时状态栏长时间不动。
+    #[test]
+    fn folder_scan_reports_each_discovered_video() {
+        let root = std::env::temp_dir().join(format!("whichvideo-discover-{}", crate::db::now_ms()));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join("a.mp4"), b"").unwrap();
+        fs::write(nested.join("b.mkv"), b"").unwrap();
+
+        let mut discovered = Vec::new();
+        let files = scan_video_files_with(&root.to_string_lossy(), true, |found| discovered.push(found)).unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(discovered, vec![1, 2]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 上千个文件不能逐个广播事件，但最后一个文件必须上报，否则进度停在
+    /// 总数前一位；扫描阶段 total = 0 时只按时间节流。
+    #[test]
+    fn import_progress_is_throttled_but_reports_the_last_file() {
+        let start = Instant::now();
+        assert!(!should_emit_import_progress(start, start + Duration::from_millis(10), 3, 1000));
+        assert!(should_emit_import_progress(start, start + Duration::from_millis(200), 4, 1000));
+        assert!(should_emit_import_progress(start, start + Duration::from_millis(1), 1000, 1000));
+        assert!(!should_emit_import_progress(start, start + Duration::from_millis(50), 10, 0));
+        assert!(should_emit_import_progress(start, start + Duration::from_millis(200), 10, 0));
     }
 
     #[test]

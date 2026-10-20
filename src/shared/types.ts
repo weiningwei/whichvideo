@@ -224,6 +224,17 @@ export type LibraryEvent =
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'settings-updated'; settings: AppSettings }
   | { type: 'duplicate-scan-progress'; done: number; total: number }
+  /** 批量导入进度：total = 0 表示仍在遍历目录（processed 为已发现文件数），finished 后清空 */
+  | {
+      type: 'import-progress'
+      id: number
+      processed: number
+      total: number
+      added: number
+      skipped: number
+      failed: number
+      finished: boolean
+    }
 
 /** 库内查重的一个相似对（代表帧跨视频互搜的命中） */
 export interface DuplicatePair {

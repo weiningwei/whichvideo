@@ -64,6 +64,9 @@ if (!existsSync(target)) {
   process.exit(1)
 }
 const { applyVideoEvent } = await import(pathToFileURL(target).href)
+const { applyImportProgress } = await import(
+  pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
+)
 
 /** 最小 VideoRecord：applyVideoEvent 只读 id/status，其余字段透传 */
 const video = (id, status, frameCount) => ({
@@ -145,6 +148,34 @@ console.log('=== 静态守卫：订阅真的接上了 ===')
       libSrc
     ),
     '顺序反了会拿到未初始化的 pushNotice'
+  )
+}
+
+console.log('=== import-progress：批量导入进度 ===')
+{
+  const ev = (id, processed, total, finished = false) => ({
+    type: 'import-progress',
+    id,
+    processed,
+    total,
+    added: 0,
+    skipped: 0,
+    failed: 0,
+    finished
+  })
+  check('扫描阶段（total = 0）也进入状态', applyImportProgress(null, ev(1, 42, 0))?.processed === 42)
+  check(
+    '遍历结束后总数接管显示',
+    applyImportProgress(ev(1, 42, 0), ev(1, 0, 480))?.total === 480
+  )
+  check('旧批次迟到的事件被丢弃', applyImportProgress(ev(2, 10, 100), ev(1, 480, 480, true))?.id === 2)
+  check('当前批次 finished 后清空', applyImportProgress(ev(2, 100, 100), ev(2, 100, 100, true)) === null)
+  check('旧批次 finished 不清掉当前批次', applyImportProgress(ev(2, 50, 100), ev(1, 3, 3, true))?.id === 2)
+  check(
+    'useLibraryCore 订阅并应用 import-progress',
+    readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useLibraryCore.ts'), 'utf8').includes(
+      "case 'import-progress':"
+    )
   )
 }
 

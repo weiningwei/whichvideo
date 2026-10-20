@@ -39,7 +39,7 @@ pub struct ReindexResult {
 
 #[allow(dead_code)]
 #[derive(Serialize, Clone)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(tag = "type", rename_all = "kebab-case", rename_all_fields = "camelCase")]
 pub enum LibraryEvent {
     /// 索引器实时状态变化。
     Status { status: IndexerStatus },
@@ -59,4 +59,51 @@ pub enum LibraryEvent {
     SettingsUpdated { settings: AppSettings },
     /// 查重扫描进度。
     DuplicateScanProgress { done: i64, total: i64 },
+    /// 批量导入进度。total = 0 表示仍在遍历目录（processed 为已发现文件数）；
+    /// finished = true 时前端清空进度显示。
+    ImportProgress {
+        id: u64,
+        processed: i64,
+        total: i64,
+        added: i64,
+        skipped: i64,
+        failed: i64,
+        finished: bool,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LibraryEvent;
+
+    /// 事件字段名必须与 shared/types.ts 的 LibraryEvent 一致。枚举上的
+    /// rename_all 只改变体名，结构体变体的字段要靠 rename_all_fields 才会驼峰；
+    /// 少了它前端读到的是 video_id / folder_id，事件会静默失效。
+    #[test]
+    fn event_fields_match_shared_types() {
+        let removed =
+            serde_json::to_value(LibraryEvent::VideoRemoved { video_id: 2, path: "a.mp4".into() })
+                .unwrap();
+        assert_eq!(removed["type"], "video-removed");
+        assert_eq!(removed["videoId"], 2);
+
+        let folder = serde_json::to_value(LibraryEvent::FolderRemoved { folder_id: 3 }).unwrap();
+        assert_eq!(folder["type"], "folder-removed");
+        assert_eq!(folder["folderId"], 3);
+
+        let progress = serde_json::to_value(LibraryEvent::ImportProgress {
+            id: 1,
+            processed: 5,
+            total: 10,
+            added: 2,
+            skipped: 1,
+            failed: 0,
+            finished: false,
+        })
+        .unwrap();
+        assert_eq!(progress["type"], "import-progress");
+        assert_eq!(progress["processed"], 5);
+        assert_eq!(progress["total"], 10);
+        assert_eq!(progress["finished"], false);
+    }
 }

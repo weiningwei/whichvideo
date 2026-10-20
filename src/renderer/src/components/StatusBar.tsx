@@ -1,11 +1,14 @@
 import type { IndexerStatus } from '@shared/types'
+import type { ImportProgressEvent } from '../lib/importProgress'
 
 interface Props {
   status: IndexerStatus | null
   busy: string | null
+  /** 批量导入进度：扫描阶段 total 为 0，显示已发现文件数 */
+  importProgress?: ImportProgressEvent | null
 }
 
-export function StatusBar({ status, busy }: Props) {
+export function StatusBar({ status, busy, importProgress }: Props) {
   const running = status?.running ?? false
   const total = status?.total ?? 0
   const done = (status?.done ?? 0) + (status?.failed ?? 0)
@@ -44,8 +47,16 @@ export function StatusBar({ status, busy }: Props) {
         </span>
       )}
 
-      <span className="ml-auto truncate">
-        {busy && <span className="text-accent">{busy}</span>}
+      <span className="ml-auto flex min-w-0 items-center gap-2">
+        {busy && <span className="shrink-0 text-accent">{busy}</span>}
+        {importProgress && (
+          <span className="truncate text-secondary">
+            {importProgress.total > 0
+              ? `${importProgress.processed}/${importProgress.total}`
+              : `已发现 ${importProgress.processed} 个文件`}
+            {importProgress.added > 0 ? ` · 新增 ${importProgress.added}` : ''}
+          </span>
+        )}
       </span>
     </footer>
   )

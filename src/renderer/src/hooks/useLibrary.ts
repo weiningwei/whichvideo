@@ -19,6 +19,7 @@ import {
   type VideoRecord,
   type WatchedFolder
 } from '@shared/types'
+import type { ImportProgressEvent } from '../lib/importProgress'
 
 export interface Notice {
   id: number
@@ -59,6 +60,7 @@ export interface LibraryState {
   settings: AppSettings | null
   dataDir: DataDirInfo | null
   mediaTools: MediaToolsStatus | null
+  importProgress: ImportProgressEvent | null
   videos: VideoRecord[]
   total: number
   notices: Notice[]
@@ -278,6 +280,7 @@ export function useLibrary() {
     settings: core.settings,
     dataDir: core.dataDir,
     mediaTools: core.mediaTools,
+    importProgress: core.importProgress,
     videos: videoList.videos,
     total: videoList.total,
     notices: notices.notices,
