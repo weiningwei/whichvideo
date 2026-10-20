@@ -132,6 +132,12 @@ export function applyVideoEvents(prev: VideoRecord[], events: VideoListEvent[], 
   return merged
 }
 
+/** 分页拉取期间到达的事件可能比查询快照新，落库结果必须重放这些变化。 */
+export function reconcileFetchedPage(page: VideoPage, events: VideoListEvent[], query: VideoQuery): VideoPage {
+  const items = applyVideoEvents(page.items, events, query)
+  return { items, total: Math.max(0, page.total + items.length - page.items.length) }
+}
+
 export function useVideoList(): UseVideoListReturn {
   /**
    * 列表与总数放在同一个 state 里：插入/移除一行时总数要跟着变（工具栏显示
@@ -157,6 +163,9 @@ export function useVideoList(): UseVideoListReturn {
    * 或闪回旧数据）。序号守卫让晚到的旧响应直接丢弃。
    */
   const seqRef = useRef(0)
+  const eventRevisionRef = useRef(0)
+  const eventLogRef = useRef<Array<{ revision: number; event: VideoListEvent }>>([])
+  const activeFetchesRef = useRef(0)
   const knownIdsRef = useRef(new Set<number>())
   useEffect(() => {
     knownIdsRef.current = new Set(list.items.map((video) => video.id))
@@ -165,17 +174,27 @@ export function useVideoList(): UseVideoListReturn {
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     const q = query ?? queryRef.current
     const seq = ++seqRef.current
-    // 文件夹视图需要完整目录内容；单页 500 条会让后面的目录和视频凭空消失。
-    const limit = 500
-    const first: VideoPage = await window.whichvideo.videos.list({ ...q, offset: 0, limit })
-    const items = [...first.items]
-    while (items.length < first.total && seq === seqRef.current) {
-      const next: VideoPage = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
-      if (next.items.length === 0) break
-      items.push(...next.items)
+    const startedAtRevision = eventRevisionRef.current
+    activeFetchesRef.current++
+    try {
+      // 文件夹视图需要完整目录内容；单页 500 条会让后面的目录和视频凭空消失。
+      const limit = 500
+      const first: VideoPage = await window.whichvideo.videos.list({ ...q, offset: 0, limit })
+      const items = [...first.items]
+      while (items.length < first.total && seq === seqRef.current) {
+        const next: VideoPage = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
+        if (next.items.length === 0) break
+        items.push(...next.items)
+      }
+      if (seq !== seqRef.current) return
+      const events = eventLogRef.current
+        .filter((entry) => entry.revision > startedAtRevision)
+        .map((entry) => entry.event)
+      setList(reconcileFetchedPage({ items, total: first.total }, events, q))
+    } finally {
+      activeFetchesRef.current--
+      if (activeFetchesRef.current === 0) eventLogRef.current = []
     }
-    if (seq !== seqRef.current) return
-    setList({ items, total: first.total })
   }, [])
 
   const setVideoQuery = useCallback((next: VideoQuery) => {
@@ -230,6 +249,8 @@ export function useVideoList(): UseVideoListReturn {
     }
     const unsubscribe = window.whichvideo.events.subscribe((event: LibraryEvent) => {
       if (event.type !== 'video-updated' && event.type !== 'video-removed') return
+      const revision = ++eventRevisionRef.current
+      if (activeFetchesRef.current > 0) eventLogRef.current.push({ revision, event })
       if (shouldRefreshForUnseenVideo(knownIdsRef.current, event, queryRef.current)) scheduleRefresh()
       pending.push(event)
       if (timer === null) timer = setTimeout(flush, 150)

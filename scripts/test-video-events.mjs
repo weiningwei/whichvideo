@@ -63,7 +63,7 @@ if (!existsSync(target)) {
   console.error(`转译产物缺失：${target}`)
   process.exit(1)
 }
-const { applyVideoEvent, applyVideoEvents, shouldRefreshForUnseenVideo } = await import(pathToFileURL(target).href)
+const { applyVideoEvent, applyVideoEvents, shouldRefreshForUnseenVideo, reconcileFetchedPage } = await import(pathToFileURL(target).href)
 const { applyImportProgress } = await import(
   pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
 )
@@ -173,6 +173,18 @@ console.log('=== 筛选视图：新视频触发数据库校正 ===')
     !shouldRefreshForUnseenVideo(known, ready, { status: 'pending' }) &&
     !shouldRefreshForUnseenVideo(known, ready, { folderId: 8 }))
   check('默认视图继续直接插入', !shouldRefreshForUnseenVideo(known, ready, ALL))
+}
+
+console.log('=== 分页拉取：较新事件不被旧快照覆盖 ===')
+{
+  const stale = { items: list, total: 3 }
+  const out = reconcileFetchedPage(stale, [
+    { type: 'video-updated', video: video(1, 'ready', 64, 30) },
+    { type: 'video-removed', videoId: 2, path: '' },
+    { type: 'video-updated', video: video(4, 'pending', 0, 40) }
+  ], ALL)
+  check('拉取中的索引完成状态得到保留', out.items.find((v) => v.id === 1)?.frameCount === 64)
+  check('拉取中的删除和新增得到保留', out.items.map((v) => v.id).join(',') === '4,1,3' && out.total === 3)
 }
 
 console.log('=== 静态守卫：订阅真的接上了 ===')
