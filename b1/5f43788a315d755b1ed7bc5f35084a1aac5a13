@@ -1,0 +1,31 @@
+AGENTS.md
+  s_e78e0118ab4232::t_b3025558215ac4 32-33,53-54
+docs/troubleshooting.md
+  s_e78e0118ab4232::t_72128335d9d755 11-13,18
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_d8d188a7045d0c 52
+scripts/test-tauri-portable.mjs
+  s_e78e0118ab4232::t_50e51ab11d80e0 17-18,38
+src-tauri/src/diagnostics.rs
+  s_e78e0118ab4232::t_9fd5893be3ee28 5,114
+src-tauri/src/frames_store.rs
+  s_e78e0118ab4232::t_60c9ea35b10a63 3,10,55
+src-tauri/src/logger.rs
+  s_e78e0118ab4232::t_a0a50404136565 4,27-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b15f43788a315d755b1ed7bc5f35084a1aac5a13",
+  "prompts": {},
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "unknown"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
