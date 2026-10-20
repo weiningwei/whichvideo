@@ -77,7 +77,20 @@ fn main() {
             tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?
                 .data_directory(paths::webview_dir())
                 .build()?;
-            app.manage(AppState::new());
+            let state = match AppState::try_new() {
+                Ok(state) => state,
+                Err(error) => {
+                    show_startup_error(
+                        app.handle(),
+                        &format!(
+                            "{error}\n\n请先退出程序，把 {} 移走后再试（这样会丢失索引，但不会删除视频文件）。",
+                            paths::db_path().display()
+                        ),
+                    );
+                    std::process::exit(1);
+                }
+            };
+            app.manage(state);
             if let Err(error) = watcher::sync_all(app.handle()) {
                 logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
             }

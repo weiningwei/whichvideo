@@ -7,7 +7,8 @@ use crate::watcher::WatcherMap;
 use rusqlite::Connection;
 use std::sync::Mutex;
 
-/// 应用级状态：持有一个 SQLite 连接（打开失败时为 None，命令需容错）。
+/// 应用级状态：持有一个 SQLite 连接。打开失败会在启动阶段提示后退出，
+/// 连接仍用 Option 包一层以保持命令侧的防御性取值。
 pub struct AppState {
     pub db: Mutex<Option<Connection>>,
     /// 索引器队列与实时进度（M7）。
@@ -19,32 +20,21 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        match db::open_db() {
-            Ok(conn) => {
-                let ffmpeg_dir = db::get_ffmpeg_dir(&conn).unwrap_or(None);
-                media::initialize(ffmpeg_dir);
-                let tools = media::tools_status();
-                logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
-                let search_index = FrameSearchIndex::rebuild_from_db(&conn);
-                AppState {
-                    db: Mutex::new(Some(conn)),
-                    indexer: Mutex::new(IndexerState::default()),
-                    search_index: Mutex::new(search_index),
-                    watcher: Mutex::new(WatcherMap::new()),
-                }
-            }
-            Err(e) => {
-                logger::log(&format!("[ERROR] 数据库初始化失败：{e}"));
-                media::initialize(None);
-                AppState {
-                    db: Mutex::new(None),
-                    indexer: Mutex::new(IndexerState::default()),
-                    search_index: Mutex::new(FrameSearchIndex::new()),
-                    watcher: Mutex::new(WatcherMap::new()),
-                }
-            }
-        }
+    /// 打开数据库并构建运行状态。失败时返回错误，由启动阶段提示后退出：
+    /// 带着空库继续跑只会让所有命令都回「数据库未初始化」，用户看到一片空白。
+    pub fn try_new() -> Result<Self, String> {
+        let conn = db::open_db().map_err(|e| format!("数据库无法打开：{e}"))?;
+        let ffmpeg_dir = db::get_ffmpeg_dir(&conn).unwrap_or(None);
+        media::initialize(ffmpeg_dir);
+        let tools = media::tools_status();
+        logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
+        let search_index = FrameSearchIndex::rebuild_from_db(&conn);
+        Ok(AppState {
+            db: Mutex::new(Some(conn)),
+            indexer: Mutex::new(IndexerState::default()),
+            search_index: Mutex::new(search_index),
+            watcher: Mutex::new(WatcherMap::new()),
+        })
     }
 
     /// 帧数据被删除或增量更新失败时，从数据库恢复内存搜索索引。
