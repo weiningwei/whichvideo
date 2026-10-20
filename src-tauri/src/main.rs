@@ -35,13 +35,7 @@ fn main() {
             }
         }))
         .setup(|app| {
-            let legacy_app_data = app.path().app_data_dir()?;
-            #[cfg(windows)]
-            let legacy_app_data = std::env::var_os("APPDATA")
-                .map(std::path::PathBuf::from)
-                .map(|p| p.join("WhichVideo"))
-                .unwrap_or(legacy_app_data);
-            let resolution = db::initialize_data_dir(legacy_app_data)?;
+            let resolution = db::initialize_data_dir()?;
             let log_path = logger::init(&resolution.dir);
             logger::install_panic_hook();
             logger::log(&format!(

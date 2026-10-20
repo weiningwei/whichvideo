@@ -155,45 +155,12 @@ fn installation_dir() -> PathBuf {
     exe_dir
 }
 
-fn copy_tree_missing(source: &Path, target: &Path) -> io::Result<()> {
-    if !source.is_dir() {
-        return Ok(());
-    }
-    fs::create_dir_all(target)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = target.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_tree_missing(&from, &to)?;
-        } else if !to.exists() {
-            fs::copy(from, to)?;
-        }
-    }
-    Ok(())
-}
-
-fn migrate_legacy_data(target: &Path, legacy: &Path) {
-    if target == legacy {
-        return;
-    }
-    for name in ["whichvideo.db", "whichvideo.db-wal", "whichvideo.db-shm"] {
-        let from = legacy.join(name);
-        let to = target.join(name);
-        if from.exists() && !to.exists() {
-            let _ = fs::copy(from, to);
-        }
-    }
-    let _ = copy_tree_missing(&legacy.join("frames"), &target.join("frames"));
-}
-
 /// 在 Tauri setup 阶段调用一次，之后所有模块共享同一个最终目录。
-/// legacy_dir 只用于把旧版本数据库迁入程序目录，不会成为运行时回退位置。
-pub fn initialize_data_dir(legacy_dir: PathBuf) -> io::Result<DataDirResolution> {
+/// 只使用程序同级 data 目录或 WHICHVIDEO_DATA_DIR 覆盖，不回退用户目录。
+pub fn initialize_data_dir() -> io::Result<DataDirResolution> {
     let exe_dir = installation_dir();
     let resolution = resolve_data_dir(env::var("WHICHVIDEO_DATA_DIR").ok(), &exe_dir);
     fs::create_dir_all(&resolution.dir)?;
-    migrate_legacy_data(&resolution.dir, &legacy_dir);
     let _ = DATA_DIR.set(resolution.clone());
     Ok(resolution)
 }
@@ -1454,33 +1421,6 @@ mod tests {
         }
         assert_eq!(remove_videos_under(&conn, "/Media").unwrap(), vec![1, 4]);
         assert_eq!(normalize_path("/Media/a\\b.mp4"), "/Media/a\\b.mp4");
-    }
-
-    #[test]
-    fn legacy_database_and_frames_are_copied_without_overwriting_new_data() {
-        let root = env::temp_dir().join(format!(
-            "whichvideo-data-migration-{}-{}",
-            std::process::id(),
-            now_ms()
-        ));
-        let legacy = root.join("legacy");
-        let target = root.join("install").join("data");
-        fs::create_dir_all(legacy.join("frames").join("7")).unwrap();
-        fs::create_dir_all(&target).unwrap();
-        fs::write(legacy.join("whichvideo.db"), b"legacy-db").unwrap();
-        fs::write(legacy.join("frames").join("7").join("0.jpg"), b"jpeg").unwrap();
-
-        migrate_legacy_data(&target, &legacy);
-        assert_eq!(fs::read(target.join("whichvideo.db")).unwrap(), b"legacy-db");
-        assert_eq!(
-            fs::read(target.join("frames").join("7").join("0.jpg")).unwrap(),
-            b"jpeg"
-        );
-
-        fs::write(target.join("whichvideo.db"), b"new-db").unwrap();
-        migrate_legacy_data(&target, &legacy);
-        assert_eq!(fs::read(target.join("whichvideo.db")).unwrap(), b"new-db");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
