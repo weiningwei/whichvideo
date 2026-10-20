@@ -226,6 +226,32 @@ impl FrameSearchIndex {
         self.rebuild_words();
     }
 
+    /// 批量移除（删除整个文件夹时用）：只遍历一遍、只重建一次词表，
+    /// 避免逐个 remove_video 造成 O(视频数 × 总帧数)。
+    pub fn remove_videos(&mut self, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let remove: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        if !self.video_ids.iter().any(|id| remove.contains(id)) {
+            return;
+        }
+        let stride = framepack::FRAME_STRIDE;
+        let mut buffer = Vec::with_capacity(self.buffer.len());
+        let mut video_ids = Vec::with_capacity(self.video_ids.len());
+        for (index, &id) in self.video_ids.iter().enumerate() {
+            if remove.contains(&id) {
+                continue;
+            }
+            let offset = index * stride;
+            buffer.extend_from_slice(&self.buffer[offset..offset + stride]);
+            video_ids.push(id);
+        }
+        self.buffer = buffer;
+        self.video_ids = video_ids;
+        self.rebuild_words();
+    }
+
     /// 索引完成时只更新对应视频的帧，避免批量导入中反复从 SQLite 重建全库索引。
     /// 新视频直接追加；重建已有视频时才压实移除旧帧。
     pub fn replace_video_frames(&mut self, video_id: i64, frames: db::FrameMatrix) {
@@ -543,6 +569,38 @@ mod tests {
 
         let before = index.buffer.clone();
         index.remove_video(99);
+        assert_eq!(index.buffer, before);
+    }
+
+    /// 删除整个文件夹时一次摘掉一批视频：剩余帧顺序、词表长度都要同步。
+    #[test]
+    fn removing_many_videos_keeps_the_remaining_frames_in_order() {
+        let struct_hash = vec![0_u8; framepack::STRUCT_BYTES];
+        let color = vec![0_u8; framepack::COLOR_BYTES];
+        let spatial = vec![0_u8; framepack::SPATIAL_BYTES];
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        append_frame(&mut buffer, &mut video_ids, 1, 0, 1000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 2, 0, 2000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 3, 0, 3000, &struct_hash, &color, &spatial);
+        append_frame(&mut buffer, &mut video_ids, 2, 1, 4000, &struct_hash, &color, &spatial);
+        let mut index = FrameSearchIndex {
+            words: buffer
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+            buffer,
+            video_ids,
+            built_at: 0,
+        };
+
+        index.remove_videos(&[1, 2]);
+        assert_eq!(index.video_ids, vec![3]);
+        assert_eq!(index.buffer.len(), framepack::FRAME_STRIDE);
+        assert_eq!(index.words.len(), framepack::FRAME_STRIDE / 4);
+
+        let before = index.buffer.clone();
+        index.remove_videos(&[99]);
         assert_eq!(index.buffer, before);
     }
 

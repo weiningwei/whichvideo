@@ -17,6 +17,7 @@ use crate::sampling;
 use crate::state::AppState;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -31,6 +32,9 @@ pub struct IndexerState {
     /// 排队重建，而不会提前删掉当前工作线程仍在使用的数据。
     pub reset_before_run: HashSet<i64>,
     pub active: usize,
+    /// 抽帧并发上限。缓存设置值，避免每次 `pump` 都去读一次数据库（导入几千
+    /// 个文件时，每次入队一次 `get_settings` 会和扫描、UI 查询抢同一把库锁）。
+    pub concurrency: usize,
     pub done: u64,
     pub failed: u64,
     pub current_path: Option<String>,
@@ -133,7 +137,39 @@ fn broadcast_status(app: &AppHandle) {
     emit(app, LibraryEvent::Status { status });
 }
 
+/// 统计事件节流：`finish` 每个视频都会调一次，而 `db::stats` 要扫 frames 全表
+/// （百万行是几十毫秒级）。原来每完成一个视频算一次，库越大索引越慢。
+const STATS_BROADCAST_INTERVAL: Duration = Duration::from_millis(500);
+static LAST_STATS_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// 节流判定（纯函数，便于测试）。
+fn should_broadcast_stats(last: Option<Instant>, now: Instant) -> bool {
+    match last {
+        Some(last) => now.saturating_duration_since(last) >= STATS_BROADCAST_INTERVAL,
+        None => true,
+    }
+}
+
+/// 把数量变化折算成事件，供渲染端更新顶栏与状态栏。
 fn broadcast_stats(app: &AppHandle) {
+    let now = Instant::now();
+    {
+        let mut last = LAST_STATS_AT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !should_broadcast_stats(*last, now) {
+            return;
+        }
+        *last = Some(now);
+    }
+    emit_stats(app);
+}
+
+/// 批次收尾必须给出最终计数，不能被节流吞掉。
+fn broadcast_stats_now(app: &AppHandle) {
+    *LAST_STATS_AT.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
+    emit_stats(app);
+}
+
+fn emit_stats(app: &AppHandle) {
     let state = app.state::<AppState>();
     let stats = {
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -224,10 +260,60 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
     pump(app);
 }
 
+/// 批量入队（重建索引、启动恢复、整库重抽）。
+///
+/// 逐条走 `enqueue` 时每个视频都会发一条 `video-updated` + 一条 `status`，几千
+/// 个就是上万条事件压到事件通道和前端列表上；这里只播报一次状态与统计，
+/// 行状态交给索引开始/结束时的那条单条事件自然更新。
+pub fn enqueue_many(app: AppHandle, video_ids: &[i64], force: bool) {
+    let scheduled: Vec<i64> = {
+        let state = app.state::<AppState>();
+        let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let was_idle = idx.active == 0 && idx.queue.is_empty();
+        let mut fresh = Vec::new();
+        for &id in video_ids {
+            if let Some(deferred) = idx.schedule(id, force) {
+                if !deferred {
+                    fresh.push(id);
+                }
+            }
+        }
+        if !fresh.is_empty() && was_idle {
+            idx.start_new_batch();
+        }
+        fresh
+    };
+    if scheduled.is_empty() {
+        return;
+    }
+    {
+        let state = app.state::<AppState>();
+        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(c) = guard.as_mut() {
+            let _ = db::set_videos_status_pending(c, &scheduled);
+        }
+    }
+    broadcast_status(&app);
+    broadcast_stats(&app);
+    pump(app);
+}
+
 /// 取消一个视频的待处理任务，并通知已经运行的工作线程尽快退出。
 pub fn cancel(app: &AppHandle, video_id: i64) {
     let state = app.state::<AppState>();
     state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).cancel_one(video_id);
+    broadcast_status(app);
+}
+
+/// 批量取消（删除整个文件夹时用）：只播报一次状态，避免一个 id 一条事件。
+pub fn cancel_many(app: &AppHandle, video_ids: &[i64]) {
+    {
+        let state = app.state::<AppState>();
+        let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        for id in video_ids {
+            idx.cancel_one(*id);
+        }
+    }
     broadcast_status(app);
 }
 
@@ -246,15 +332,11 @@ fn is_cancelled(app: &AppHandle, video_id: i64) -> bool {
 
 /// 从队列取任务并发处理，直到达到并发上限。
 pub fn pump(app: AppHandle) {
+    // 并发上限缓存在 IndexerState 里：设置变更时同步更新，pump 不再读库。
     let concurrency = {
         let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        match guard.as_mut() {
-            Some(c) => db::get_settings(c)
-                .map(|s| (s.concurrency.max(1)) as usize)
-                .unwrap_or(2),
-            None => 2,
-        }
+        let idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        idx.concurrency.max(1)
     };
     loop {
         let job = {
@@ -275,7 +357,7 @@ pub fn pump(app: AppHandle) {
 
 /// 任务结束的收尾：更新计数、播报、继续泵队列。
 fn finish(app: AppHandle, video_id: i64, outcome: Option<bool>) {
-    {
+    let idle = {
         let state = app.state::<AppState>();
         let mut idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         idx.active_ids.remove(&video_id);
@@ -286,15 +368,22 @@ fn finish(app: AppHandle, video_id: i64, outcome: Option<bool>) {
             Some(false) => idx.failed += 1,
             None => {}
         }
-        if idx.active == 0 && idx.queue.is_empty() {
+        let idle = idx.active == 0 && idx.queue.is_empty();
+        if idle {
             if idx.finished_at.is_none() {
                 idx.finished_at = Some(db::now_ms());
             }
             idx.current_path = None;
         }
-    }
+        idle
+    };
     broadcast_status(&app);
-    broadcast_stats(&app);
+    // 批次结束时的计数是最终值，不能被节流吞掉。
+    if idle {
+        broadcast_stats_now(&app);
+    } else {
+        broadcast_stats(&app);
+    }
     pump(app);
 }
 
@@ -983,7 +1072,8 @@ fn import_files_tracked(
     if let Some(p) = progress.as_mut() {
         p.finish(&app, &result);
     }
-    broadcast_stats(&app);
+    // 导入刚写入一批记录，计数必须立刻更新（不能被节流窗口吞掉）。
+    broadcast_stats_now(&app);
     result
 }
 
@@ -1091,7 +1181,8 @@ pub fn import_folder(
     if let Some(f) = refreshed {
         emit(&app, LibraryEvent::FolderUpdated { folder: f });
     }
-    broadcast_stats(&app);
+    // 扫描结束的计数是最终值，直接播报。
+    broadcast_stats_now(&app);
     Ok((result, folder.id))
 }
 
@@ -1121,12 +1212,11 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
             let _ = db::set_sampling_override(c, &ids, m);
         }
     }
-    for id in &targets {
-        enqueue(app.clone(), *id, true);
+    if targets.is_empty() {
+        return 0;
     }
-    if !targets.is_empty() {
-        log(&format!("重建索引入队：{} 个视频", targets.len()));
-    }
+    log(&format!("重建索引入队：{} 个视频", targets.len()));
+    enqueue_many(app, &targets, true);
     targets.len() as i64
 }
 
@@ -1136,30 +1226,24 @@ pub fn resume_pending(app: AppHandle) {
     if !media::tools_ready() {
         return;
     }
-    let pending = {
+    let pending: Vec<i64> = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
-            Some(c) => db::list_pending_videos(c).unwrap_or_default(),
+            Some(c) => db::list_pending_videos(c)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|v| v.id)
+                .collect(),
             None => Vec::new(),
         }
     };
-    for v in &pending {
-        if v.status == "indexing" {
-            let state = app.state::<AppState>();
-            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            if let Some(c) = guard.as_mut() {
-                let _ = db::set_video_status(c, v.id, "pending", None);
-            }
-        }
-        enqueue(app.clone(), v.id, true);
+    if pending.is_empty() {
+        return;
     }
-    if !pending.is_empty() {
-        log(&format!(
-            "恢复索引队列：{} 个待处理视频",
-            pending.len()
-        ));
-    }
+    log(&format!("恢复索引队列：{} 个待处理视频", pending.len()));
+    // 一次入队，不为每个待处理视频各广播一条事件（启动瞬间的卡顿来源之一）。
+    enqueue_many(app, &pending, true);
 }
 
 fn log(msg: &str) {
@@ -1170,7 +1254,8 @@ fn log(msg: &str) {
 mod tests {
     use super::{
         can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, record_import_failure,
-        resume_start_index, scan_video_files_with, should_emit_import_progress,
+        resume_start_index, scan_video_files_with, should_broadcast_stats,
+        should_emit_import_progress,
         IndexerState,
     };
     use crate::events::ImportResult;
@@ -1217,6 +1302,22 @@ mod tests {
 
     /// 上千个文件不能逐个广播事件，但最后一个文件必须上报，否则进度停在
     /// 总数前一位；扫描阶段 total = 0 时只按时间节流。
+    /// 统计事件按时间节流：每个视频索引完成都会触发一次，而 stats 要扫 frames
+    /// 全表；批次收尾走 broadcast_stats_now，不受这里影响。
+    #[test]
+    fn stats_broadcast_is_throttled_by_time() {
+        let start = Instant::now();
+        assert!(should_broadcast_stats(None, start));
+        assert!(!should_broadcast_stats(
+            Some(start),
+            start + Duration::from_millis(100)
+        ));
+        assert!(should_broadcast_stats(
+            Some(start),
+            start + Duration::from_millis(500)
+        ));
+    }
+
     #[test]
     fn import_progress_is_throttled_but_reports_the_last_file() {
         let start = Instant::now();

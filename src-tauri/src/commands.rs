@@ -118,39 +118,52 @@ fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder
 
 /// 从索引库移除文件夹及其关联视频；磁盘文件不受影响。
 #[tauri::command]
-pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
+pub async fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || remove_folder_sync(&app, folder_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 删掉一个含几千个视频的文件夹要做几千次删除和帧目录清理，只能跑在阻塞线程。
+/// 逐条广播 `VideoRemoved` 会把事件通道和列表打成事件风暴，而前端本来就在
+/// `FolderRemoved` 之后 `refreshAll` 对齐，所以这里只发一条汇总事件。
+fn remove_folder_sync(app: &AppHandle, folder_id: i64) -> Result<(), String> {
     let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard
         .as_ref()
         .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::get_folder(conn, folder_id)
-        .map_err(|e| e.to_string())?
-        .ok_or("文件夹不存在")?;
+    let folder = db::get_folder(conn, folder_id).map_err(|e| e.to_string())?;
+    // 停监听会去拿监听表的锁，先把数据库锁放掉，避免锁顺序反转。
     drop(guard);
-    watcher::stop(&app, folder_id)?;
+    folder.ok_or("文件夹不存在")?;
+    watcher::stop(app, folder_id)?;
     let videos = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
         db::folder_video_paths(conn, folder_id).map_err(|e| e.to_string())?
     };
-    for (id, _) in &videos { indexer::cancel(&app, *id); }
+    let ids: Vec<i64> = videos.iter().map(|(id, _)| *id).collect();
+    indexer::cancel_many(app, &ids);
     let stats = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
-        for (id, _) in &videos { db::remove_video(conn, *id).map_err(|e| e.to_string())?; }
+        db::remove_video_ids(conn, &ids).map_err(|e| e.to_string())?;
         db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
         db::stats(conn).map_err(|e| e.to_string())?
     };
-    for (id, path) in videos {
-        frames_store::remove_video(id);
-        let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::VideoRemoved { video_id: id, path });
+    for id in &ids {
+        frames_store::remove_video(*id);
     }
-    // 批量删除后重建一次；读取快照在锁内，构建在锁外。
-    state.rebuild_search_index();
+    // 只摘掉这批视频的帧，不为一整个文件夹重建常驻索引。
+    state
+        .search_index
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove_videos(&ids);
     let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderRemoved { folder_id });
     let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::Stats { stats });
-    watcher::sync_all(&app)?;
+    watcher::sync_all(app)?;
     Ok(())
 }
 
@@ -667,12 +680,15 @@ fn pick_search_images_sync(app: &AppHandle) -> Result<Vec<String>, String> {
 
 /// 重建索引：按各视频当前记录的模式重抽（mode 仅指定时写入覆盖）。返回待处理视频数。
 #[tauri::command]
-pub fn videos_reindex(
+pub async fn videos_reindex(
     app: AppHandle,
     video_ids: Option<Vec<i64>>,
     mode: Option<String>,
 ) -> Result<i64, String> {
-    Ok(indexer::reindex(app, video_ids, mode))
+    // 整库重建要读一遍视频表再批量入队，别占着窗口主线程。
+    Ok(tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
+        .await
+        .map_err(|e| e.to_string())?)
 }
 
 /// 同步文件夹监听（启动/停止各目录的磁盘监听以匹配启用状态）。
@@ -708,6 +724,12 @@ pub fn library_update_settings(app: AppHandle, patch: db::SettingsPatch) -> Resu
         }
     }
     drop(guard);
+    // 并发上限缓存进索引器，pump 不再每次入队都读一次设置。
+    state
+        .indexer
+        .lock()
+        .map_err(|e| e.to_string())?
+        .concurrency = updated.concurrency.clamp(1, 8) as usize;
     if patch.keep_frame_images == Some(false) && previous.keep_frame_images && frames_store::remove_all() {
         let _ = app.emit(
             constants::EVENT_CHANNEL,

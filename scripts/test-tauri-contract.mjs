@@ -131,7 +131,7 @@ const importFilesCommand = commandsSource.match(/pub (?:async )?fn videos_import
 const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
 const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\/ 启动恢复/)?.[0] ?? ''
 const foldersAddPathCommand = commandsSource.match(/pub (?:async )?fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''
-const foldersRemoveCommand = commandsSource.match(/pub fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
+const foldersRemoveCommand = commandsSource.match(/pub async fn folders_remove\([\s\S]*?\n}\n\n\/\/\/ 重新扫描文件夹/)?.[0] ?? ''
 const foldersSetEnabledCommand = commandsSource.match(/pub fn folders_set_enabled\([\s\S]*?\n}\n\n\/\/\/ 单个视频记录/)?.[0] ?? ''
 const foldersAddDialogCommand = commandsSource.match(/pub async fn folders_add_dialog\([\s\S]*?\n}\n\n\/\/\/ 从索引库移除文件夹/)?.[0] ?? ''
 const foldersRescanCommand = commandsSource.match(/pub (?:async )?fn folders_rescan\([\s\S]*?\n}\n\n\/\/\/ 启用\/停用/)?.[0] ?? ''
@@ -151,7 +151,7 @@ check(
 check(
   '重建索引延迟到工作线程开始时清理旧数据',
   !reindexCommand.includes('clear_frames') &&
-    reindexCommand.includes('enqueue(app.clone(), *id, true)') &&
+    reindexCommand.includes('enqueue_many(app, &targets, true)') &&
     indexerSource.includes('reset_before_run') &&
     indexerSource.includes('process_video(app2, id, reset_before_run)')
 )
@@ -180,7 +180,7 @@ check(
 check(
   '移除文件夹会删除关联视频索引但保留单独导入的视频',
   foldersRemoveCommand.includes('db::folder_video_paths') &&
-    foldersRemoveCommand.includes('db::remove_video') &&
+    foldersRemoveCommand.includes('db::remove_video_ids') &&
     foldersRemoveCommand.includes('db::remove_folder') &&
     dbSource.includes('WHERE folder_id = ? ORDER BY id')
 )
@@ -227,6 +227,36 @@ check(
   '导入阶段不计算文件哈希（避免与抽帧抢磁盘）',
   !indexerSource.includes('sha256_of_file') && commandsSource.includes('sha256_of_file'),
   '改回导入时整文件读取会重新拖慢扫描与索引'
+)
+check(
+  '删除文件夹与重建索引不占用窗口主线程',
+  ['folders_remove', 'videos_reindex'].every((name) => {
+    const start = commandsSource.indexOf(`pub async fn ${name}(`)
+    if (start < 0) return false
+    return commandsSource.slice(start, start + 500).includes('spawn_blocking')
+  }),
+  '这两个动作会在主线程删几千条记录/发上万条事件'
+)
+const removeFolderBody = commandsSource.slice(
+  commandsSource.indexOf('fn remove_folder_sync('),
+  commandsSource.indexOf('/// 重新扫描文件夹')
+)
+check(
+  '删文件夹批量处理且只发汇总事件',
+  removeFolderBody.includes('db::remove_video_ids') &&
+    removeFolderBody.includes('indexer::cancel_many') &&
+    removeFolderBody.includes('remove_videos(&ids)') &&
+    !removeFolderBody.includes('VideoRemoved'),
+  '逐条删除 + 逐条事件 + 全量重建索引是大文件夹卡死的原因'
+)
+check(
+  '重建索引批量入队，统计事件节流',
+  indexerSource.includes('pub fn enqueue_many') &&
+    indexerSource.includes('enqueue_many(app, &targets, true)') &&
+    indexerSource.includes('should_broadcast_stats') &&
+    indexerSource.includes('broadcast_stats_now') &&
+    indexerSource.includes('idx.concurrency.max(1)'),
+  '逐条 enqueue 会为每个视频发两条事件并读一次设置'
 )
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length

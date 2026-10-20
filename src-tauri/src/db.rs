@@ -971,6 +971,22 @@ pub fn set_video_status(conn: &Connection, id: i64, status: &str, error: Option<
     Ok(())
 }
 
+/// 批量置为 pending。重建索引/启动恢复一次入队几千个视频时，逐条 UPDATE
+/// 会让每次写都要拿一次写锁；这里按 SQLite 的参数上限分块，一条 SQL 改一批。
+pub fn set_videos_status_pending(conn: &Connection, ids: &[i64]) -> SqlResult<()> {
+    for chunk in ids.chunks(500) {
+        let placeholders: Vec<&str> = chunk.iter().map(|_| "?").collect();
+        let sql = format!(
+            "UPDATE videos SET status = 'pending', error = NULL WHERE id IN ({})",
+            placeholders.join(",")
+        );
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        conn.execute(&sql, params.as_slice())?;
+    }
+    Ok(())
+}
+
 /// 固化采样模式覆盖（sampling_override）。
 pub fn set_sampling_override(conn: &mut Connection, ids: &[i64], mode: &str) -> SqlResult<()> {
     if ids.is_empty() {
