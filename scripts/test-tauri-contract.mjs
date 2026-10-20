@@ -17,6 +17,7 @@ const iconSource = readSource('scripts', 'generate-icon.mjs')
 const processExt = readSource('src-tauri', 'src', 'process_ext.rs')
 const platformOpen = readSource('src-tauri', 'src', 'platform_open.rs')
 const watcherSource = readSource('src-tauri', 'src', 'watcher.rs')
+const stateSource = readSource('src-tauri', 'src', 'state.rs')
 const constantsSource = readSource('src-tauri', 'src', 'constants.rs')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readSource('src-tauri', 'src', name))
@@ -257,6 +258,14 @@ check(
     return commandsSource.slice(start, start + 500).includes('spawn_blocking')
   }) && commandsSource.includes('db::remove_video_ids(conn, &video_ids)'),
   '删除帧目录与递归删 frames 可能持续几十秒'
+)
+check(
+  '常驻索引在后台构建，未就绪前不搜索、不开工',
+  stateSource.includes('search_ready') &&
+    rustMain.includes('rebuild_search_index') &&
+    indexerSource.includes('if !state.search_ready.load') &&
+    commandsSource.includes('正在加载索引'),
+  '在主线程同步构建百万帧索引会让窗口白屏数秒'
 )
 check(
   '重建索引批量入队，统计事件节流',

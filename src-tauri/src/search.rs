@@ -13,7 +13,6 @@
 use crate::db;
 use crate::framepack;
 use crate::hash;
-use rusqlite::Connection;
 
 /// 64bit dHash 汉明距离超过该值直接丢弃（剪枝）。
 pub const DHASH_PRUNE_BITS: usize = 24;
@@ -182,12 +181,6 @@ impl FrameSearchIndex {
     }
 
     /// 全量重建（启动或增量更新失败时调用）。
-    pub fn rebuild_from_db(conn: &Connection) -> Self {
-        match db::load_frame_matrix(conn) {
-            Ok(matrix) => Self::from_matrix(matrix),
-            Err(_) => Self::new(),
-        }
-    }
 
     /// 用数据库快照构建索引。调用方应先在锁内读出快照再调用，
     /// 这样构建过程（复制 + 分词）不必占着全局数据库连接。

@@ -5,6 +5,7 @@ use crate::media;
 use crate::search::FrameSearchIndex;
 use crate::watcher::WatcherMap;
 use rusqlite::Connection;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 /// 应用级状态：持有一个 SQLite 连接。打开失败会在启动阶段提示后退出，
@@ -15,6 +16,10 @@ pub struct AppState {
     pub indexer: Mutex<IndexerState>,
     /// 全量帧指纹常驻内存索引；只在帧数据发生变化后重建。
     pub search_index: Mutex<FrameSearchIndex>,
+    /// 常驻索引是否已从数据库构建完成。启动时在后台线程构建：百万帧的库在
+    /// 主线程里同步读会白屏数秒。未就绪时搜索明确回报「加载中」，
+    /// 而不是把空索引当成「没找到」。
+    pub search_ready: AtomicBool,
     /// 文件夹监听句柄集合：key = folder_id，移除即停止该目录监听（M8）。
     pub watcher: Mutex<WatcherMap>,
 }
@@ -28,7 +33,6 @@ impl AppState {
         media::initialize(ffmpeg_dir);
         let tools = media::tools_status();
         logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
-        let search_index = FrameSearchIndex::rebuild_from_db(&conn);
         // 抽帧并发上限只在启动和设置变更时读一次库，pump 用缓存值。
         let concurrency = db::get_settings(&conn)
             .map(|settings| settings.concurrency.clamp(1, 8) as usize)
@@ -39,7 +43,9 @@ impl AppState {
                 concurrency,
                 ..Default::default()
             }),
-            search_index: Mutex::new(search_index),
+            // 索引留空，由启动流程在后台线程里 rebuild_search_index() 填。
+            search_index: Mutex::new(FrameSearchIndex::new()),
+            search_ready: AtomicBool::new(false),
             watcher: Mutex::new(WatcherMap::new()),
         })
     }
@@ -60,5 +66,8 @@ impl AppState {
                 *current = rebuilt;
             }
         }
+        // 读取失败时保持空索引继续跑（与旧启动路径一致），但不能把 ready
+        // 卡在 false —— 那样搜索永远报「加载中」、索引器也永远不开工。
+        self.search_ready.store(true, Ordering::Release);
     }
 }

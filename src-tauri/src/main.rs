@@ -94,7 +94,14 @@ fn main() {
             if let Err(error) = watcher::sync_all(app.handle()) {
                 logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
             }
-            indexer::resume_pending(app.handle().clone());
+            // 常驻索引在后台构建：百万帧的库在主线程里同步读会让窗口白屏数秒。
+            // 构建完成后才恢复未完成的索引任务（pump 在就绪前不动队列）。
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                handle.state::<crate::state::AppState>().rebuild_search_index();
+                indexer::resume_pending(handle.clone());
+                indexer::pump(handle);
+            });
             updater::start_if_enabled(app.handle());
             logger::log("启动生命周期初始化完成");
             Ok(())

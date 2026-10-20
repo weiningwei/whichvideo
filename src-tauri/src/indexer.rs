@@ -332,9 +332,14 @@ fn is_cancelled(app: &AppHandle, video_id: i64) -> bool {
 
 /// 从队列取任务并发处理，直到达到并发上限。
 pub fn pump(app: AppHandle) {
+    let state = app.state::<AppState>();
+    // 启动时常驻索引还在后台构建：此时开工，增量写入的帧会被随后的重建覆盖。
+    // 构建完成的线程会再 pump 一次，队列里的任务不会丢。
+    if !state.search_ready.load(Ordering::Acquire) {
+        return;
+    }
     // 并发上限缓存在 IndexerState 里：设置变更时同步更新，pump 不再读库。
     let concurrency = {
-        let state = app.state::<AppState>();
         let idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         idx.concurrency.max(1)
     };

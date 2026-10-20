@@ -403,6 +403,14 @@ fn duplicate_meets_threshold(score: f64, threshold: f64) -> bool {
 }
 
 fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<DuplicatePair>, String> {
+    // 启动后索引还在后台构建时，空索引会把每一对都判成「不相似」。
+    if !app
+        .state::<AppState>()
+        .search_ready
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err("正在加载索引，请稍候再试".to_string());
+    }
     let threshold = min_score.filter(|v| v.is_finite() && *v > 0.0 && *v <= 1.0).unwrap_or(0.88);
     let identical_candidates = {
         let state = app.state::<AppState>();
@@ -1143,6 +1151,10 @@ fn perform_search(
     qw: u32,
     qh: u32,
 ) -> Result<SearchResponse, String> {
+    // 启动后的头几秒常驻索引还在后台构建，空索引会给出「没找到」的错误结论。
+    if !state.search_ready.load(std::sync::atomic::Ordering::Acquire) {
+        return Err("正在加载索引，请稍候再试".to_string());
+    }
     let started = std::time::SystemTime::now();
     let settings = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
