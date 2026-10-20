@@ -1,0 +1,23 @@
+scripts/test-video-events.mjs
+  s_4be4cdac95bf77::t_f7b8314f1150f3 66,166-175
+  s_4be4cdac95bf77::t_80e2cff7dcb1d6 176-177
+src/renderer/src/hooks/useVideoList.ts
+  s_4be4cdac95bf77::t_07ab87750932dc 77-88,160-163,196-199,201-209,212-213,215-220,233,241,243
+  s_4be4cdac95bf77::t_1f5d9d04bf6f35 193,200,210-211,214,238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90f2cb04bb363ed79e73aeb5dd8efc904e5b7b7b",
+  "prompts": {},
+  "sessions": {
+    "s_4be4cdac95bf77": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a1a-989f-7701-aa6e-0949d38c6b54",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
