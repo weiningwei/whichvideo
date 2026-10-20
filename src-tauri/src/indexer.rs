@@ -15,7 +15,7 @@ use crate::logger;
 use crate::media;
 use crate::sampling;
 use crate::state::AppState;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// 索引器队列与实时状态。
 #[derive(Default)]
 pub struct IndexerState {
-    pub queue: Vec<i64>,
+    pub queue: VecDeque<i64>,
     pub queued: HashSet<i64>,
     pub active_ids: HashSet<i64>,
     pub cancelled: HashSet<i64>,
@@ -65,7 +65,7 @@ impl IndexerState {
         }
         let deferred = self.active_ids.contains(&video_id);
         self.queued.insert(video_id);
-        self.queue.push(video_id);
+        self.queue.push_back(video_id);
         Some(deferred)
     }
 
@@ -73,11 +73,18 @@ impl IndexerState {
         if self.active >= concurrency {
             return None;
         }
-        let position = self
-            .queue
-            .iter()
-            .position(|id| !self.active_ids.contains(id))?;
-        let id = self.queue.remove(position);
+        // 大批量导入的常规路径从队首 O(1) 取出；只有活动视频被强制重建、
+        // 其待办项挡在队首时，才查找后面可运行的任务并保留原有顺序。
+        let id = match self.queue.front().copied()? {
+            front if !self.active_ids.contains(&front) => self.queue.pop_front()?,
+            _ => {
+                let position = self
+                    .queue
+                    .iter()
+                    .position(|id| !self.active_ids.contains(id))?;
+                self.queue.remove(position)?
+            }
+        };
         self.queued.remove(&id);
         self.active_ids.insert(id);
         self.active += 1;
@@ -1413,6 +1420,24 @@ mod tests {
         state.active_ids.remove(&7);
         state.active = 0;
         assert_eq!(state.take_next(2), Some((7, true)));
+    }
+
+    #[test]
+    fn deferred_reindex_keeps_its_place_while_other_jobs_can_run() {
+        let mut state = IndexerState::default();
+        state.schedule(7, false);
+        assert_eq!(state.take_next(2), Some((7, false)));
+        state.schedule(7, true);
+        state.schedule(8, false);
+        state.schedule(9, false);
+
+        assert_eq!(state.take_next(2), Some((8, false)));
+        state.active_ids.remove(&7);
+        state.active = 1;
+        assert_eq!(state.take_next(2), Some((7, true)));
+        state.active_ids.remove(&8);
+        state.active = 1;
+        assert_eq!(state.take_next(2), Some((9, false)));
     }
 
     #[test]
