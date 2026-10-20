@@ -63,7 +63,7 @@ if (!existsSync(target)) {
   console.error(`转译产物缺失：${target}`)
   process.exit(1)
 }
-const { applyVideoEvent } = await import(pathToFileURL(target).href)
+const { applyVideoEvent, applyVideoEvents } = await import(pathToFileURL(target).href)
 const { applyImportProgress } = await import(
   pathToFileURL(join(js, 'renderer', 'src', 'lib', 'importProgress.js')).href
 )
@@ -145,13 +145,31 @@ console.log('=== 其它事件类型与列表无关 ===')
   check('stats / notice 原样返回', a.length === 3 && b.length === 3)
 }
 
+console.log('=== 批量事件：同一轮只应用最终状态 ===')
+{
+  const out = applyVideoEvents(list, [
+    { type: 'video-updated', video: video(4, 'pending', 0, 25) },
+    { type: 'video-updated', video: video(4, 'ready', 20, 25) },
+    { type: 'video-updated', video: indexed(2, 32) },
+    { type: 'video-removed', videoId: 3, path: '' },
+    { type: 'video-updated', video: video(5, 'pending', 0, 35) }
+  ], ALL)
+  check('更新、插入与删除合并后顺序正确', out.map((v) => v.id).join(',') === '5,1,4,2')
+  check('重复更新只保留最终状态', out.find((v) => v.id === 4)?.frameCount === 20 && out.find((v) => v.id === 2)?.frameCount === 32)
+  const filtered = applyVideoEvents(list, [
+    { type: 'video-updated', video: indexed(1, 64) },
+    { type: 'video-removed', videoId: 2, path: '' }
+  ], { status: 'indexing' })
+  check('批量更新仍遵守状态筛选', filtered.length === 1 && filtered[0].id === 3)
+}
+
 console.log('=== 静态守卫：订阅真的接上了 ===')
 {
   const src = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useVideoList.ts'), 'utf8')
   check(
-    'hook 内订阅了 events 并把事件交给 applyVideoEvent',
+    'hook 内订阅了 events 并批量应用视频事件',
     src.includes('window.whichvideo.events.subscribe') &&
-      /applyVideoEvent\(prev\.items, event, queryRef\.current\)/.test(src),
+      /applyVideoEvents\(prev\.items, events, queryRef\.current\)/.test(src),
     '删掉订阅这个修复就失效'
   )
   check(

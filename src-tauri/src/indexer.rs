@@ -137,6 +137,21 @@ fn broadcast_status(app: &AppHandle) {
     emit(app, LibraryEvent::Status { status });
 }
 
+const STATUS_BROADCAST_INTERVAL: Duration = Duration::from_millis(200);
+static LAST_STATUS_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn broadcast_status_throttled(app: &AppHandle) {
+    let now = Instant::now();
+    {
+        let mut last = LAST_STATUS_AT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if last.is_some_and(|at| now.saturating_duration_since(at) < STATUS_BROADCAST_INTERVAL) {
+            return;
+        }
+        *last = Some(now);
+    }
+    broadcast_status(app);
+}
+
 /// 统计事件节流：`finish` 每个视频都会调一次，而 `db::stats` 要扫 frames 全表
 /// （百万行是几十毫秒级）。原来每完成一个视频算一次，库越大索引越慢。
 const STATS_BROADCAST_INTERVAL: Duration = Duration::from_millis(500);
@@ -256,7 +271,6 @@ pub fn enqueue(app: AppHandle, video_id: i64, force: bool) {
         }
     }
     emit_video_updated(&app, video_id);
-    broadcast_status(&app);
     pump(app);
 }
 
@@ -357,7 +371,7 @@ pub fn pump(app: AppHandle) {
             process_video(app2, id, reset_before_run);
         });
     }
-    broadcast_status(&app);
+    broadcast_status_throttled(&app);
 }
 
 /// 任务结束的收尾：更新计数、播报、继续泵队列。
@@ -953,7 +967,6 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         result.duplicates += 1;
         return;
     }
-    emit_video_updated(app, video.id);
     enqueue(app.clone(), video.id, false);
 }
 
@@ -1079,6 +1092,7 @@ fn import_files_tracked(
     }
     // 导入刚写入一批记录，计数必须立刻更新（不能被节流窗口吞掉）。
     broadcast_stats_now(&app);
+    broadcast_status(&app);
     result
 }
 
@@ -1188,6 +1202,7 @@ pub fn import_folder(
     }
     // 扫描结束的计数是最终值，直接播报。
     broadcast_stats_now(&app);
+    broadcast_status(&app);
     Ok((result, folder.id))
 }
 

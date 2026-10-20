@@ -72,6 +72,54 @@ export function applyVideoEvent(
   return prev
 }
 
+type VideoListEvent = Extract<LibraryEvent, { type: 'video-updated' | 'video-removed' }>
+
+/** 同一批事件只遍历一次列表；同一视频以最后一条事件为准。 */
+export function applyVideoEvents(prev: VideoRecord[], events: VideoListEvent[], query: VideoQuery): VideoRecord[] {
+  const changes = new Map<number, VideoListEvent>()
+  for (const event of events) {
+    changes.set(event.type === 'video-updated' ? event.video.id : event.videoId, event)
+  }
+  if (changes.size === 0) return prev
+
+  let changed = false
+  const existing: VideoRecord[] = []
+  for (const video of prev) {
+    const event = changes.get(video.id)
+    if (!event) {
+      existing.push(video)
+      continue
+    }
+    changes.delete(video.id)
+    changed = true
+    if (event.type === 'video-updated' &&
+      (!query.status || query.status === 'all' || query.status === event.video.status)) {
+      existing.push(event.video)
+    }
+  }
+
+  if (!canInsertNewRow(query)) return changed ? existing : prev
+  const fresh: VideoRecord[] = []
+  for (const event of changes.values()) {
+    if (event.type === 'video-updated') fresh.push(event.video)
+  }
+  if (fresh.length === 0) return changed ? existing : prev
+  const ascending = query.order === 'asc'
+  fresh.sort((a, b) => ascending ? a.addedAt - b.addedAt : b.addedAt - a.addedAt)
+  const merged: VideoRecord[] = []
+  let nextFresh = 0
+  for (const video of existing) {
+    while (nextFresh < fresh.length && (ascending
+      ? fresh[nextFresh].addedAt < video.addedAt
+      : fresh[nextFresh].addedAt > video.addedAt)) {
+      merged.push(fresh[nextFresh++])
+    }
+    merged.push(video)
+  }
+  merged.push(...fresh.slice(nextFresh))
+  return merged
+}
+
 export function useVideoList(): UseVideoListReturn {
   /**
    * 列表与总数放在同一个 state 里：插入/移除一行时总数要跟着变（工具栏显示
@@ -124,19 +172,29 @@ export function useVideoList(): UseVideoListReturn {
     void refreshVideos()
   }, [refreshVideos])
 
-  /** 订阅索引事件并就地更新行；规则见 {@link applyVideoEvent}。 */
+  /** 批量合并索引事件，最多约每 150ms 更新一次列表。 */
   useEffect(() => {
-    const unsubscribe = window.whichvideo.events.subscribe((event: LibraryEvent) => {
+    let pending: VideoListEvent[] = []
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const flush = () => {
+      timer = null
+      const events = pending
+      pending = []
       setList((prev) => {
-        const items = applyVideoEvent(prev.items, event, queryRef.current)
-        // 行数变化同步到总数（插入的新行 / 被移除或不再匹配筛选的行）。
-        // 拉取回来时会用后端总数整体覆盖。
+        const items = applyVideoEvents(prev.items, events, queryRef.current)
         const total = Math.max(0, prev.total + items.length - prev.items.length)
-        if (items === prev.items && total === prev.total) return prev
-        return { items, total }
+        return items === prev.items && total === prev.total ? prev : { items, total }
       })
+    }
+    const unsubscribe = window.whichvideo.events.subscribe((event: LibraryEvent) => {
+      if (event.type !== 'video-updated' && event.type !== 'video-removed') return
+      pending.push(event)
+      if (timer === null) timer = setTimeout(flush, 150)
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (timer !== null) clearTimeout(timer)
+    }
   }, [])
 
   return {
