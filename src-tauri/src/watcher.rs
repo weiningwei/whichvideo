@@ -14,15 +14,25 @@ use notify::event::EventKind;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
-static CHANGE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
-static PENDING_CHANGES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+/// 等待稳定后再导入的文件（key = path_key）。同一路径的新事件覆盖旧条目，
+/// 天然实现 debounce。
+struct PendingImport {
+    folder_id: i64,
+    path: String,
+    due: Instant,
+}
 
-fn pending_changes() -> &'static Mutex<HashMap<String, u64>> {
+static PENDING_CHANGES: OnceLock<Mutex<HashMap<String, PendingImport>>> = OnceLock::new();
+/// 调度线程是否在跑；与 pending_changes 的插入/清空在同一把锁内检查，
+/// 避免「检查为空 → 新事件入队 → 线程退出」丢掉最后一次唤醒。
+static SCHEDULER_RUNNING: AtomicBool = AtomicBool::new(false);
+
+fn pending_changes() -> &'static Mutex<HashMap<String, PendingImport>> {
     PENDING_CHANGES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -45,27 +55,65 @@ fn forget_pending(path: &str) {
 
 /// notify 在文件复制期间会连续发送 Create/Modify。只让最后一个事件在用户配置的
 /// 稳定等待期后触发导入，避免对尚未写完的大文件反复 probe/hash。
+///
+/// 调度由一个常驻线程按 100ms 扫描到期条目，而不是每个事件起一个线程——
+/// 复制大目录时事件可达数百条。
 fn schedule_import(app: &AppHandle, folder_id: i64, path: String) {
-    let key = db::path_key(&path);
-    let ticket = CHANGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    if let Ok(mut pending) = pending_changes().lock() {
-        pending.insert(key.clone(), ticket);
-    }
     let wait_ms = watcher_settings(app).await_write_ms.clamp(0, 60_000) as u64;
-    let app = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(wait_ms));
-        let is_latest = pending_changes()
-            .lock()
-            .ok()
-            .and_then(|mut pending| {
-                (pending.get(&key) == Some(&ticket)).then(|| pending.remove(&key))
-            })
-            .is_some();
-        if is_latest && Path::new(&path).is_file() {
-            indexer::import_files(app, vec![path], Some(folder_id));
+    let item = PendingImport {
+        folder_id,
+        path,
+        due: Instant::now() + Duration::from_millis(wait_ms),
+    };
+    let key = db::path_key(&item.path);
+    let mut pending = match pending_changes().lock() {
+        Ok(pending) => pending,
+        Err(_) => return,
+    };
+    pending.insert(key, item);
+    let start = !SCHEDULER_RUNNING.swap(true, Ordering::SeqCst);
+    drop(pending);
+    if start {
+        let app = app.clone();
+        std::thread::spawn(move || drain_pending_imports(app));
+    }
+}
+
+/// 唯一的调度线程：每 100ms 取走到期条目后导入，队列清空即退出。
+fn drain_pending_imports(app: AppHandle) {
+    loop {
+        std::thread::sleep(Duration::from_millis(100));
+        let due: Vec<PendingImport> = {
+            let Ok(mut pending) = pending_changes().lock() else { return };
+            let now = Instant::now();
+            let keys: Vec<String> = pending
+                .iter()
+                .filter(|(_, item)| item.due <= now)
+                .map(|(key, _)| key.clone())
+                .collect();
+            keys.into_iter()
+                .filter_map(|key| pending.remove(&key))
+                .collect()
+        };
+        for item in due {
+            if Path::new(&item.path).is_file() {
+                indexer::import_files(app.clone(), vec![item.path], Some(item.folder_id));
+            }
         }
-    });
+        // 标记退出与判空必须在同一把锁内完成，否则会漏掉刚入队的条目。
+        let exit = {
+            let Ok(pending) = pending_changes().lock() else { return };
+            if pending.is_empty() {
+                SCHEDULER_RUNNING.store(false, Ordering::SeqCst);
+                true
+            } else {
+                false
+            }
+        };
+        if exit {
+            return;
+        }
+    }
 }
 
 /// 把当前启用的文件夹同步成实际的监听集合：启动新增、停止已停用/已移除的。
