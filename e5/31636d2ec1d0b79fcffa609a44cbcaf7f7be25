@@ -1,0 +1,14 @@
+src-tauri/src/commands.rs
+  h_ab7185b88fbcdb 53,57-63,139,143-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e531636d2ec1d0b79fcffa609a44cbcaf7f7be25",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
