@@ -1,0 +1,27 @@
+scripts/test-tauri-contract.mjs
+  s_e78e0118ab4232::t_85c1e2b2e869bd 136
+  s_e78e0118ab4232::t_f12a592465b622 132
+src-tauri/src/commands.rs
+  h_ab7185b88fbcdb 53,57-63,139,143-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4b62a1fa7559bee0c2dafb82346a215858ed604",
+  "prompts": {},
+  "humans": {
+    "h_ab7185b88fbcdb": {
+      "author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_e78e0118ab4232": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14cd2-0389-7392-aeff-8939513f00de",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
