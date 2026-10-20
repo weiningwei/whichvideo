@@ -214,6 +214,15 @@ check(
     (commandsSource.match(/spawn_blocking\(/g) ?? []).length >= 5 &&
     commandsSource.includes('let videos: HashMap<i64, db::VideoRecord>')
 )
+check(
+  '库统计/文件夹/视频列表不占用窗口主线程',
+  ['library_stats', 'folders_list', 'videos_list'].every((name) => {
+    const start = commandsSource.indexOf(`pub async fn ${name}(`)
+    if (start < 0) return false
+    return commandsSource.slice(start, start + 700).includes('spawn_blocking')
+  }),
+  '同步命令在窗口主线程执行，等数据库锁时整窗会卡住'
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(

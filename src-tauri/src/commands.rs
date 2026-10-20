@@ -22,13 +22,21 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// 库统计：视频/帧/文件夹计数。复用现有 whichvideo.db。
+///
+/// 只读命令也走阻塞线程：Tauri 的同步命令在窗口主线程上执行，导入/索引正在
+/// 写库时这条查询要等锁，等多久整窗就卡多久。
 #[tauri::command]
-pub fn library_stats(state: State<AppState>) -> Result<db::LibraryStats, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::stats(conn).map_err(|e| e.to_string())
+pub async fn library_stats(app: AppHandle) -> Result<db::LibraryStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::stats(conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 索引器实时状态（取自共享受保护的状态）。
@@ -38,14 +46,19 @@ pub fn library_status(state: State<AppState>) -> Result<db::IndexerStatus, Strin
     Ok(idx.status())
 }
 
-/// 监听文件夹列表。
+/// 监听文件夹列表（与统计/列表一样走阻塞线程，别占主线程等数据库锁）。
 #[tauri::command]
-pub fn folders_list(state: State<AppState>) -> Result<Vec<db::WatchedFolder>, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::list_folders(conn).map_err(|e| e.to_string())
+pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::list_folders(conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 登记一个被监听的文件夹，并立即扫描其中已有的视频。
@@ -529,12 +542,17 @@ fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Opti
 
 /// 视频分页列表（支持 keyword/folderId/status 过滤、排序、分页）。
 #[tauri::command]
-pub fn videos_list(state: State<AppState>, query: db::VideoQuery) -> Result<db::VideoPage, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::list_videos(conn, &query).map_err(|e| e.to_string())
+pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::VideoPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::list_videos(conn, &query).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 视频缩略图（data:image/jpeg;base64,...），无则 null。
