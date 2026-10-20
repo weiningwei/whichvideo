@@ -257,6 +257,7 @@ fn remove_by_path(app: &AppHandle, path: &str) {
         if let Ok(mut index) = state.search_index.lock() {
             index.remove_video(v.id);
         }
+        indexer::broadcast_stats_now(app);
     }
 }
 
@@ -310,6 +311,7 @@ fn remove_under(app: &AppHandle, dir: &str) {
     }
     if !videos.is_empty() {
         state.rebuild_search_index();
+        indexer::broadcast_stats_now(app);
     }
 }
 

@@ -186,7 +186,7 @@ fn broadcast_stats(app: &AppHandle) {
 }
 
 /// 批次收尾必须给出最终计数，不能被节流吞掉。
-fn broadcast_stats_now(app: &AppHandle) {
+pub(crate) fn broadcast_stats_now(app: &AppHandle) {
     *LAST_STATS_AT.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
     emit_stats(app);
 }
