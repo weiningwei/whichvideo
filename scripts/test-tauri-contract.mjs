@@ -52,7 +52,8 @@ check(
   !!rustEventChannel &&
     rustEventChannel === tsEventChannel &&
     !commandsSource.includes('"library_event"') &&
-    !indexerSource.includes('"library_event"'),
+    !indexerSource.includes('"library_event"') &&
+    !watcherSource.includes('"library_event"'),
   rustEventChannel
 )
 

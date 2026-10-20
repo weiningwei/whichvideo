@@ -4,6 +4,7 @@
 //! 视频文件新增/覆盖 → 入索引队列；删除 → 从库移除并播报；子目录被删 → 移除其下全部视频。
 //! 监听只处理启动后的磁盘变更；初始已有文件由扫描流程负责。
 
+use crate::constants;
 use crate::db;
 use crate::events::LibraryEvent;
 use crate::frames_store;
@@ -199,7 +200,7 @@ fn remove_by_path(app: &AppHandle, path: &str) {
     if let Some(v) = removed {
         frames_store::remove_video(v.id);
         let _ = app.emit(
-            "library_event",
+            constants::EVENT_CHANNEL,
             LibraryEvent::VideoRemoved {
                 video_id: v.id,
                 path: v.path.clone(),
@@ -213,20 +214,33 @@ fn remove_by_path(app: &AppHandle, path: &str) {
 fn remove_under(app: &AppHandle, dir: &str) {
     let norm = db::normalize_path(dir);
     let state = app.state::<AppState>();
-    let ids = {
+    // 删除前先取出 id 与路径：事件里的 path 供界面提示用，删完就查不到了。
+    let videos: Vec<(i64, String)> = {
         let g = state.db.lock();
         match g {
             Ok(guard) => guard
                 .as_ref()
-                .and_then(|c| db::video_ids_under(c, &norm).ok())
+                .map(|c| {
+                    db::video_ids_under(c, &norm)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|id| {
+                            db::get_video(c, id)
+                                .ok()
+                                .flatten()
+                                .map(|video| (video.id, video.path))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             Err(_) => Vec::new(),
         }
     };
-    for id in &ids {
+    for (id, _) in &videos {
         indexer::cancel(app, *id);
     }
     {
+        let ids: Vec<i64> = videos.iter().map(|(id, _)| *id).collect();
         let g = state.db.lock();
         if let Ok(guard) = g {
             if let Some(c) = guard.as_ref() {
@@ -234,17 +248,17 @@ fn remove_under(app: &AppHandle, dir: &str) {
             }
         }
     }
-    for id in &ids {
+    for (id, path) in &videos {
         frames_store::remove_video(*id);
         let _ = app.emit(
-            "library_event",
+            constants::EVENT_CHANNEL,
             LibraryEvent::VideoRemoved {
                 video_id: *id,
-                path: String::new(),
+                path: path.clone(),
             },
         );
     }
-    if !ids.is_empty() {
+    if !videos.is_empty() {
         state.rebuild_search_index();
     }
 }
@@ -257,7 +271,7 @@ fn set_folder_state(app: &AppHandle, folder_id: i64, state_name: &str, message: 
             let _ = db::update_folder_state(c, folder_id, state_name, message);
             if let Ok(Some(f)) = db::get_folder(c, folder_id) {
                 let _ = app.emit(
-                    "library_event",
+                    constants::EVENT_CHANNEL,
                     LibraryEvent::FolderUpdated { folder: f },
                 );
             }
