@@ -714,6 +714,8 @@ fn stat_file(path: &str) -> (i64, i64) {
     }
 }
 
+/// 旧哈希只在文件元数据未变时可信：大小或修改时间一变，内容可能已经被替换，
+/// 沿用旧值会让查重把两个不同的文件判成完全相同。
 fn can_reuse_file_hash(stored_size: i64, stored_mtime: i64, size: i64, mtime: i64) -> bool {
     size > 0 && mtime > 0 && stored_size == size && stored_mtime == mtime
 }
@@ -817,10 +819,13 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         },
     };
     let (size, mtime) = stat_file(&path);
+    // 导入阶段不读整文件算 SHA-256：导入线程的顺序读会和同时开工的抽帧线程抢
+    // 同一块盘（机械盘上互相拖慢）。完全相同文件的判定本来就在查重时按需现算
+    // （commands.rs::ensure_file_hash），这里只保留仍可信的旧值：文件被改过
+    // （大小或修改时间不同）就把哈希丢掉，旧值已不代表当前内容。
     let file_hash = existing.as_ref()
         .filter(|v| can_reuse_file_hash(v.size, v.mtime_ms, size, mtime))
-        .and_then(|v| v.file_hash.clone())
-        .or_else(|| media::sha256_of_file(&path).ok());
+        .and_then(|v| v.file_hash.clone());
     let input = db::UpsertVideoInput {
         path: path.clone(),
         size,

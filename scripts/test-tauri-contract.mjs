@@ -223,6 +223,11 @@ check(
   }),
   '同步命令在窗口主线程执行，等数据库锁时整窗会卡住'
 )
+check(
+  '导入阶段不计算文件哈希（避免与抽帧抢磁盘）',
+  !indexerSource.includes('sha256_of_file') && commandsSource.includes('sha256_of_file'),
+  '改回导入时整文件读取会重新拖慢扫描与索引'
+)
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length
 check(
