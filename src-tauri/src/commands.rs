@@ -50,10 +50,17 @@ pub fn folders_list(state: State<AppState>) -> Result<Vec<db::WatchedFolder>, St
 
 /// 登记一个被监听的文件夹，并立即扫描其中已有的视频。
 #[tauri::command]
-pub fn folders_add_path(
+pub async fn folders_add_path(
     app: AppHandle,
     dir_path: String,
 ) -> Result<db::WatchedFolder, String> {
+    tauri::async_runtime::spawn_blocking(move || add_folder_path_sync(&app, dir_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 扫描目录并逐个探测、哈希文件，耗时可达分钟级，只能跑在阻塞线程。
+fn add_folder_path_sync(app: &AppHandle, dir_path: String) -> Result<db::WatchedFolder, String> {
     let (_, folder_id) = indexer::import_folder(app.clone(), dir_path, true, true)?;
     watcher::sync_all(&app)?;
     let state = app.state::<AppState>();
@@ -129,10 +136,16 @@ pub fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
 
 /// 重新扫描文件夹（folderId 缺省则全部），返回聚合结果。
 #[tauri::command]
-pub fn folders_rescan(
+pub async fn folders_rescan(
     app: AppHandle,
     folder_id: Option<i64>,
 ) -> Result<events::ImportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || rescan_folders_sync(&app, folder_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events::ImportResult, String> {
     let targets: Vec<db::WatchedFolder> = {
         let state = app.state::<AppState>();
         let g = state.db.lock().map_err(|e| e.to_string())?;
