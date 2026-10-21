@@ -63,6 +63,7 @@ const COLUMN_WIDTHS_KEY = 'wv-library-column-widths'
 const DEFAULT_COLUMN_WIDTHS = [360, 128, 96, 96] as const
 const MIN_COLUMN_WIDTHS = [240, 112, 88, 88] as const
 const COLUMN_LABELS = ['视频', '状态', '时长', '大小'] as const
+const ACTION_COLUMN_WIDTH = 88
 
 function loadColumnWidths(): { widths: number[]; firstFixed: boolean } {
   try {
@@ -136,13 +137,21 @@ export function LibraryView(props: Props) {
     return () => observer.disconnect()
   }, [])
 
+  const maxColumnWidth = (index: number): number => {
+    const otherWidths = columnWidths.reduce((sum, width, column) => {
+      if (column === index) return sum
+      return sum + (column === 0 && !firstColumnFixed ? MIN_COLUMN_WIDTHS[0] : width)
+    }, ACTION_COLUMN_WIDTH)
+    return Math.max(MIN_COLUMN_WIDTHS[index], Math.min(2000, tableViewportWidth - otherWidths))
+  }
+
   const resizeHandle = (index: number) => (
     <span
       role="separator"
       aria-label={`调整${COLUMN_LABELS[index]}列宽`}
       aria-orientation="vertical"
       aria-valuemin={MIN_COLUMN_WIDTHS[index]}
-      aria-valuemax={2000}
+      aria-valuemax={maxColumnWidth(index)}
       aria-valuenow={displayColumnWidths[index]}
       tabIndex={0}
       title={`拖动调整${COLUMN_LABELS[index]}列宽`}
@@ -153,7 +162,7 @@ export function LibraryView(props: Props) {
         event.stopPropagation()
         const change = event.key === 'ArrowRight' ? 10 : -10
         const next = columnWidths.map((value, column) => column === index
-          ? Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[index], displayColumnWidths[index] + change)) : value)
+          ? Math.min(maxColumnWidth(index), Math.max(MIN_COLUMN_WIDTHS[index], displayColumnWidths[index] + change)) : value)
         if (index === 0) { firstColumnFixedRef.current = true; setFirstColumnFixed(true) }
         columnWidthsRef.current = next
         setColumnWidths(next)
@@ -173,13 +182,13 @@ export function LibraryView(props: Props) {
       onPointerMove={(event: ReactPointerEvent<HTMLSpanElement>) => {
         const resize = resizeRef.current
         if (!resize || resize.pointerId !== event.pointerId) return
-        const width = Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
+        const width = Math.min(maxColumnWidth(resize.index), Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
         setColumnWidths((current) => current.map((value, column) => column === resize.index ? width : value))
       }}
       onPointerUp={(event: ReactPointerEvent<HTMLSpanElement>) => {
         const resize = resizeRef.current
         if (!resize || resize.pointerId !== event.pointerId) return
-        const width = Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
+        const width = Math.min(maxColumnWidth(resize.index), Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
         const next = columnWidthsRef.current.map((value, column) => column === resize.index ? width : value)
         columnWidthsRef.current = next
         setColumnWidths(next)
@@ -193,11 +202,10 @@ export function LibraryView(props: Props) {
   )
 
   const displayColumnWidths = [
-    firstColumnFixed ? columnWidths[0] : Math.min(2000, Math.max(columnWidths[0], tableViewportWidth - columnWidths.slice(1).reduce((sum, width) => sum + width, 80))),
+    firstColumnFixed ? columnWidths[0] : Math.min(2000, Math.max(columnWidths[0], tableViewportWidth - columnWidths.slice(1).reduce((sum, width) => sum + width, ACTION_COLUMN_WIDTH))),
     ...columnWidths.slice(1)
   ]
-  const actionWidth = Math.max(80, tableViewportWidth - displayColumnWidths.reduce((sum, width) => sum + width, 0))
-  const tableWidth = displayColumnWidths.reduce((sum, width) => sum + width, actionWidth)
+  const tableWidth = displayColumnWidths.reduce((sum, width) => sum + width, ACTION_COLUMN_WIDTH)
   // 切视图、换筛选后从第一屏开始，避免沿用上一个大列表的挂载上限
   useEffect(() => {
     setRenderLimit(ROW_CHUNK)
@@ -377,7 +385,7 @@ export function LibraryView(props: Props) {
           <table className="table-fixed border-separate border-spacing-0 text-[12px]" style={{ width: tableWidth }}>
             <colgroup>
               {displayColumnWidths.map((width, index) => <col key={COLUMN_LABELS[index]} style={{ width }} />)}
-              <col style={{ width: actionWidth }} />
+              <col style={{ width: ACTION_COLUMN_WIDTH }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[12px] text-secondary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
@@ -390,11 +398,11 @@ export function LibraryView(props: Props) {
                   <button onClick={() => onSetQuery(sortVideoQuery(query, 'duration', true))}>时长{query.sort === 'duration' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
                   {resizeHandle(2)}
                 </th>
-                <th className="relative border-r border-line px-2 py-2 font-semibold" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                <th className="relative px-2 py-2 font-semibold" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
                   <button onClick={() => onSetQuery(sortVideoQuery(query, 'size', true))}>大小{query.sort === 'size' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
                   {resizeHandle(3)}
                 </th>
-                <th className="sticky right-0 bg-surface-1 px-3 py-2 text-right font-semibold">操作</th>
+                <th className="sticky right-0 border-l border-line bg-surface-1 px-2 py-2 text-left font-semibold">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -432,7 +440,7 @@ export function LibraryView(props: Props) {
                       <span className="shrink-0 text-[11px] tabular-nums text-tertiary">{row.node.count} 个视频</span>
                     </button>
                   </td>
-                  <td className={`sticky right-0 border-b border-line/50 px-3 text-right text-[10.5px] text-tertiary ${selectedFolderPath === explorerPathKey(row.node.path) ? 'bg-row-selected' : 'bg-surface-1'}`}>
+                  <td className={`sticky right-0 border-b border-l border-line/50 px-2 text-left text-[10.5px] text-tertiary ${selectedFolderPath === explorerPathKey(row.node.path) ? 'bg-row-selected' : 'bg-surface-1'}`}>
                     {row.node.folder && !row.node.folder.pinned
                       ? '一次性导入'
                       : row.node.folder

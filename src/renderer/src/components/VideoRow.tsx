@@ -126,8 +126,8 @@ export function VideoRow({
       </td>
       <td className={`whitespace-nowrap px-2 py-2 text-[12px] tabular-nums text-secondary transition-colors ${rowBg}`}>{video.duration == null ? '—' : formatDuration(video.duration)}</td>
       <td className={`whitespace-nowrap px-2 py-2 text-[12px] tabular-nums text-secondary transition-colors ${rowBg}`}>{formatBytes(video.size)}</td>
-      <td className={`sticky right-0 px-3 py-2 transition-colors ${rowBg}`} onClick={(e) => e.stopPropagation()}>
-        <div className="relative flex items-center justify-end gap-1" data-video-menu={video.id}>
+      <td className={`sticky right-0 border-l border-line/50 px-2 py-2 transition-colors ${rowBg}`} onClick={(e) => e.stopPropagation()}>
+        <div className="relative flex items-center justify-start gap-1" data-video-menu={video.id}>
           <button className="icon-btn h-7 w-7 text-[11px]" onClick={() => onOpen(video.id)} title="播放" aria-label={`播放 ${video.name}`}>▶</button>
           <button ref={menuButtonRef} className="icon-btn h-7 w-7 text-[15px]" onClick={onToggleMenu} title="更多" aria-expanded={menuOpen} aria-label={`更多操作 ${video.name}`}>···</button>
           {menuOpen && createPortal((() => {
