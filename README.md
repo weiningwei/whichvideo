@@ -4,7 +4,7 @@
 
 **看到一张截图，想确认这个画面是不是自己下过的某一集。**
 
-已发布 [**v0.1.0 公开预览版**](https://github.com/weiningwei/whichvideo/releases/tag/v0.1.0)，提供 **Windows x64、macOS（Apple Silicon / Intel）和 Linux x64** 发行资产。当前尚未配置 Windows 代码签名或 Apple 签名/公证，系统可能拦截下载的程序；请从 Releases 下载并在可写目录中运行。
+[![最新版本](https://img.shields.io/github/v/tag/weiningwei/whichvideo?sort=semver&filter=v*&label=version)](https://github.com/weiningwei/whichvideo/releases)
 
 WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任何一张图（截图 /
 海报 / 缩略图 / 屏摄），它会回答三件事：
@@ -54,9 +54,10 @@ WhichVideo 把导入的视频自动抽帧、建立指纹索引，之后丢进任
 
 ## 快速开始
 
-普通用户可从 [v0.1.0 Releases](https://github.com/weiningwei/whichvideo/releases/tag/v0.1.0) 下载对应平台的产物：Windows 安装包或便携 ZIP、macOS Apple Silicon / Intel `.app` ZIP、Linux x64 AppImage；无需安装 Node、pnpm 或 Rust。
+普通用户可从 [Releases](https://github.com/weiningwei/whichvideo/releases) 下载对应平台的产物：Windows 安装包或便携 ZIP、macOS Apple Silicon / Intel `.app` ZIP、Linux x64 AppImage；无需安装 Node、pnpm 或 Rust。
+当前安装包未签名，Windows 和 macOS 可能显示系统安全提示；请将程序放在可写目录中运行。
 正式发行资产由 GitHub Actions 从版本标签重新构建，不使用开发者本机的旧产物。
-两个版本都不内置 FFmpeg，首次启动可在软件中指定其 `bin` 目录。
+所有发行包都不内置 FFmpeg，首次启动可在软件中指定其 `bin` 目录。
 
 如需从源码构建，则需要 Node >= 22、pnpm >= 10、Rust stable、对应平台的 Tauri 系统依赖，
 以及 **ffmpeg**（抽帧用，见下）。
