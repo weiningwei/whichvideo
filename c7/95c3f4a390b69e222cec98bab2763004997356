@@ -1,0 +1,28 @@
+scripts/ui-smoke.mjs
+  s_10a8a0b511d2bf::t_27f427ae21dda4 203-204
+src/renderer/src/components/VideoRow.tsx
+  s_10a8a0b511d2bf::t_a11e9fdd5aa200 116-117,122,127-128
+src/renderer/src/components/LibraryView.tsx
+  s_10a8a0b511d2bf::t_266dc23c78915c 70,196
+  s_10a8a0b511d2bf::t_bfcb0a6e6fb60c 144-145,147,149-155,158-159,161
+  s_10a8a0b511d2bf::t_0bc0b1a7b15f11 176,180-185
+  s_10a8a0b511d2bf::t_3e9686280b35cd 67,71,75,90-92,96,98,146,156-157,160,166,187,195,197-200,379
+  s_10a8a0b511d2bf::t_7f166709464307 1,62-66,68-69,72-74,76-77,93-95,97,129-143,148,162-165,167-175,177-179,186,188-194
+  s_10a8a0b511d2bf::t_a5c709ac006501 377-378,380-382,384,386,388-389,391,393,395,397,429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c795c3f4a390b69e222cec98bab2763004997356",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
