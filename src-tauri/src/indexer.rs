@@ -481,9 +481,10 @@ fn consider_thumbnail_frame(
     candidate: &mut Option<media::RawFrame>,
     frame: &media::RawFrame,
     target_time: f64,
+    reuse_window: f64,
 ) {
     let distance = (frame.time - target_time).abs();
-    if distance > THUMBNAIL_REUSE_WINDOW_SECONDS
+    if distance > reuse_window
         || candidate.as_ref().is_some_and(|saved| (saved.time - target_time).abs() <= distance)
     {
         return;
@@ -495,6 +496,17 @@ fn consider_thumbnail_frame(
         // 缩略图候选会跨批次保留；只复制这一帧，及时释放上一批的缓冲区。
         rgb: frame.rgb.to_vec().into(),
     });
+}
+
+fn thumbnail_reuse_window(duration: Option<f64>, sample_count: usize, scene_seek: bool) -> f64 {
+    if scene_seek || sample_count == 0 {
+        return THUMBNAIL_REUSE_WINDOW_SECONDS;
+    }
+    // 均匀采样的最近一帧最多相差约半个采样间隔；额外留 1 秒给时间戳取整。
+    duration
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+        .map(|duration| (duration / sample_count as f64 / 2.0 + 1.0).max(THUMBNAIL_REUSE_WINDOW_SECONDS))
+        .unwrap_or(THUMBNAIL_REUSE_WINDOW_SECONDS)
 }
 
 fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
@@ -712,6 +724,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     let thumb_time = duration
         .map(|d| d * 0.12)
         .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
+    let thumb_window = thumbnail_reuse_window(duration, timestamps.len(), force_seek);
     let mut thumbnail_candidate = None;
 
     let mut bi = start_index;
@@ -778,7 +791,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         if !frames.is_empty() {
             let mut new_frames = Vec::with_capacity(frames.len());
             for (i, fr) in frames.iter().enumerate() {
-                consider_thumbnail_frame(&mut thumbnail_candidate, fr, thumb_time);
+                consider_thumbnail_frame(&mut thumbnail_candidate, fr, thumb_time, thumb_window);
                 let img = hash::ImageDataLike {
                     width: fr.width,
                     height: fr.height,
@@ -1451,7 +1464,7 @@ fn log(msg: &str) {
 mod tests {
     use super::{
         can_reuse_file_hash, consider_thumbnail_frame, is_playlist_part, is_video_file, plan_detected_scenes, record_import_failure,
-        resume_start_index, scan_video_files_with, should_broadcast_stats,
+        resume_start_index, scan_video_files_with, should_broadcast_stats, thumbnail_reuse_window,
         should_emit_import_progress,
         IndexerState,
     };
@@ -1574,12 +1587,27 @@ mod tests {
             rgb: vec![value; 12].into(),
         };
         let mut selected = None;
-        consider_thumbnail_frame(&mut selected, &frame(8.0, 1), 12.0);
+        consider_thumbnail_frame(&mut selected, &frame(8.0, 1), 12.0, 2.0);
         assert!(selected.is_none());
-        consider_thumbnail_frame(&mut selected, &frame(10.5, 2), 12.0);
-        consider_thumbnail_frame(&mut selected, &frame(11.5, 3), 12.0);
-        consider_thumbnail_frame(&mut selected, &frame(13.0, 4), 12.0);
+        consider_thumbnail_frame(&mut selected, &frame(10.5, 2), 12.0, 2.0);
+        consider_thumbnail_frame(&mut selected, &frame(11.5, 3), 12.0, 2.0);
+        consider_thumbnail_frame(&mut selected, &frame(13.0, 4), 12.0, 2.0);
         assert_eq!(&*selected.unwrap().rgb, vec![3; 12].as_slice());
+    }
+
+    #[test]
+    fn uniform_long_video_reuses_nearby_sample_for_thumbnail() {
+        let window = thumbnail_reuse_window(Some(3600.0), 240, false);
+        let target = 3600.0 * 0.12;
+        let frame = RawFrame { time: 427.5, width: 2, height: 2, rgb: vec![1; 12].into() };
+        let mut selected = None;
+        consider_thumbnail_frame(&mut selected, &frame, target, window);
+        assert!(selected.is_some());
+
+        let scene_window = thumbnail_reuse_window(Some(3600.0), 240, true);
+        let mut scene_selected = None;
+        consider_thumbnail_frame(&mut scene_selected, &frame, target, scene_window);
+        assert!(scene_selected.is_none());
     }
 
     #[test]
