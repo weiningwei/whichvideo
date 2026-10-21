@@ -1150,11 +1150,13 @@ pub fn commit_frame_batch(
     let processed_json = serde_json::to_string(processed_timestamps)
         .map_err(|error| SqlError::ToSqlConversionFailure(Box::new(error)))?;
     let tx = conn.transaction()?;
-    for f in frames {
-        tx.execute(
+    {
+        let mut insert = tx.prepare_cached(
             "INSERT OR REPLACE INTO frames (video_id, frame_index, time_ms, dhash, struct, color, spatial) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![
+        )?;
+        for f in frames {
+            insert.execute(rusqlite::params![
                 video_id,
                 f.frame_index,
                 f.time_ms,
@@ -1162,8 +1164,8 @@ pub fn commit_frame_batch(
                 f.struct_hash,
                 f.color,
                 f.spatial
-            ],
-        )?;
+            ])?;
+        }
     }
     let updated = tx.execute(
         "UPDATE videos SET processed_timestamps = ?, processed_ms = processed_ms + ?, status = 'indexing', error = NULL WHERE id = ?",
