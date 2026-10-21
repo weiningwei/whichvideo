@@ -1,0 +1,26 @@
+src-tauri/src/db.rs
+  s_10a8a0b511d2bf::t_df78a010d3a4ba 236
+src-tauri/Cargo.toml
+  s_10a8a0b511d2bf::t_df78a010d3a4ba 24
+src-tauri/src/logger.rs
+  s_10a8a0b511d2bf::t_df78a010d3a4ba 5,38-42,67-74
+  s_10a8a0b511d2bf::t_54609ad4e45dc3 75
+src-tauri/Cargo.lock
+  s_10a8a0b511d2bf::t_37178f037c6b9e 707,710,5919
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63326ca4d43b12f0cfade81688f294b10d3dc039",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
