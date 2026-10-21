@@ -717,14 +717,33 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     while bi < timestamps.len() {
         let batch_end = (bi + batch_size).min(timestamps.len());
         let batch_ts: Vec<f64> = timestamps[bi..batch_end].to_vec();
+        let progress_app = app.clone();
+        let batch_len = batch_ts.len();
+        let total_frames = timestamps.len() as i64;
+        let highest_decoded = std::sync::atomic::AtomicUsize::new(0);
+        let on_decoded: media::FrameProgressCallback = std::sync::Arc::new(move |decoded| {
+            let decoded = decoded.min(batch_len);
+            // 旧版 FFmpeg 可能先失败再重试；第二次的计数从零开始，界面不应倒退。
+            if decoded <= highest_decoded.fetch_max(decoded, std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            set_frame_progress(
+                &progress_app,
+                video_id,
+                (bi + decoded) as i64,
+                total_frames,
+                Some("extracting"),
+            );
+        });
         let started = std::time::Instant::now();
-        let frames = match media::extract_and_hash_frames(
+        let frames = match media::extract_and_hash_frames_with_progress(
             &video.path,
             &batch_ts,
             duration,
             width,
             height,
             force_seek,
+            Some(on_decoded),
         ) {
             Ok(f) => f,
             Err(e) => {

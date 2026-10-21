@@ -32,9 +32,8 @@ export function VideoRow({
 }) {
   const [thumb, setThumb] = useState<string | null>(null)
   const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
-  const startTimeRef = useRef<number | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
-  const prevDoneRef = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -47,8 +46,12 @@ export function VideoRow({
   useEffect(() => {
     if (video.status !== 'indexing') { setFrameProgress(null); return }
     let alive = true
+    let inFlight = false
     const poll = async () => {
+      if (inFlight) return
+      inFlight = true
       try { const progress = await window.whichvideo.videos.frameProgress(video.id); if (alive) setFrameProgress(progress) } catch { /* ignore */ }
+      finally { inFlight = false }
     }
     void poll()
     const timer = setInterval(poll, 500)
@@ -56,14 +59,12 @@ export function VideoRow({
   }, [video.id, video.status])
 
   useEffect(() => {
-    if (frameProgress && video.status === 'indexing') {
-      if (startTimeRef.current === null || frameProgress.done < prevDoneRef.current) startTimeRef.current = Date.now()
-      prevDoneRef.current = frameProgress.done
-    } else {
-      startTimeRef.current = null
-      prevDoneRef.current = 0
-    }
-  }, [frameProgress, video.status])
+    if (video.status !== 'indexing') { setElapsedSeconds(0); return }
+    const started = Date.now()
+    setElapsedSeconds(0)
+    const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [video.id, video.status])
 
   const selected = isVideoSelected(video.id)
   const rowBg = selected ? 'bg-row-selected' : focused ? 'bg-row-focus' : 'hover:bg-row-hover'
@@ -77,7 +78,7 @@ export function VideoRow({
   const statusLabel = video.status === 'ready'
     ? `已索引 · ${video.frameCount} 帧`
     : video.status === 'indexing' && frameProgress?.phase !== 'detecting' && frameProgress
-      ? `索引中 · ${frameProgress.done}/${frameProgress.total} 帧`
+      ? frameProgress.done > 0 ? `索引中 · ${frameProgress.done}/${frameProgress.total} 帧` : '索引中 · 解码中'
       : status.label
   const statusTitle = video.error
     ?? (video.status === 'ready' ? `已建立 ${video.frameCount} 个索引采样帧` : '')
@@ -85,13 +86,17 @@ export function VideoRow({
   const progress = (() => {
     if (!frameProgress || video.status !== 'indexing') return null
     const detecting = frameProgress.phase === 'detecting'
+    const waiting = frameProgress.done === 0
     const pct = frameProgress.total > 0 ? Math.min(100, Math.round(frameProgress.done / frameProgress.total * 100)) : 0
     return (
-      <div className="mt-1.5 w-24" title={detecting ? '正在检测镜头切换' : `正在抽帧 ${frameProgress.done}/${frameProgress.total}`}>
+      <div className="mt-1.5 w-24" title={detecting ? '正在检测镜头切换' : `FFmpeg 已输出 ${frameProgress.done}/${frameProgress.total} 帧`}>
         <div className="mb-1 flex justify-between text-[9.5px] text-tertiary">
-          <span>{detecting ? '检测场景' : '抽取帧'}</span><span>{pct}%</span>
+          <span>{waiting ? `${detecting ? '检测' : '解码'} · ${elapsedSeconds}s` : detecting ? '检测场景' : '抽取帧'}</span>
+          <span>{waiting ? '进行中' : `${pct}%`}</span>
         </div>
-        <div className="h-1 overflow-hidden rounded-full bg-line"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div>
+        <div className="h-1 overflow-hidden rounded-full bg-line">
+          {waiting ? <div className="h-full w-1/3 animate-pulse bg-accent" /> : <div className="h-full bg-accent" style={{ width: `${pct}%` }} />}
+        </div>
       </div>
     )
   })()

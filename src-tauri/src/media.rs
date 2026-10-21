@@ -14,10 +14,10 @@ use image::codecs::jpeg::JpegEncoder;
 use image::ExtendedColorType;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Default)]
@@ -627,11 +627,32 @@ fn local_only_media_args(args: &[String], label: &str) -> Vec<String> {
     safe_args
 }
 
-fn run_media_command(
+pub type FrameProgressCallback = Arc<dyn Fn(usize) + Send + Sync>;
+
+fn progress_frame_count(line: &[u8]) -> Option<usize> {
+    std::str::from_utf8(line).ok()?.trim().strip_prefix("frame=")?.trim().parse().ok()
+}
+
+fn read_stderr_with_progress(reader: impl Read, progress: Option<FrameProgressCallback>) -> std::io::Result<Vec<u8>> {
+    let mut reader = BufReader::new(reader);
+    let mut bytes = Vec::new();
+    let mut line = Vec::new();
+    while reader.read_until(b'\n', &mut line)? != 0 {
+        if let (Some(callback), Some(count)) = (progress.as_ref(), progress_frame_count(&line)) {
+            callback(count);
+        }
+        bytes.extend_from_slice(&line);
+        line.clear();
+    }
+    Ok(bytes)
+}
+
+fn run_media_command_with_progress(
     executable: &str,
     args: &[String],
     label: &str,
     timeout: Duration,
+    progress: Option<FrameProgressCallback>,
 ) -> Result<FfmpegOutput, String> {
     // 本地媒体（尤其 HLS 清单）可能引用远程资源；探测、抽帧和预览只允许本地协议。
     let safe_args = local_only_media_args(args, label);
@@ -659,8 +680,7 @@ fn run_media_command(
         stdout_pipe.read_to_end(&mut bytes).map(|_| bytes)
     });
     let stderr_reader = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stderr_pipe.read_to_end(&mut bytes).map(|_| bytes)
+        read_stderr_with_progress(&mut stderr_pipe, progress)
     });
     let started = Instant::now();
     let status = loop {
@@ -696,10 +716,24 @@ fn run_media_command(
     })
 }
 
+fn run_media_command(
+    executable: &str,
+    args: &[String],
+    label: &str,
+    timeout: Duration,
+) -> Result<FfmpegOutput, String> {
+    run_media_command_with_progress(executable, args, label, timeout, None)
+}
+
 /// 同步跑一次 ffmpeg，收集 stdout / stderr。失败（进程无法启动）返回 Err。
 pub fn run_ffmpeg(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
     run_media_command(&tools.ffmpeg, args, "ffmpeg", FFMPEG_TIMEOUT)
+}
+
+fn run_ffmpeg_with_progress(args: &[String], progress: Option<FrameProgressCallback>) -> Result<FfmpegOutput, String> {
+    let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    run_media_command_with_progress(&tools.ffmpeg, args, "ffmpeg", FFMPEG_TIMEOUT, progress)
 }
 
 /// 同步跑一次 ffprobe。
@@ -913,6 +947,7 @@ fn extract_frames_seek(
     file_path: &str,
     timestamps: &[f64],
     width: u32,
+    progress: Option<FrameProgressCallback>,
 ) -> Result<Vec<RawFrame>, String> {
     let count = timestamps.len();
     if count == 0 {
@@ -941,6 +976,9 @@ fn extract_frames_seek(
         "info".to_string(),
         "-nostdin".to_string(),
     ];
+    if progress.is_some() {
+        args.extend(["-nostats", "-stats_period", "0.5", "-progress", "pipe:2"].map(str::to_string));
+    }
     args.append(&mut inputs);
     args.push("-filter_complex".to_string());
     args.push(filter.clone());
@@ -957,7 +995,7 @@ fn extract_frames_seek(
     args.push("-dn".to_string());
     args.push("pipe:1".to_string());
 
-    let mut out = run_ffmpeg(&args)?;
+    let mut out = run_ffmpeg_with_progress(&args, progress.clone())?;
     // 旧 ffmpeg 回退：去掉 -fps_mode，concat 后接 setpts 重排成单调帧号网格。
     if !out.success {
         let mut retry = args[..args.iter().position(|a| a == "-filter_complex").unwrap()].to_vec();
@@ -980,7 +1018,7 @@ fn extract_frames_seek(
         retry.push("-sn".to_string());
         retry.push("-dn".to_string());
         retry.push("pipe:1".to_string());
-        out = run_ffmpeg(&retry)?;
+        out = run_ffmpeg_with_progress(&retry, progress)?;
     }
     if out.stdout.is_empty() {
         return Err(format!("抽帧失败：{}", out.stderr.trim()));
@@ -1026,6 +1064,7 @@ fn extract_frames_full_scan(
     timestamps: &[f64],
     duration: Option<f64>,
     width: u32,
+    progress: Option<FrameProgressCallback>,
 ) -> Result<Vec<RawFrame>, String> {
     let count = timestamps.len();
     if count == 0 {
@@ -1033,7 +1072,7 @@ fn extract_frames_full_scan(
     }
     let dur = duration.unwrap_or_else(|| timestamps[count - 1] * 2.0).max(0.001);
     let rate = count as f64 / dur;
-    let args = vec![
+    let mut args = vec![
         "-hide_banner".to_string(),
         "-v".to_string(),
         "info".to_string(),
@@ -1055,7 +1094,10 @@ fn extract_frames_full_scan(
         "-dn".to_string(),
         "pipe:1".to_string(),
     ];
-    let out = run_ffmpeg(&args)?;
+    if progress.is_some() {
+        args.splice(4..4, ["-nostats", "-stats_period", "0.5", "-progress", "pipe:2"].map(str::to_string));
+    }
+    let out = run_ffmpeg_with_progress(&args, progress)?;
     if !out.success && out.stdout.is_empty() {
         return Err(format!("ffmpeg 抽帧失败：{}", out.stderr.trim()));
     }
@@ -1153,10 +1195,22 @@ pub fn extract_and_hash_frames(
     height: Option<i64>,
     force_seek: bool,
 ) -> Result<Vec<RawFrame>, String> {
+    extract_and_hash_frames_with_progress(file_path, timestamps, duration, width, height, force_seek, None)
+}
+
+pub fn extract_and_hash_frames_with_progress(
+    file_path: &str,
+    timestamps: &[f64],
+    duration: Option<f64>,
+    width: Option<i64>,
+    height: Option<i64>,
+    force_seek: bool,
+    progress: Option<FrameProgressCallback>,
+) -> Result<Vec<RawFrame>, String> {
     if force_seek || !should_use_full_scan(timestamps.len(), width, height) {
-        extract_frames_seek(file_path, timestamps, crate::constants::EXTRACT_WIDTH)
+        extract_frames_seek(file_path, timestamps, crate::constants::EXTRACT_WIDTH, progress)
     } else {
-        extract_frames_full_scan(file_path, timestamps, duration, crate::constants::EXTRACT_WIDTH)
+        extract_frames_full_scan(file_path, timestamps, duration, crate::constants::EXTRACT_WIDTH, progress)
     }
 }
 
@@ -1216,7 +1270,19 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file};
+    use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
+    use std::sync::Arc;
+
+    #[test]
+    fn ffmpeg_progress_reader_reports_frames_without_losing_diagnostics() {
+        let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = reported.clone();
+        let callback: FrameProgressCallback = Arc::new(move |count| captured.lock().unwrap().push(count));
+        let stderr = b"[info] decoding\nframe=1\nout_time_us=500000\nprogress=continue\nframe= 12 \nprogress=end\n";
+        let output = read_stderr_with_progress(&stderr[..], Some(callback)).unwrap();
+        assert_eq!(output, stderr);
+        assert_eq!(*reported.lock().unwrap(), vec![1, 12]);
+    }
 
     #[test]
     fn probe_rejects_files_without_a_finite_video() {
