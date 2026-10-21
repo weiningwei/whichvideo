@@ -5,6 +5,7 @@ const root = resolve(import.meta.dirname, '..')
 const readSource = (...parts) => readFileSync(join(root, ...parts), 'utf8').replace(/\r\n?/g, '\n')
 const shared = readSource('src', 'shared', 'types.ts')
 const bridge = readSource('src', 'renderer', 'src', 'lib', 'tauri-api.ts')
+const ipcContractSource = readSource('src', 'renderer', 'src', 'lib', 'ipc-contract.ts')
 const rendererMain = readSource('src', 'renderer', 'src', 'main.tsx')
 const rustMain = readSource('src-tauri', 'src', 'main.rs')
 const commandsSource = readSource('src-tauri', 'src', 'commands.rs')
@@ -105,6 +106,12 @@ check(
 )
 check('渲染入口安装 Tauri API', rendererMain.includes('window.whichvideo = tauriApi'))
 check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.includes('尚未实现'))
+check(
+  '全部 IPC 返回值统一经过运行时校验',
+  bridge.includes('decodeResponse(command, await invoke<unknown>(command, args))') &&
+    commands.every(({ value }) => ipcContractSource.includes(`${value}:`)) &&
+    ipcContractSource.includes('satisfies Record<Exclude<(typeof IPC)[keyof typeof IPC]')
+)
 check('渲染端不导入 Electron', !/from ['"]electron['"]|require\(['"]electron['"]\)/.test(bridge + rendererMain))
 check('主窗口由 setup 手动创建', config.app?.windows?.[0]?.create === false)
 check('WebView 缓存写入统一 data/session', rustMain.includes('.data_directory(paths::webview_dir())'))
@@ -163,7 +170,8 @@ check(
     commandsSource.includes('Ok(events::ReindexResult { count })') &&
     /pub struct ReindexResult\s*\{\s*pub count: i64,\s*\}/.test(eventsSource) &&
     /reindex\([^)]*\): Promise<\{ count: number \}>/.test(shared) &&
-    bridge.includes('invoke<{ count: number }>(IPC.videosReindex')
+    bridge.includes('invokeChecked(IPC.videosReindex') &&
+    ipcContractSource.includes('videos_reindex: shape({ count: number })')
 )
 for (const [name, source] of [
   ['移除监听文件夹', foldersRemoveCommand],

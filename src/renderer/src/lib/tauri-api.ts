@@ -1,24 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { IPC } from '@shared/types'
-import type {
-  WhichVideoApi,
-  LibraryEvent,
-  LibraryStats,
-  WatchedFolder,
-  VideoRecord,
-  VideoPage,
-  FrameManifestEntry,
-  AppSettings,
-  DataDirInfo,
-  MediaToolsStatus,
-  IndexerStatus,
-  ImportResult,
-  FrameProgress,
-  SearchResponse,
-  ClipboardSearchResult,
-  DuplicatePair,
-} from '@shared/types'
+import type { WhichVideoApi } from '@shared/types'
+import { decodeEvent, decodeResponse, responses } from './ipc-contract'
+
+async function invokeChecked<K extends keyof typeof responses>(command: K, args?: Record<string, unknown>) {
+  return decodeResponse(command, await invoke<unknown>(command, args))
+}
 
 /**
  * Tauri 版桥接：用 @tauri-apps/api 的 invoke / listen 实现 WhichVideoApi。
@@ -27,61 +15,77 @@ import type {
  */
 export const tauriApi: WhichVideoApi = {
   library: {
-    stats: () => invoke<LibraryStats>(IPC.libraryStats),
-    status: () => invoke<IndexerStatus>(IPC.libraryStatus),
-    settings: () => invoke<AppSettings>(IPC.librarySettings),
-    updateSettings: (patch) => invoke<AppSettings>(IPC.libraryUpdateSettings, { patch }),
-    dataDir: () => invoke<DataDirInfo>(IPC.libraryDataDir),
-    mediaTools: () => invoke<MediaToolsStatus>(IPC.libraryMediaTools),
-    selectMediaToolsDir: () => invoke<MediaToolsStatus>(IPC.librarySelectMediaToolsDir),
-    clearMediaToolsDir: () => invoke<MediaToolsStatus>(IPC.libraryClearMediaToolsDir),
-    openDatabaseFolder: () => invoke<string>(IPC.libraryOpenDb),
-    exportDiagnostics: () => invoke<string | null>(IPC.libraryExportDiagnostics),
-    reset: () => invoke<void>(IPC.libraryReset),
+    stats: () => invokeChecked(IPC.libraryStats),
+    status: () => invokeChecked(IPC.libraryStatus),
+    settings: () => invokeChecked(IPC.librarySettings),
+    updateSettings: (patch) => invokeChecked(IPC.libraryUpdateSettings, { patch }),
+    dataDir: () => invokeChecked(IPC.libraryDataDir),
+    mediaTools: () => invokeChecked(IPC.libraryMediaTools),
+    selectMediaToolsDir: () => invokeChecked(IPC.librarySelectMediaToolsDir),
+    clearMediaToolsDir: () => invokeChecked(IPC.libraryClearMediaToolsDir),
+    openDatabaseFolder: () => invokeChecked(IPC.libraryOpenDb),
+    exportDiagnostics: () => invokeChecked(IPC.libraryExportDiagnostics),
+    reset: () => invokeChecked(IPC.libraryReset),
   },
   folders: {
-    list: () => invoke<WatchedFolder[]>(IPC.foldersList),
-    addFromDialog: () => invoke<WatchedFolder[]>(IPC.foldersAddDialog),
-    addPath: (dirPath) => invoke<WatchedFolder>(IPC.foldersAddPath, { dirPath }),
-    remove: (folderId) => invoke<void>(IPC.foldersRemove, { folderId }),
-    rescan: (folderId) => invoke<ImportResult>(IPC.foldersRescan, { folderId }),
+    list: () => invokeChecked(IPC.foldersList),
+    addFromDialog: () => invokeChecked(IPC.foldersAddDialog),
+    addPath: (dirPath) => invokeChecked(IPC.foldersAddPath, { dirPath }),
+    remove: (folderId) => invokeChecked(IPC.foldersRemove, { folderId }),
+    rescan: (folderId) => invokeChecked(IPC.foldersRescan, { folderId }),
     setEnabled: (folderId, enabled) =>
-      invoke<WatchedFolder>(IPC.foldersSetEnabled, { folderId, enabled }),
+      invokeChecked(IPC.foldersSetEnabled, { folderId, enabled }),
   },
   videos: {
-    list: (query) => invoke<VideoPage>(IPC.videosList, { query: query ?? {} }),
-    get: (videoId) => invoke<VideoRecord | null>(IPC.videosGet, { videoId }),
-    remove: (videoId) => invoke<void>(IPC.videosRemove, { videoId }),
-    removeMany: (videoIds) => invoke<void>(IPC.videosRemoveMany, { videoIds }),
-    reindex: (videoIds, mode) => invoke<{ count: number }>(IPC.videosReindex, { videoIds, mode }),
+    list: (query) => invokeChecked(IPC.videosList, { query: query ?? {} }),
+    get: (videoId) => invokeChecked(IPC.videosGet, { videoId }),
+    remove: (videoId) => invokeChecked(IPC.videosRemove, { videoId }),
+    removeMany: (videoIds) => invokeChecked(IPC.videosRemoveMany, { videoIds }),
+    reindex: (videoIds, mode) => invokeChecked(IPC.videosReindex, { videoIds, mode }),
     findDuplicates: (minScore) =>
-      invoke<DuplicatePair[]>(IPC.videosFindDuplicates, { minScore }),
-    importFiles: () => invoke<ImportResult>(IPC.videosImport),
-    importPaths: (paths, watchFolders) => invoke<ImportResult>(IPC.videosImportPaths, { paths, watchFolders }),
-    importFolderOnce: () => invoke<ImportResult>(IPC.videosImportFolderOnce),
-    importImages: () => invoke<string[]>(IPC.videosImportImages),
-    openFile: (videoId, atSeconds) => invoke<void>(IPC.videosOpen, { videoId, atSeconds }),
-    revealFile: (videoId) => invoke<void>(IPC.videosReveal, { videoId }),
-    thumbnail: (videoId) => invoke<string | null>(IPC.videosThumbnail, { videoId }),
-    frameProgress: (videoId) => invoke<FrameProgress | null>(IPC.videosFrameProgress, { videoId }),
-    frameManifest: (videoId) => invoke<FrameManifestEntry[]>(IPC.videosFrameManifest, { videoId }),
-    matchFrame: (videoId, timeMs) => invoke<string | null>(IPC.videosMatchFrame, { videoId, timeMs }),
+      invokeChecked(IPC.videosFindDuplicates, { minScore }),
+    importFiles: () => invokeChecked(IPC.videosImport),
+    importPaths: (paths, watchFolders) => invokeChecked(IPC.videosImportPaths, { paths, watchFolders }),
+    importFolderOnce: () => invokeChecked(IPC.videosImportFolderOnce),
+    importImages: () => invokeChecked(IPC.videosImportImages),
+    openFile: (videoId, atSeconds) => invokeChecked(IPC.videosOpen, { videoId, atSeconds }),
+    revealFile: (videoId) => invokeChecked(IPC.videosReveal, { videoId }),
+    thumbnail: (videoId) => invokeChecked(IPC.videosThumbnail, { videoId }),
+    frameProgress: (videoId) => invokeChecked(IPC.videosFrameProgress, { videoId }),
+    frameManifest: (videoId) => invokeChecked(IPC.videosFrameManifest, { videoId }),
+    matchFrame: (videoId, timeMs) => invokeChecked(IPC.videosMatchFrame, { videoId, timeMs }),
   },
   search: {
-    byPath: (filePath: string) => invoke<SearchResponse>(IPC.searchPath, { filePath }),
-    byDataUrl: (dataUrl: string) => invoke<SearchResponse>(IPC.searchDataUrl, { dataUrl }),
-    byClipboard: () => invoke<ClipboardSearchResult | null>(IPC.searchClipboard),
-    byUrl: (url: string) => invoke<SearchResponse>(IPC.searchUrl, { url }),
+    byPath: (filePath: string) => invokeChecked(IPC.searchPath, { filePath }),
+    byDataUrl: (dataUrl: string) => invokeChecked(IPC.searchDataUrl, { dataUrl }),
+    byClipboard: () => invokeChecked(IPC.searchClipboard),
+    byUrl: (url: string) => invokeChecked(IPC.searchUrl, { url }),
   },
   events: {
-    subscribe: (listener: (event: LibraryEvent) => void): (() => void) => {
+    subscribe: (listener): (() => void) => {
       let unlisten: UnlistenFn | null = null
-      listen<LibraryEvent>(IPC.eventChannel, (event) => listener(event.payload))
+      let closed = false
+      let reportedInvalidEvent = false
+      listen<unknown>(IPC.eventChannel, (event) => {
+        let decoded
+        try { decoded = decodeEvent(event.payload) }
+        catch (error) {
+          console.error(error)
+          if (!reportedInvalidEvent) {
+            reportedInvalidEvent = true
+            listener({ type: 'notice', level: 'error', message: '收到格式不正确的后台事件，请查看日志' })
+          }
+          return
+        }
+        listener(decoded)
+      })
         .then((fn) => {
-          unlisten = fn
+          if (closed) fn()
+          else unlisten = fn
         })
-        .catch(() => {})
+        .catch((error) => console.error('无法订阅资料库事件', error))
       return () => {
+        closed = true
         if (unlisten) unlisten()
       }
     },

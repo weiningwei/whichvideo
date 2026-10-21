@@ -42,12 +42,15 @@ src-tauri/src/watcher.rs      目录监听与变更同步
 src-tauri/src/logger.rs       文件日志与 panic 记录
 src-tauri/src/frames_store.rs 索引帧落盘、读取与清理
 src/renderer/src              React 渲染端
+src/renderer/src/lib/ipc-contract.ts IPC 返回值与事件运行时校验
 src/shared                    前端共享类型、指纹和 IPC 频道名
 ```
 
 渲染端只通过 `src/renderer/src/lib/tauri-api.ts` 调用后端。`src/shared/types.ts` 中的频道名、
 桥接映射、`commands.rs` 的命令签名和 `main.rs` 的注册表必须同步；`pnpm test:contract`
 会验证命令没有遗漏。
+新增 IPC 命令时也要在 `ipc-contract.ts` 登记返回值校验；组件与 hook 不直接使用 `invoke<T>`。
+`pnpm test:ipc` 验证字段缺失或类型错误时在桥接层失败，不把 `undefined` 带进 UI。
 
 ## 后端关键约束
 
@@ -83,6 +86,7 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 ```bash
 pnpm test:rust        # Rust 单元与模块测试
 pnpm test:contract    # 前端桥接、命令实现和注册表一致性
+pnpm test:ipc         # IPC 返回值和事件运行时校验
 pnpm test:portable    # 便携目录结构、资源和 data 保留
 pnpm test:release     # 三处版本号、跨平台构建脚本与版本说明
 pnpm test:theme       # 语义色 token

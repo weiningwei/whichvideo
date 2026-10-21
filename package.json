@@ -25,13 +25,14 @@
     "test:release": "node scripts/check-release.mjs",
     "test:rust": "node scripts/test-rust.mjs",
     "test:contract": "node scripts/test-tauri-contract.mjs",
+    "test:ipc": "node scripts/test-ipc-contract.mjs",
     "test:path": "node scripts/test-path-format.mjs",
     "test:theme": "node scripts/test-theme.mjs",
     "test:cursor": "node scripts/test-cursor.mjs",
     "test:range": "node scripts/test-range-select.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:e2e": "node scripts/e2e/run.mjs",
-    "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
+    "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:ipc && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "test:events": "node scripts/test-video-events.mjs"
   },
   "dependencies": {

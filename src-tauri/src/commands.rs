@@ -1013,7 +1013,7 @@ pub struct SearchResponse {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardSearchResult {
-    data_url: Option<String>,
+    data_url: String,
     response: SearchResponse,
 }
 
@@ -1403,7 +1403,7 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
     let img = match image::load_from_memory(&png) {
         Ok(i) => i,
         Err(e) => return Ok(Some(ClipboardSearchResult {
-            data_url: Some(data_url),
+            data_url,
             response: fail_response("decode-failed", &format!("无法解码剪贴板图片：{e}")),
         })),
     };
@@ -1411,7 +1411,7 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
     let (buf, w, h) = match prepare_query_image(img) {
         Some(v) => v,
         None => return Ok(Some(ClipboardSearchResult {
-            data_url: Some(data_url),
+            data_url,
             response: fail_response("decode-failed", "剪贴板图片无法转成位图"),
         })),
     };
@@ -1432,7 +1432,7 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
         source_height,
     )?;
     Ok(Some(ClipboardSearchResult {
-        data_url: Some(data_url),
+        data_url,
         response,
     }))
 }
