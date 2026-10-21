@@ -76,11 +76,11 @@ pub struct FrameIndexInfo {
 /// 精修补采时命中点每一侧的候选数（含命中点共 2×该值+1 个解码点）。
 pub const REFINE_POINTS_PER_SIDE: usize = 4;
 
-/// 命中时间精修的候选时间点（秒，含命中点本身，升序去重）。
+/// 命中时间精修的候选时间点（秒，优先保留命中点本身，再交替向两侧扩展并去重）。
 ///
 /// 窗口 = 局部采样间隔（时长/帧数）的一半，夹到 [1, 15] 秒；每侧均匀取
 /// REFINE_POINTS_PER_SIDE 个点。时长/帧数未知时按 10s 间隔兜底。
-/// 候选点夹到 [0, 时长] 内，0.05s 内视为同点去重。
+/// 候选点下界夹到 0；跳过到达或越过片尾的点，0.05s 内视为同点去重。
 pub fn refine_candidate_times(
     duration_seconds: Option<f64>,
     frame_count: usize,
@@ -103,7 +103,10 @@ pub fn refine_candidate_times(
     };
     let mut out: Vec<f64> = Vec::new();
     for t in raw {
-        let clamped = t.max(0.0).min(upper);
+        if !t.is_finite() || t >= upper {
+            continue;
+        }
+        let clamped = t.max(0.0);
         if !out.iter().any(|x| (x - clamped).abs() < 0.05) {
             out.push(clamped);
         }
@@ -771,6 +774,15 @@ mod tests {
         assert_eq!(times[0], 0.0);
         assert!(times.iter().all(|t| *t >= 0.0 && *t <= 6.0));
         assert!(times.iter().any(|t| (*t - 1.5).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn refinement_never_seeks_to_or_beyond_end_of_video() {
+        let times = refine_candidate_times(Some(6.0), 2, 5.8);
+        assert_eq!(times[0], 5.8);
+        assert!(times.iter().all(|&t| t >= 0.0 && t < 6.0));
+        assert!(times.len() > 1);
+        assert_eq!(refine_candidate_times(Some(0.1), 1, 0.05), vec![0.05, 0.0]);
     }
 
     #[test]
