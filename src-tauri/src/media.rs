@@ -815,11 +815,33 @@ pub fn verify_playlist_decode(file_path: &str) -> Result<(), String> {
 }
 
 /// 抽帧后的一帧原始像素（RGB24）。
+#[derive(Clone)]
+pub struct FramePixels {
+    buffer: Arc<Vec<u8>>,
+    start: usize,
+    end: usize,
+}
+
+impl From<Vec<u8>> for FramePixels {
+    fn from(buffer: Vec<u8>) -> Self {
+        let end = buffer.len();
+        Self { buffer: Arc::new(buffer), start: 0, end }
+    }
+}
+
+impl std::ops::Deref for FramePixels {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.buffer[self.start..self.end]
+    }
+}
+
 pub struct RawFrame {
     pub time: f64,
     pub width: u32,
     pub height: u32,
-    pub rgb: Vec<u8>,
+    pub rgb: FramePixels,
 }
 
 /// 检测场景切换时间点（秒，升序）。只有选中的场景帧经过 showinfo；
@@ -1040,11 +1062,10 @@ fn extract_frames_seek(
     }
     let height = frame_size / row_bytes;
 
+    let pixels = Arc::new(out.stdout);
     let mut frames = Vec::with_capacity(count);
     for (i, &time) in timestamps.iter().enumerate() {
-        let start = i * frame_size;
-        let end = start + frame_size;
-        let rgb = out.stdout[start..end].to_vec();
+        let rgb = FramePixels { buffer: pixels.clone(), start: i * frame_size, end: (i + 1) * frame_size };
         frames.push(RawFrame {
             time,
             width: w,
@@ -1139,11 +1160,10 @@ fn extract_frames_full_scan(
         ));
     }
     let available = (out.stdout.len() / frame_size).min(count);
+    let pixels = Arc::new(out.stdout);
     let mut frames = Vec::with_capacity(available);
     for (i, &timestamp) in timestamps.iter().take(available).enumerate() {
-        let start = i * frame_size;
-        let end = start + frame_size;
-        let rgb = out.stdout[start..end].to_vec();
+        let rgb = FramePixels { buffer: pixels.clone(), start: i * frame_size, end: (i + 1) * frame_size };
         let time = real_times.get(i).copied().unwrap_or(timestamp);
         frames.push(RawFrame {
             time,
@@ -1272,6 +1292,16 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 mod tests {
     use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
     use std::sync::Arc;
+
+    #[test]
+    fn frame_pixels_share_output_without_mixing_adjacent_frames() {
+        let buffer = Arc::new(vec![1, 2, 3, 4, 5, 6]);
+        let first = super::FramePixels { buffer: buffer.clone(), start: 0, end: 3 };
+        let second = super::FramePixels { buffer: buffer.clone(), start: 3, end: 6 };
+        assert_eq!(&*first, &[1, 2, 3]);
+        assert_eq!(&*second, &[4, 5, 6]);
+        assert!(Arc::ptr_eq(&first.buffer, &second.buffer));
+    }
 
     #[test]
     fn ffmpeg_progress_reader_reports_frames_without_losing_diagnostics() {

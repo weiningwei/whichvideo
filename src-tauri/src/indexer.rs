@@ -492,7 +492,8 @@ fn consider_thumbnail_frame(
         time: frame.time,
         width: frame.width,
         height: frame.height,
-        rgb: frame.rgb.clone(),
+        // 缩略图候选会跨批次保留；只复制这一帧，及时释放上一批的缓冲区。
+        rgb: frame.rgb.to_vec().into(),
     });
 }
 
@@ -1566,7 +1567,7 @@ mod tests {
             time,
             width: 2,
             height: 2,
-            rgb: vec![value; 12],
+            rgb: vec![value; 12].into(),
         };
         let mut selected = None;
         consider_thumbnail_frame(&mut selected, &frame(8.0, 1), 12.0);
@@ -1574,7 +1575,7 @@ mod tests {
         consider_thumbnail_frame(&mut selected, &frame(10.5, 2), 12.0);
         consider_thumbnail_frame(&mut selected, &frame(11.5, 3), 12.0);
         consider_thumbnail_frame(&mut selected, &frame(13.0, 4), 12.0);
-        assert_eq!(selected.unwrap().rgb, vec![3; 12]);
+        assert_eq!(&*selected.unwrap().rgb, vec![3; 12].as_slice());
     }
 
     #[test]
