@@ -6,7 +6,7 @@
 
 每次发布同步修改 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本号，并新增 `docs/releases/vX.Y.Z.md`。`pnpm test:release` 检查三处版本和说明；推送 `vX.Y.Z` 标签后流水线还会校验标签一致。版本说明应人工归纳功能、修复和限制；GitHub 自动说明只补充 PR 变更，直接提交的改动须用 `git log` 核对。
 
-1. 合并代码并等待 `Desktop checks` 在 Windows、macOS、Linux 三个 runner 上全部通过。也可从 GitHub Actions 手动运行该检查流程；`pnpm test` 会先生成契约测试需要的图标。
+1. 合并代码后，从 GitHub Actions 手动运行 `Desktop checks`，等待 Windows、macOS、Linux 三个 runner 全部通过；`pnpm test` 会先生成契约测试需要的图标。
 2. 在各平台做下面的手动验收，尤其检查原生窗口、文件对话框、FFmpeg 探测与安装目录写权限。
 3. 推送版本标签。`Desktop release draft` 重新运行测试和原生构建，收集三个平台的资产，生成 `SHA256SUMS.txt`，创建 GitHub Release 草稿。不要使用本地 `dist`。该流程仅由版本标签触发；失败时在 Actions 中重跑对应运行，不从普通分支手动创建草稿。
 4. 核对资产名、校验和、版本说明和签名状态；全部通过后人工发布草稿。任一平台未验收不得标为稳定支持，可先标记为预览版并明确限制。
