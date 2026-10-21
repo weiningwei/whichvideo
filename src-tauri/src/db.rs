@@ -2,7 +2,7 @@ use base64::Engine;
 use crate::constants::DB_BUSY_TIMEOUT;
 use crate::framepack;
 use crate::paths;
-use rusqlite::{params_from_iter, Connection, Result as SqlResult};
+use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -1077,20 +1077,6 @@ pub fn migrate_sampling_on_global_change(
     )
 }
 
-/// 清空若干视频的帧（重建索引前调用）。
-pub fn clear_frames(conn: &Connection, ids: &[i64]) -> SqlResult<usize> {
-    if ids.is_empty() {
-        return Ok(0);
-    }
-    let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
-    let sql = format!(
-        "DELETE FROM frames WHERE video_id IN ({})",
-        placeholders.join(",")
-    );
-    let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
-    conn.execute(&sql, params.as_slice())
-}
-
 /// 原子清除一个视频的帧和续传元数据，避免崩溃后旧时间点指向空帧表。
 pub fn reset_frame_index_progress(conn: &mut Connection, video_id: i64) -> SqlResult<usize> {
     let tx = conn.transaction()?;
@@ -1103,23 +1089,17 @@ pub fn reset_frame_index_progress(conn: &mut Connection, video_id: i64) -> SqlRe
     Ok(removed)
 }
 
-/// 写入已处理的时间点索引（断点续传）。
-pub fn update_processed_timestamps(conn: &Connection, id: i64, ts: &[i64]) -> SqlResult<()> {
-    let json = serde_json::to_string(ts).unwrap_or_else(|_| "[]".to_string());
-    conn.execute(
-        "UPDATE videos SET processed_timestamps = ? WHERE id = ?",
-        rusqlite::params![json, id],
+/// 旧版本可能已写入续传时间点却没有对应帧；只在帧索引形成完整前缀时允许续传。
+pub fn frame_prefix_is_complete(conn: &Connection, video_id: i64, prefix_len: usize) -> SqlResult<bool> {
+    if prefix_len == 0 {
+        return Ok(true);
+    }
+    let (count, first, last): (i64, Option<i64>, Option<i64>) = conn.query_row(
+        "SELECT COUNT(*), MIN(frame_index), MAX(frame_index) FROM frames WHERE video_id = ?",
+        [video_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
-    Ok(())
-}
-
-/// 累加已处理耗时（断点续传跨会话累计）。
-pub fn add_processed_ms(conn: &Connection, id: i64, ms: i64) -> SqlResult<()> {
-    conn.execute(
-        "UPDATE videos SET processed_ms = processed_ms + ? WHERE id = ?",
-        rusqlite::params![ms, id],
-    )?;
-    Ok(())
+    Ok(count == prefix_len as i64 && first == Some(0) && last == Some(prefix_len as i64 - 1))
 }
 
 /// 标记索引完成：状态 ready + indexed_at + 帧数 + 缩略图。
@@ -1133,10 +1113,13 @@ pub fn set_ready_with_thumbnail(
         [id],
         |row| row.get(0),
     )?;
-    conn.execute(
+    let updated = conn.execute(
         "UPDATE videos SET status = 'ready', indexed_at = ?, frame_count = ?, thumbnail = ? WHERE id = ?",
         rusqlite::params![now_ms(), frames, thumbnail, id],
     )?;
+    if updated != 1 {
+        return Err(SqlError::QueryReturnedNoRows);
+    }
     Ok(())
 }
 
@@ -1156,11 +1139,16 @@ pub fn list_pending_videos(conn: &Connection) -> SqlResult<Vec<VideoRecord>> {
     Ok(out)
 }
 
-/// 增量写入一批帧指纹。
-pub fn upsert_frames_incremental(conn: &mut Connection, video_id: i64, frames: &[NewFrame]) -> SqlResult<()> {
-    if frames.is_empty() {
-        return Ok(());
-    }
+/// 一批帧指纹和对应续传进度必须同时落库，写入失败时一起回滚。
+pub fn commit_frame_batch(
+    conn: &mut Connection,
+    video_id: i64,
+    frames: &[NewFrame],
+    processed_timestamps: &[i64],
+    elapsed_ms: i64,
+) -> SqlResult<()> {
+    let processed_json = serde_json::to_string(processed_timestamps)
+        .map_err(|error| SqlError::ToSqlConversionFailure(Box::new(error)))?;
     let tx = conn.transaction()?;
     for f in frames {
         tx.execute(
@@ -1176,6 +1164,13 @@ pub fn upsert_frames_incremental(conn: &mut Connection, video_id: i64, frames: &
                 f.spatial
             ],
         )?;
+    }
+    let updated = tx.execute(
+        "UPDATE videos SET processed_timestamps = ?, processed_ms = processed_ms + ?, status = 'indexing', error = NULL WHERE id = ?",
+        rusqlite::params![processed_json, elapsed_ms, video_id],
+    )?;
+    if updated != 1 {
+        return Err(SqlError::QueryReturnedNoRows);
     }
     tx.commit()?;
     Ok(())
@@ -1389,6 +1384,47 @@ mod tests {
         let frames: i64 = conn.query_row("SELECT COUNT(*) FROM frames WHERE video_id = 1", [], |row| row.get(0)).unwrap();
         assert_eq!((processed.as_str(), count, frames), ("[]", 0, 0));
         assert_eq!(reset_frame_index_progress(&mut conn, 1).unwrap(), 0);
+    }
+
+    #[test]
+    fn failed_frame_batch_keeps_previous_frames_and_resume_progress() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE videos (id INTEGER PRIMARY KEY, processed_timestamps TEXT, processed_ms INTEGER, status TEXT, error TEXT);\
+             CREATE TABLE frames (video_id INTEGER, frame_index INTEGER, time_ms INTEGER, dhash INTEGER, struct BLOB, color BLOB, spatial BLOB);\
+             INSERT INTO videos VALUES (1, '[]', 0, 'pending', NULL);",
+        ).unwrap();
+        let frame = |frame_index, time_ms| NewFrame {
+            dhash: 1,
+            struct_hash: vec![2],
+            color: vec![3],
+            spatial: vec![4],
+            frame_index,
+            time_ms,
+        };
+        commit_frame_batch(&mut conn, 1, &[frame(0, 1000)], &[1000], 10).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_progress BEFORE UPDATE OF processed_timestamps ON videos \
+             BEGIN SELECT RAISE(ABORT, 'progress write failed'); END;",
+        ).unwrap();
+        assert!(commit_frame_batch(&mut conn, 1, &[frame(1, 2000)], &[1000, 2000], 20).is_err());
+        let (progress, elapsed, status): (String, i64, String) = conn.query_row(
+            "SELECT processed_timestamps, processed_ms, status FROM videos WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        let indices: Vec<i64> = conn.prepare("SELECT frame_index FROM frames ORDER BY frame_index")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<SqlResult<_>>()
+            .unwrap();
+        assert_eq!((progress.as_str(), elapsed, status.as_str()), ("[1000]", 10, "indexing"));
+        assert_eq!(indices, vec![0]);
+        assert!(frame_prefix_is_complete(&conn, 1, 1).unwrap());
+        assert!(!frame_prefix_is_complete(&conn, 1, 2).unwrap());
+        conn.execute_batch("INSERT INTO frames VALUES (1, 2, 3000, 1, X'00', X'00', X'00');").unwrap();
+        assert!(!frame_prefix_is_complete(&conn, 1, 1).unwrap());
     }
 
     #[cfg(windows)]

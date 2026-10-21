@@ -419,11 +419,14 @@ fn finish_cancelled(app: AppHandle, video_id: i64) {
 }
 
 fn fail(app: AppHandle, video_id: i64, error: &str, frames_changed: bool) {
+    log(&format!("视频 {video_id} 索引失败：{error}"));
     {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
-            let _ = db::set_video_status(c, video_id, "failed", Some(error));
+            if let Err(write_error) = db::set_video_status(c, video_id, "failed", Some(error)) {
+                log(&format!("视频 {video_id} 失败状态落库失败：{write_error}"));
+            }
         }
     }
     {
@@ -509,16 +512,21 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
 
     let mut frames_changed = false;
     if reset_before_run {
-        frames_store::remove_video(video_id);
-        let state = app.state::<AppState>();
-        let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(c) = guard.as_mut() {
-            if let Ok(removed) = db::clear_frames(c, &[video_id]) {
-                frames_changed = removed > 0;
+        let reset_result = {
+            let state = app.state::<AppState>();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.as_mut()
+                .ok_or_else(|| "数据库未初始化".to_string())
+                .and_then(|c| db::reset_frame_index_progress(c, video_id).map_err(|e| e.to_string()))
+        };
+        match reset_result {
+            Ok(removed) => frames_changed = removed > 0,
+            Err(error) => {
+                fail(app, video_id, &format!("重置索引进度失败：{error}"), false);
+                return;
             }
-            let _ = db::update_processed_timestamps(c, video_id, &[]);
-            let _ = db::set_video_status(c, video_id, "pending", None);
         }
+        frames_store::remove_video(video_id);
     }
 
     let video = {
@@ -542,12 +550,16 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     };
 
     set_current_path(&app, video.path.clone());
-    {
+    let status_result = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(c) = guard.as_mut() {
-            let _ = db::set_video_status(c, video_id, "indexing", None);
-        }
+        guard.as_mut()
+            .ok_or_else(|| "数据库未初始化".to_string())
+            .and_then(|c| db::set_video_status(c, video_id, "indexing", None).map_err(|e| e.to_string()))
+    };
+    if let Err(error) = status_result {
+        fail(app, video_id, &format!("索引状态写入失败：{error}"), frames_changed);
+        return;
     }
     emit_video_updated(&app, video_id);
 
@@ -624,12 +636,43 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     let uses_full_scan =
         !force_seek && sampling::should_use_full_scan(timestamps.len(), width, height);
     let mut processed: Vec<i64> = video.processed_timestamps.clone();
-    let start_index = resume_start_index(&processed, &timestamps, uses_full_scan);
-    if start_index == 0 {
+    let mut start_index = resume_start_index(&processed, &timestamps, uses_full_scan);
+    if start_index > 0 {
+        let prefix_result = {
+            let state = app.state::<AppState>();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.as_mut()
+                .ok_or_else(|| "数据库未初始化".to_string())
+                .and_then(|c| db::frame_prefix_is_complete(c, video_id, start_index).map_err(|e| e.to_string()))
+        };
+        match prefix_result {
+            Ok(true) => {}
+            Ok(false) => {
+                log(&format!("视频 {video_id} 的续传帧不完整，从头重建"));
+                start_index = 0;
+            }
+            Err(error) => {
+                fail(app, video_id, &format!("检查索引进度失败：{error}"), frames_changed);
+                return;
+            }
+        }
+    }
+    if start_index == 0 && !reset_before_run {
         processed.clear();
     }
     if start_index >= timestamps.len() {
-        // 已完成
+        // 最后一个批次已写入，可能在标记 ready 前退出；恢复时补齐持久化状态。
+        let ready_result = {
+            let state = app.state::<AppState>();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.as_mut()
+                .ok_or_else(|| "数据库未初始化".to_string())
+                .and_then(|c| db::set_ready_with_thumbnail(c, video_id, None).map_err(|e| e.to_string()))
+        };
+        if let Err(error) = ready_result {
+            fail(app, video_id, &format!("完成索引状态写入失败：{error}"), frames_changed);
+            return;
+        }
         finish_ready(app, video_id);
         return;
     }
@@ -702,6 +745,16 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             return;
         }
 
+        if frames.len() != batch_ts.len() {
+            fail(
+                app,
+                video_id,
+                &format!("抽帧数量不足：计划 {} 帧，实际 {} 帧", batch_ts.len(), frames.len()),
+                frames_changed,
+            );
+            return;
+        }
+
         if !frames.is_empty() {
             let mut new_frames = Vec::with_capacity(frames.len());
             for (i, fr) in frames.iter().enumerate() {
@@ -716,9 +769,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 let sig = hash::compute_signature(&img);
                 let color = framepack::quantize_color(&sig.color);
                 let time_ms = (fr.time * 1000.0).round() as i64;
-                if settings.keep_frame_images {
-                    frames_store::save(video_id, time_ms, &fr.rgb, fr.width, fr.height);
-                }
                 new_frames.push(db::NewFrame {
                     dhash: sig.dhash as i64,
                     struct_hash: sig.struct_hash,
@@ -728,25 +778,24 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                     time_ms,
                 });
             }
-            {
+            let mut next_processed = current_processed.clone();
+            next_processed.extend(batch_ts.iter().map(|t| (t * 1000.0).round() as i64));
+            let write_result = {
                 let state = app.state::<AppState>();
                 let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                if let Some(c) = guard.as_mut() {
-                    if db::upsert_frames_incremental(c, video_id, &new_frames).is_ok() {
-                        frames_changed = true;
-                    }
-                    let _ = db::add_processed_ms(c, video_id, elapsed);
-                }
+                guard.as_mut()
+                    .ok_or_else(|| "数据库未初始化".to_string())
+                    .and_then(|c| db::commit_frame_batch(c, video_id, &new_frames, &next_processed, elapsed).map_err(|e| e.to_string()))
+            };
+            if let Err(error) = write_result {
+                fail(app, video_id, &format!("保存索引帧失败：{error}"), frames_changed);
+                return;
             }
-            current_processed.extend(
-                batch_ts.iter().map(|t| (t * 1000.0).round() as i64),
-            );
-            {
-                let state = app.state::<AppState>();
-                let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                if let Some(c) = guard.as_mut() {
-                    let _ = db::update_processed_timestamps(c, video_id, &current_processed);
-                    let _ = db::set_video_status(c, video_id, "indexing", None);
+            frames_changed = true;
+            current_processed = next_processed;
+            if settings.keep_frame_images {
+                for fr in &frames {
+                    frames_store::save(video_id, (fr.time * 1000.0).round() as i64, &fr.rgb, fr.width, fr.height);
                 }
             }
             if is_cancelled(&app, video_id) {
@@ -781,12 +830,16 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         finish_cancelled(app, video_id);
         return;
     }
-    {
+    let ready_result = {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(c) = guard.as_mut() {
-            let _ = db::set_ready_with_thumbnail(c, video_id, thumb.as_deref());
-        }
+        guard.as_mut()
+            .ok_or_else(|| "数据库未初始化".to_string())
+            .and_then(|c| db::set_ready_with_thumbnail(c, video_id, thumb.as_deref()).map_err(|e| e.to_string()))
+    };
+    if let Err(error) = ready_result {
+        fail(app, video_id, &format!("完成索引状态写入失败：{error}"), frames_changed);
+        return;
     }
     clear_frame_progress(&app, video_id);
     finish_ready(app, video_id);
