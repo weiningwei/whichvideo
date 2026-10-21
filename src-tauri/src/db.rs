@@ -936,7 +936,7 @@ pub fn upsert_video(
     if let Some(existing) = find_folder_video_by_key(conn, &key)? {
         // 既有：比较关键字段判断是否变化（内容变化 → 重抽）
         let changed = existing.size != input.size
-            || (existing.mtime_ms - input.mtime_ms).abs() > 1000
+            || existing.mtime_ms != input.mtime_ms
             || existing.duration != input.duration
             || existing.width != input.width
             || existing.height != input.height
@@ -1513,6 +1513,23 @@ mod tests {
         assert_eq!(get_video(&conn, original.id).unwrap().unwrap().folder_id, Some(parent.id));
         remove_folder(&conn, child.id).unwrap();
         assert_eq!(detach_folder_videos(&conn, parent.id).unwrap(), vec![original.id]);
+    }
+
+    #[test]
+    fn reimport_detects_subsecond_file_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let path = if cfg!(windows) { "C:\\Media\\clip.mp4" } else { "/Media/clip.mp4" };
+        let mut input = UpsertVideoInput {
+            path: path.to_string(), size: 100, mtime_ms: 1_000,
+            duration: Some(10.0), width: Some(1920), height: Some(1080),
+            video_codec: Some("h264".to_string()), folder_id: None, file_hash: None,
+        };
+        let (_, created, changed) = upsert_video(&conn, &input).unwrap();
+        assert!(created && changed);
+        input.mtime_ms += 250;
+        let (_, created, changed) = upsert_video(&conn, &input).unwrap();
+        assert!(!created && changed);
     }
 
     #[test]

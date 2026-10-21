@@ -1070,8 +1070,9 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
             }
         }
     };
+    let (size, mtime) = stat_file(&path);
     let probe = existing.as_ref()
-        .filter(|v| v.duration.is_some())
+        .filter(|v| can_reuse_file_hash(v.size, v.mtime_ms, size, mtime) && v.duration.is_some())
         .map(|v| (v.duration, v.width, v.height, v.video_codec.clone()));
     let (duration, width, height, codec) = match probe {
         Some(p) => p,
@@ -1088,7 +1089,6 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
             }
         },
     };
-    let (size, mtime) = stat_file(&path);
     // 导入阶段不读整文件算 SHA-256：导入线程的顺序读会和同时开工的抽帧线程抢
     // 同一块盘（机械盘上互相拖慢）。完全相同文件的判定本来就在查重时按需现算
     // （commands.rs::ensure_file_hash），这里只保留仍可信的旧值：文件被改过
@@ -1129,7 +1129,9 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         result.duplicates += 1;
         return;
     }
-    enqueue(app.clone(), video.id, false);
+    // 内容或媒体资料变化时旧帧不再可信，必须在重抽前清空续传进度。
+    // 若该视频正在索引，force 会把重抽安排在当前任务之后。
+    enqueue(app.clone(), video.id, changed && !created);
 }
 
 /// 导入失败需和用户主动跳过的文件分开统计；详细路径只写本地日志，
