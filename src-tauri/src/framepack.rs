@@ -48,13 +48,19 @@ pub fn quantize_color(hist: &[f32]) -> Vec<u8> {
 /// 量化后的直方图相交相似度，避免搜索时还原 Float32。
 /// a 为量化直方图；b 为库侧缓冲，b_off 起 64 字节为本帧颜色。
 pub fn quantized_histogram_similarity(a: &[u8], b: &[u8], b_off: usize) -> f64 {
-    let mut sum = 0u32;
-    for i in 0..COLOR_BYTES {
-        let av = a[i] as u32;
-        let bv = b[b_off + i] as u32;
-        sum += av.min(bv);
+    // 每个分桶独立取整后，总质量可能低于或高于 255；比较前分别归一化。
+    // 交叉乘法避免在每个分桶中做浮点除法，也兼容已有库中的量化数据。
+    let a_total: u32 = a[..COLOR_BYTES].iter().map(|&v| v as u32).sum();
+    let b_total: u32 = b[b_off..b_off + COLOR_BYTES].iter().map(|&v| v as u32).sum();
+    if a_total == 0 || b_total == 0 {
+        return 0.0;
     }
-    (sum as f64 / 255.0).min(1.0)
+    let mut sum = 0u64;
+    for i in 0..COLOR_BYTES {
+        sum += ((a[i] as u64) * b_total as u64)
+            .min((b[b_off + i] as u64) * a_total as u64);
+    }
+    sum as f64 / (a_total as f64 * b_total as f64)
 }
 
 /// 从量化直方图推断颜色鲜明度（主导分桶占比，0~1）。
@@ -77,4 +83,25 @@ pub fn spatial_similarity(a: &[u8], b: &[u8], b_off: usize) -> f64 {
         diff += d;
     }
     (1.0 - diff as f64 / (SPATIAL_BYTES as f64 * 255.0)).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn histogram_similarity_normalizes_quantization_mass() {
+        for histogram in [[3; COLOR_BYTES], [4; COLOR_BYTES]] {
+            assert_eq!(quantized_histogram_similarity(&histogram, &histogram, 0), 1.0);
+        }
+        assert_eq!(quantized_histogram_similarity(&[3; COLOR_BYTES], &[4; COLOR_BYTES], 0), 1.0);
+        let mut a = [0; COLOR_BYTES];
+        let mut b = [0; COLOR_BYTES + 8];
+        a[0] = 255;
+        b[9] = 255;
+        assert_eq!(quantized_histogram_similarity(&a, &b, 8), 0.0);
+        b[8] = 255;
+        assert_eq!(quantized_histogram_similarity(&a, &b, 8), 0.5);
+        assert_eq!(quantized_histogram_similarity(&a, &[0; COLOR_BYTES], 0), 0.0);
+    }
 }
