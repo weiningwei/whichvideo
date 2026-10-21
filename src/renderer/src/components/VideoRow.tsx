@@ -6,8 +6,8 @@ import { blockModifierTextSelection } from '../lib/selection'
 
 export function VideoRow({
   video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
-  onSamplingChange, isVideoSelected, onRowClick, onOpenDouble,
-  menuOpen, onToggleMenu, onCloseMenu, onNavigateKey
+  onSamplingChange, isVideoSelected, onRowClick, onOpenContextMenu, onOpenDouble,
+  menuOpen, menuPoint, onToggleMenu, onCloseMenu, onNavigateKey
 }: {
   video: VideoRecord
   roots: string[]
@@ -22,8 +22,10 @@ export function VideoRow({
   onSamplingChange: (id: number, mode: 'uniform' | 'scene') => void
   isVideoSelected: (videoId: number) => boolean
   onRowClick: (shiftKey: boolean, ctrlKey: boolean) => void
+  onOpenContextMenu: (x: number, y: number) => void
   onOpenDouble: (id: number) => void
   menuOpen: boolean
+  menuPoint: { x: number; y: number } | null
   onToggleMenu: () => void
   onCloseMenu: () => void
   onNavigateKey: (event: ReactKeyboardEvent<HTMLElement>) => void
@@ -101,6 +103,11 @@ export function VideoRow({
       tabIndex={focused ? 0 : -1}
       onMouseDown={blockModifierTextSelection}
       onClick={(e) => { e.currentTarget.focus({ preventScroll: true }); onRowClick(e.shiftKey, e.ctrlKey || e.metaKey) }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.currentTarget.focus({ preventScroll: true })
+        onOpenContextMenu(e.clientX, e.clientY)
+      }}
       onKeyDown={(event) => { if (event.target === event.currentTarget) onNavigateKey(event) }}
       onDoubleClick={() => onOpenDouble(video.id)}
       className="group cursor-pointer border-b border-line/40 outline-none"
@@ -133,8 +140,12 @@ export function VideoRow({
           {menuOpen && createPortal((() => {
             const rect = menuButtonRef.current?.getBoundingClientRect()
             const menuHeight = 200
-            const top = rect ? (rect.bottom + menuHeight > window.innerHeight ? Math.max(8, rect.top - menuHeight) : rect.bottom + 4) : 0
-            const left = rect ? Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)) : 0
+            const top = menuPoint
+              ? Math.max(8, Math.min(menuPoint.y, window.innerHeight - menuHeight - 8))
+              : rect ? (rect.bottom + menuHeight > window.innerHeight ? Math.max(8, rect.top - menuHeight) : rect.bottom + 4) : 0
+            const left = menuPoint
+              ? Math.max(8, Math.min(menuPoint.x, window.innerWidth - 184))
+              : rect ? Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)) : 0
             return <div data-video-menu={video.id} className="popover fixed z-50 w-44 p-1.5 text-left" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
               <RowMenu label="查看索引帧" onClick={() => { onCloseMenu(); onViewFrames(video.id) }} />
               <RowMenu label="在资源管理器中显示" onClick={() => { onCloseMenu(); onReveal(video.id) }} />

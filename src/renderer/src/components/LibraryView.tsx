@@ -98,6 +98,7 @@ export function LibraryView(props: Props) {
   columnWidthsRef.current = columnWidths
   firstColumnFixedRef.current = firstColumnFixed
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+  const [openMenuPoint, setOpenMenuPoint] = useState<{ x: number; y: number } | null>(null)
   /** 实际挂进 DOM 的行数：几千行的表格一次挂全会同时发几千个缩略图请求 */
   const [renderLimit, setRenderLimit] = useState(ROW_CHUNK)
   // 库内查重的结果与进行中标记。结果在模态里列出，关闭即弃 —— 库内容随时变化，
@@ -286,7 +287,7 @@ export function LibraryView(props: Props) {
   // 键盘导航与快捷操作（光标状态与导航原语在 useVideoCursor 里）
   const {
     navigableItems, focusedIndex, focusedVideoId,
-    moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
+    moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, focusVideoWithoutSelection, scrollRef
   } = useVideoCursor({
     videos: shownVideos,
     toggleVideoSelection: (videoId, shiftKey, ctrlKey) => {
@@ -472,12 +473,21 @@ export function LibraryView(props: Props) {
                   onSamplingChange={(id, mode) => props.onReindex([id], mode)}
                   isVideoSelected={isVideoSelected}
                   onRowClick={(shiftKey, ctrlKey) => { setOpenMenuId(null); handleRowClick(row.video.id, shiftKey, ctrlKey) }}
+                  onOpenContextMenu={(x, y) => {
+                    setSelectedFolderPath(null)
+                    if (selectedVideoIds.has(row.video.id)) focusVideoWithoutSelection(row.video.id)
+                    else handleRowClick(row.video.id, false, false)
+                    setOpenMenuPoint({ x, y })
+                    setOpenMenuId(row.video.id)
+                  }}
                   onOpenDouble={(id) => props.onOpen(id)}
                   menuOpen={openMenuId === row.video.id}
+                  menuPoint={openMenuId === row.video.id ? openMenuPoint : null}
                   onToggleMenu={() => {
                     if (openMenuId === row.video.id) setOpenMenuId(null)
                     else {
                       handleRowClick(row.video.id, false, false)
+                      setOpenMenuPoint(null)
                       setOpenMenuId(row.video.id)
                     }
                   }}

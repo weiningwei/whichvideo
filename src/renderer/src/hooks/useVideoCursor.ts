@@ -133,6 +133,12 @@ export function useVideoCursor({ videos, toggleVideoSelection, scrollSignal }: U
     else focusRow(index)
   }
 
+  /** 右键已选中的行时只移动光标，保留当前多选集合。 */
+  const focusVideoWithoutSelection = (videoId: number) => {
+    const index = navigableItems.findIndex((item) => item.video.id === videoId)
+    if (index >= 0) setFocusedIndex(index)
+  }
+
   /**
    * 在光标处切换选中（Space 专用）——与 ↑↓ 的「单选跟随」不同：不动光标、
    * 也不清掉其他已选中的行，是真正的「加选 / 取消选中」（文件管理器的空格行为）。
@@ -182,6 +188,7 @@ export function useVideoCursor({ videos, toggleVideoSelection, scrollSignal }: U
     jumpCursor,
     toggleFocusedSelection,
     handleRowClick,
+    focusVideoWithoutSelection,
     scrollRef
   }
 }
