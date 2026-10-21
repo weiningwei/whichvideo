@@ -1103,6 +1103,7 @@ fn rerank_matches(
     if hits.len() <= 1 {
         return decoded;
     }
+    let query_gray = hash::to_gray(qild, 48, 48);
     let head_len = hits.len().min(RERANK_TOP_K);
     for hit in hits.iter_mut().take(head_len) {
         let (vid, t, old_score) = (hit.video_id, hit.time_seconds, hit.score);
@@ -1132,7 +1133,7 @@ fn rerank_matches(
             order: hash::ChannelOrder::Rgb,
             data: &frame.rgb,
         };
-        let ssim = hash::ssim_similarity(qild, &fild, 48, 48);
+        let ssim = hash::ssim_gray_similarity(&query_gray, &hash::to_gray(&fild, 48, 48));
         let new_score = old_score * (1.0 - RERANK_WEIGHT) + ssim * RERANK_WEIGHT;
         hit.score = new_score;
         decoded.insert(vid, frame);

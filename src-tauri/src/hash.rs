@@ -323,8 +323,14 @@ const SSIM_C2: f64 = (0.03 * 255.0) * (0.03 * 255.0);
 
 /// 两幅图像素级相似度（0~1，SSIM）：重采样成 w×h 灰度后 8×8 滑窗。
 pub fn ssim_similarity(a: &ImageDataLike, b: &ImageDataLike, w: usize, h: usize) -> f64 {
-    let ga = to_gray(a, w, h).g;
-    let gb = to_gray(b, w, h).g;
+    ssim_gray_similarity(&to_gray(a, w, h), &to_gray(b, w, h))
+}
+
+/// 比较已重采样的灰度图，允许多候选精排复用查询侧预处理。
+pub fn ssim_gray_similarity(a: &GrayImage, b: &GrayImage) -> f64 {
+    assert_eq!((a.w, a.h), (b.w, b.h));
+    let (w, h) = (a.w, a.h);
+    let (ga, gb) = (&a.g, &b.g);
     let win = 8;
     let mut ssim_sum = 0f64;
     let mut win_count = 0usize;
@@ -432,6 +438,19 @@ mod tests {
             order: ChannelOrder::Rgb,
             data,
         }
+    }
+
+    #[test]
+    fn cached_ssim_matches_image_entry_point() {
+        let a = (0..32 * 24 * 3).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+        let b = a.iter().map(|v| v.saturating_add(12)).collect::<Vec<_>>();
+        let a = ImageDataLike { width: 32, height: 24, channels: 3, order: ChannelOrder::Rgb, data: &a };
+        let b = ImageDataLike { data: &b, ..a };
+        let gray = to_gray(&a, 48, 48);
+        assert_eq!(ssim_gray_similarity(&gray, &gray), 1.0);
+        let score = ssim_gray_similarity(&gray, &to_gray(&b, 48, 48));
+        assert!(score > 0.0 && score < 1.0);
+        assert_eq!(score, ssim_similarity(&a, &b, 48, 48));
     }
 
     #[test]
