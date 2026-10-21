@@ -1,0 +1,62 @@
+src-tauri/src/commands.rs
+  s_10a8a0b511d2bf::t_4e2de56cb0dc2a 1435-1437
+src/shared/types.ts
+  s_10a8a0b511d2bf::t_b6b4cdec0e3b0e 260-261
+  s_10a8a0b511d2bf::t_b34e3bc0f612ea 347-348
+src/renderer/src/components/Toolbar.tsx
+  s_10a8a0b511d2bf::t_b34e3bc0f612ea 91
+src-tauri/src/media.rs
+  s_10a8a0b511d2bf::t_57e0ea6adb7746 617-618,621,624-626,641,747-749,758-760,772-780
+  s_10a8a0b511d2bf::t_88ff9311700fdd 750-755,1227
+  s_10a8a0b511d2bf::t_b001f2d922e38c 616,619-620,622-623,636-637,1233-1234,1236-1237
+  s_10a8a0b511d2bf::t_700388e9a26753 735-737
+  s_10a8a0b511d2bf::t_6f3441b99450bd 1229-1230,1232,1235,1238
+  s_10a8a0b511d2bf::t_20b9b1dd11f70e 627-629
+  s_10a8a0b511d2bf::t_658d3fdcf63a65 740-744,781,1219-1226,1228
+  s_10a8a0b511d2bf::t_90351104dcf89a 1231
+  s_10a8a0b511d2bf::t_121385d795ef5e 782
+README.md
+  s_10a8a0b511d2bf::t_e1d8f611f8f34e 117
+  s_10a8a0b511d2bf::t_e703fe0285a91b 109,118,192,369
+src/renderer/src/hooks/useLibrary.ts
+  s_10a8a0b511d2bf::t_b6b4cdec0e3b0e 115
+src-tauri/src/events.rs
+  s_10a8a0b511d2bf::t_b6b4cdec0e3b0e 30-31
+src-tauri/src/watcher.rs
+  s_10a8a0b511d2bf::t_980fa80d37a4b9 100-108
+src-tauri/src/indexer.rs
+  s_10a8a0b511d2bf::t_6f3441b99450bd 850,984,1384-1392,1411
+  s_10a8a0b511d2bf::t_73cbcc60039666 1427,1429,1432
+  s_10a8a0b511d2bf::t_5932968eae44df 852-854,856,1393
+  s_10a8a0b511d2bf::t_b6b4cdec0e3b0e 1067-1074
+  s_10a8a0b511d2bf::t_11bc86e9062579 858,860,863-866,1006-1011
+  s_10a8a0b511d2bf::t_9e5b517174bfb6 894-896,899-900,909
+  s_10a8a0b511d2bf::t_d665219333365d 1374,1394-1401,1404-1408,1410
+  s_10a8a0b511d2bf::t_373268cb77d1aa 869-872,887,893,932-933
+  s_10a8a0b511d2bf::t_6948dcbdec7651 981
+  s_10a8a0b511d2bf::t_e79725c01a9bb7 1402-1403,1409
+  s_10a8a0b511d2bf::t_cb3edf9c3b2e30 867,873-886,888-892,897-898,901-908,910-912,928-931
+  s_10a8a0b511d2bf::t_93eb1a7e2beca0 857
+  s_10a8a0b511d2bf::t_8b5da1c643a7e8 868
+  s_10a8a0b511d2bf::t_7edc7847661975 982-983
+  s_10a8a0b511d2bf::t_144a87a1b91ba1 1412
+src-tauri/src/constants.rs
+  s_10a8a0b511d2bf::t_e6fb7b54f90001 61,65-77,79
+  s_10a8a0b511d2bf::t_0aaf1bb7498379 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82b2dcd577a54b2f1d9c6826b1537bcba092c8e2",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
