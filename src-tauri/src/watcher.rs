@@ -97,6 +97,15 @@ fn drain_pending_imports(app: AppHandle) {
         };
         for item in due {
             if Path::new(&item.path).is_file() {
+                let root = {
+                    let state = app.state::<AppState>();
+                    state.db.lock().ok().and_then(|guard| guard.as_ref()
+                        .and_then(|conn| db::get_folder(conn, item.folder_id).ok().flatten())
+                        .map(|folder| folder.path))
+                };
+                if root.as_deref().is_some_and(|root| indexer::is_playlist_part(&item.path, root)) {
+                    continue;
+                }
                 indexer::import_files(app.clone(), vec![item.path], Some(item.folder_id));
             }
         }

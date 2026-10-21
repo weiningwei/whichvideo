@@ -27,6 +27,8 @@ pub struct ImportResult {
     pub failed: i64,
     pub scanned: i64,
     pub folders: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_error: Option<String>,
 }
 
 /// 重建索引返回（镜像 videos.reindex 的 { count }）。

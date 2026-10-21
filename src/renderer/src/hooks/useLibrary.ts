@@ -112,7 +112,7 @@ export function useLibrary() {
           const result = await window.whichvideo.videos.importFiles()
           notices.pushNotice(
             result.failed ? 'error' : 'info',
-            `导入完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}，失败 ${result.failed}`
+            `导入完成：新增 ${result.added}，已存在 ${result.duplicates}，跳过 ${result.skipped}，失败 ${result.failed}${result.scanned === 1 && result.firstError ? `（${result.firstError}）` : ''}`
           )
           await refreshAll()
           return result

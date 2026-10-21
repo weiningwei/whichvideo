@@ -58,11 +58,25 @@ pub const DEFAULT_SKIP_DIRS: &[&str] = &[
 /* 前后端契约枚举                                                     */
 /* ------------------------------------------------------------------ */
 
-/// 可索引的视频扩展名（小写、不带点）。扫描、文件对话框与前端拖拽共用；
+/// 常见的视频扩展名（小写、不带点）。文件对话框优先显示；扫描还会尝试未知扩展名。
 /// 前端同名单见 src/shared/types.ts 的 VIDEO_EXTENSIONS，契约测试校验两边一致。
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "ts", "m2ts", "rmvb",
-    "rm", "3gp", "vob", "ogv",
+    "rm", "3gp", "vob", "ogv", "m3u8",
+];
+
+/// 文件夹扫描时直接跳过明显不是视频的文件。未知扩展名仍交给 FFprobe 判断。
+pub const NON_VIDEO_EXTENSIONS: &[&str] = &[
+    "txt", "md", "log", "nfo", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "avif", "svg", "ico", "heic",
+    "mp3", "wav", "flac", "aac", "ogg", "opus", "wma", "m4a", "cue",
+    "srt", "ass", "ssa", "vtt", "sub", "idx", "lrc",
+    "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso",
+    "exe", "dll", "msi", "app", "deb", "rpm", "so", "dylib",
+    "json", "xml", "yaml", "yml", "toml", "ini", "cfg", "conf", "csv",
+    "db", "sqlite", "sqlite3", "db-wal", "db-shm", "bak", "tmp", "part",
+    "html", "htm", "css", "js", "jsx", "tsx", "py", "rs", "java", "c", "cpp", "h",
+    "url", "lnk", "desktop",
 ];
 
 /// 后端事件通道名，必须与 src/shared/types.ts 的 IPC.eventChannel 一致。

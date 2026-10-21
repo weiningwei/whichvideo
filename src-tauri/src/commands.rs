@@ -1432,6 +1432,9 @@ fn native_files_dialog(app: &AppHandle, title: &str, filter_name: &str, exts: &[
         .file()
         .set_title(title)
         .add_filter(filter_name, exts);
+    if filter_name == "视频" {
+        dialog = dialog.add_filter("所有文件（由 FFmpeg 验证）", &["*"]);
+    }
     if let Some(window) = app.get_webview_window("main") {
         dialog = dialog.set_parent(&window);
     }

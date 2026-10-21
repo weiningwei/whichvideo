@@ -847,13 +847,69 @@ fn can_reuse_file_hash(stored_size: i64, stored_mtime: i64, size: i64, mtime: i6
     size > 0 && mtime > 0 && stored_size == size && stored_mtime == mtime
 }
 
+/// 自动扫描的候选规则：常见视频直接尝试，明显无关的文件跳过，未知格式交给 FFprobe。
 pub fn is_video_file(name: &str) -> bool {
-    let Some((_, ext)) = name.rsplit_once('.') else {
+    let name = std::path::Path::new(name).file_name().and_then(|name| name.to_str()).unwrap_or("");
+    if name.is_empty() || name.starts_with('.') { return false; }
+    if ["readme", "license", "makefile", "changelog"].iter().any(|known| name.eq_ignore_ascii_case(known)) {
         return false;
+    }
+    let Some((_, ext)) = name.rsplit_once('.') else {
+        return true;
     };
-    constants::VIDEO_EXTENSIONS
+    if constants::VIDEO_EXTENSIONS
         .iter()
         .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+    { return true; }
+    !constants::NON_VIDEO_EXTENSIONS
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+}
+
+fn existing_file_key(path: &std::path::Path) -> Option<String> {
+    std::fs::canonicalize(path).ok().map(|path| db::path_key(&path.to_string_lossy()))
+}
+
+fn playlist_parts(playlist: &std::path::Path) -> Vec<String> {
+    let Ok(metadata) = std::fs::metadata(playlist) else { return Vec::new() };
+    if metadata.len() > 2 * 1024 * 1024 { return Vec::new(); }
+    let Ok(contents) = std::fs::read_to_string(playlist) else { return Vec::new() };
+    if !contents.starts_with("#EXTM3U") { return Vec::new(); }
+    let Some(parent) = playlist.parent() else { return Vec::new() };
+    contents.lines().filter_map(|line| {
+        let line = line.trim();
+        let reference = if line.starts_with('#') {
+            line.split("URI=\"").nth(1)?.split('"').next()?
+        } else { line };
+        if reference.is_empty() || reference.contains("://") || reference.starts_with("data:") || reference.starts_with('/') || reference.starts_with('\\') {
+            return None;
+        }
+        existing_file_key(&parent.join(reference))
+    }).collect()
+}
+
+/// 已由 HLS 播放列表引用的片段或子播放列表不作为独立视频导入。
+pub fn is_playlist_part(path: &str, root: &str) -> bool {
+    let Some(key) = existing_file_key(std::path::Path::new(path)) else { return false };
+    let root_key = db::path_key(root);
+    let separator = if cfg!(windows) { "\\" } else { "/" };
+    let child_prefix = if root_key.ends_with(separator) { root_key.clone() } else { format!("{root_key}{separator}") };
+    let mut dir = std::path::Path::new(path).parent();
+    while let Some(current) = dir {
+        let current_key = db::path_key(&current.to_string_lossy());
+        if current_key != root_key && !current_key.starts_with(&child_prefix) { break; }
+        let entries = match std::fs::read_dir(current) { Ok(entries) => entries, Err(_) => break };
+        for entry in entries.flatten() {
+            let candidate = entry.path();
+            if candidate.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("m3u8"))
+                && playlist_parts(&candidate).contains(&key) {
+                return true;
+            }
+        }
+        if current_key == root_key { break; }
+        dir = current.parent();
+    }
+    false
 }
 
 /// 带发现回调的扫描。每找到一个视频就回报累计数量，让遍历阶段（此时总数
@@ -869,6 +925,12 @@ fn scan_video_files_with(
     }
     let mut out = Vec::new();
     walk(root_path, 0, recursive, &mut out, &mut on_found)?;
+    let referenced = out.iter()
+        .filter(|path| path.to_ascii_lowercase().ends_with(".m3u8"))
+        .flat_map(|path| playlist_parts(std::path::Path::new(path)))
+        .collect::<std::collections::HashSet<_>>();
+    out.retain(|path| existing_file_key(std::path::Path::new(path))
+        .is_none_or(|key| !referenced.contains(&key)));
     Ok(out)
 }
 
@@ -916,6 +978,10 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         result.skipped += 1;
         return;
     }
+    if folder_id.is_some() && !is_video_file(std::path::Path::new(&path).file_name().and_then(|name| name.to_str()).unwrap_or("")) {
+        result.skipped += 1;
+        return;
+    }
     let existing = {
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_mut() {
@@ -937,7 +1003,12 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         .map(|v| (v.duration, v.width, v.height, v.video_codec.clone()));
     let (duration, width, height, codec) = match probe {
         Some(p) => p,
-        None => match media::probe_video(&path) {
+        None => match media::probe_video(&path).and_then(|p| {
+            if path.to_ascii_lowercase().ends_with(".m3u8") {
+                media::verify_playlist_decode(&path)?;
+            }
+            Ok(p)
+        }) {
             Ok(p) => (p.duration, p.width, p.height, p.video_codec),
             Err(error) => {
                 record_import_failure(result, &path, "探测媒体", &error);
@@ -993,6 +1064,14 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
 /// 避免在批量导入提示中泄露文件名，同时保留诊断线索。
 fn record_import_failure(result: &mut ImportResult, path: &str, step: &str, error: &str) {
     result.failed += 1;
+    if result.first_error.is_none() {
+        result.first_error = Some(if step == "探测媒体" {
+            if error.starts_with("ffprobe 失败") { "FFmpeg 无法读取该文件或其片段".to_string() }
+            else { error.to_string() }
+        } else {
+            format!("{step}失败，请查看日志")
+        });
+    }
     log(&format!("导入失败（{step}）：{path}：{error}"));
 }
 
@@ -1292,7 +1371,7 @@ fn log(msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_reuse_file_hash, consider_thumbnail_frame, plan_detected_scenes, record_import_failure,
+        can_reuse_file_hash, consider_thumbnail_frame, is_playlist_part, is_video_file, plan_detected_scenes, record_import_failure,
         resume_start_index, scan_video_files_with, should_broadcast_stats,
         should_emit_import_progress,
         IndexerState,
@@ -1301,6 +1380,35 @@ mod tests {
     use crate::media::RawFrame;
     use std::fs;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn scan_candidates_include_playlists_and_unknown_formats_but_skip_obvious_non_videos() {
+        assert!(is_video_file("clip.M3U8"));
+        assert!(is_video_file("clip.customvideo"));
+        assert!(is_video_file("clip"));
+        assert!(!is_video_file("cover.jpg"));
+        assert!(!is_video_file("subtitle.srt"));
+        assert!(!is_video_file("notes.txt"));
+        assert!(!is_video_file(".hidden"));
+        assert!(!is_video_file("README"));
+    }
+
+    #[test]
+    fn folder_scan_treats_hls_variants_and_segments_as_one_video() {
+        let root = std::env::temp_dir().join(format!("whichvideo-hls-{}", crate::db::now_ms()));
+        let variant_dir = root.join("variant");
+        fs::create_dir_all(&variant_dir).unwrap();
+        fs::write(root.join("master.m3u8"), b"#EXTM3U\nvariant/index.m3u8\n").unwrap();
+        fs::write(variant_dir.join("index.m3u8"), b"#EXTM3U\n#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n").unwrap();
+        fs::write(variant_dir.join("segment.ts"), b"segment").unwrap();
+        fs::write(root.join("other.mp4"), b"video").unwrap();
+        let files = scan_video_files_with(&root.to_string_lossy(), true, |_| {}).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|path| path.ends_with("master.m3u8")));
+        assert!(files.iter().any(|path| path.ends_with("other.mp4")));
+        assert!(is_playlist_part(&variant_dir.join("segment.ts").to_string_lossy(), &root.to_string_lossy()));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn folder_scan_reports_missing_directories_and_finds_nested_videos() {
@@ -1316,10 +1424,12 @@ mod tests {
         fs::write(root.join("clip.mp4"), b"").unwrap();
         fs::write(nested.join("episode.MKV"), b"").unwrap();
         fs::write(nested.join("notes.txt"), b"").unwrap();
+        fs::write(nested.join("unusual.video_blob"), b"").unwrap();
         let files = scan_video_files_with(&root.to_string_lossy(), true, |_| {}).unwrap();
-        assert_eq!(files.len(), 2);
+        assert_eq!(files.len(), 3);
         assert!(files.iter().any(|path| path.ends_with("clip.mp4")));
         assert!(files.iter().any(|path| path.ends_with("episode.MKV")));
+        assert!(files.iter().any(|path| path.ends_with("unusual.video_blob")));
         fs::remove_dir_all(root).unwrap();
     }
 

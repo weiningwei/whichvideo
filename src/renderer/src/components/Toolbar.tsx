@@ -88,7 +88,7 @@ export function Toolbar(props: ToolbarProps) {
             </button>
             {addOpen && (
               <Menu align="right">
-                <MenuItem label="视频文件" hint="选择一个或多个文件" onClick={() => { setAddOpen(false); onImportFiles() }} />
+                <MenuItem label="视频文件" hint="可切换所有文件，由 FFmpeg 验证" onClick={() => { setAddOpen(false); onImportFiles() }} />
                 <MenuItem label="导入文件夹" hint="扫描一次，不持续监视" onClick={() => { setAddOpen(false); onImportFolder() }} />
                 <MenuItem label="监视文件夹" hint="自动同步之后的变化" onClick={() => { setAddOpen(false); onWatchFolder() }} />
               </Menu>

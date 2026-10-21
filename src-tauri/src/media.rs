@@ -613,16 +613,32 @@ fn terminate_child(child: &mut std::process::Child) {
 
 /// 运行媒体子进程并持续读取两个输出管道，防止大输出塞满管道导致假死。
 /// 超时后终止子进程，避免损坏媒体或卡死的网络盘永久占住索引槽位。
+fn local_only_media_args(args: &[String], label: &str) -> Vec<String> {
+    let mut safe_args = Vec::with_capacity(args.len() + 3);
+    for (index, arg) in args.iter().enumerate() {
+        if arg == "-i" {
+            safe_args.extend(["-protocol_whitelist".to_string(), "file,crypto,data,pipe,concat".to_string()]);
+        }
+        if label == "ffprobe" && index + 1 == args.len() {
+            safe_args.extend(["-protocol_whitelist".to_string(), "file,crypto,data,pipe,concat".to_string()]);
+        }
+        safe_args.push(arg.clone());
+    }
+    safe_args
+}
+
 fn run_media_command(
     executable: &str,
     args: &[String],
     label: &str,
     timeout: Duration,
 ) -> Result<FfmpegOutput, String> {
+    // 本地媒体（尤其 HLS 清单）可能引用远程资源；探测、抽帧和预览只允许本地协议。
+    let safe_args = local_only_media_args(args, label);
     let mut command = Command::new(executable);
     command
         .no_window()
-        .args(args)
+        .args(&safe_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -716,24 +732,32 @@ pub fn probe_video(file_path: &str) -> Result<VideoProbeInfo, String> {
     ];
     let out = run_ffprobe(&args)?;
     if !out.success {
+        if out.stderr.contains("not on whitelist") {
+            return Err("播放列表引用了远程片段；仅支持本地文件".to_string());
+        }
         return Err(format!("ffprobe 失败：{}", out.stderr.trim()));
     }
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout)
+    parse_video_probe(&out.stdout)
+}
+
+fn parse_video_probe(output: &[u8]) -> Result<VideoProbeInfo, String> {
+    let parsed: serde_json::Value = serde_json::from_slice(output)
         .map_err(|e| format!("ffprobe 输出无法解析：{e}"))?;
     let stream = parsed.get("streams").and_then(|s| s.get(0));
-    let duration_raw = stream
-        .and_then(|s| s.get("duration").and_then(|d| d.as_str()))
-        .or_else(|| {
-            parsed
-                .get("format")
-                .and_then(|f| f.get("duration"))
-                .and_then(|d| d.as_str())
-        });
-    let duration = duration_raw
-        .and_then(|d| d.parse::<f64>().ok())
-        .filter(|d| d.is_finite());
+    if stream.is_none() {
+        return Err("未检测到视频画面".to_string());
+    }
+    let parse_duration = |raw: Option<&serde_json::Value>| raw
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|duration| duration.is_finite() && *duration > 0.0);
+    let duration = parse_duration(stream.and_then(|s| s.get("duration")))
+        .or_else(|| parse_duration(parsed.get("format").and_then(|f| f.get("duration"))));
     let width = stream.and_then(|s| s.get("width").and_then(|w| w.as_i64()));
     let height = stream.and_then(|s| s.get("height").and_then(|h| h.as_i64()));
+    if width.unwrap_or(0) <= 0 || height.unwrap_or(0) <= 0 || duration.is_none() {
+        return Err("无法确定视频画面或时长；实时流与静态图片不支持入库".to_string());
+    }
     let codec = stream
         .and_then(|s| s.get("codec_name").and_then(|c| c.as_str()))
         .map(|c| c.to_string());
@@ -743,6 +767,17 @@ pub fn probe_video(file_path: &str) -> Result<VideoProbeInfo, String> {
         height,
         video_codec: codec,
     })
+}
+
+/// HLS 播放列表只有真的能读到片段、解出画面才算可导入。
+pub fn verify_playlist_decode(file_path: &str) -> Result<(), String> {
+    let args = vec![
+        "-hide_banner", "-v", "error", "-nostdin", "-i", file_path,
+        "-map", "0:v:0", "-frames:v", "1", "-f", "null", "-",
+    ].into_iter().map(str::to_string).collect::<Vec<_>>();
+    let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    let output = run_media_command(&tools.ffmpeg, &args, "ffmpeg", FFPROBE_TIMEOUT)?;
+    if output.success { Ok(()) } else { Err("播放列表的片段无法读取或解码（仅支持本地片段）".to_string()) }
 }
 
 /// 抽帧后的一帧原始像素（RGB24）。
@@ -1181,7 +1216,26 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_scenes, parse_scene_times, parse_showinfo, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file};
+    use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file};
+
+    #[test]
+    fn probe_rejects_files_without_a_finite_video() {
+        assert!(parse_video_probe(br#"{"streams":[],"format":{"duration":"20"}}"#).is_err());
+        assert!(parse_video_probe(br#"{"streams":[{"width":640,"height":360}],"format":{}}"#).is_err());
+        assert!(parse_video_probe(br#"{"streams":[{"width":640,"height":360}],"format":{"duration":"NaN"}}"#).is_err());
+        assert_eq!(parse_video_probe(br#"{"streams":[{"width":640,"height":360,"codec_name":"h264"}],"format":{"duration":"12.5"}}"#).unwrap().duration, Some(12.5));
+        assert_eq!(parse_video_probe(br#"{"streams":[{"width":640,"height":360,"duration":"N/A"}],"format":{"duration":"12.5"}}"#).unwrap().duration, Some(12.5));
+    }
+
+    #[test]
+    fn local_media_cannot_fetch_remote_segments_during_probe_or_decode() {
+        let probe = ["-v", "error", "C:\\Videos\\clip.M3U8"].map(str::to_string);
+        assert_eq!(local_only_media_args(&probe, "ffprobe"),
+            ["-v", "error", "-protocol_whitelist", "file,crypto,data,pipe,concat", "C:\\Videos\\clip.M3U8"].map(str::to_string));
+        let decode = ["-ss", "1", "-i", "C:\\Videos\\clip.m3u8", "-f", "null", "-"].map(str::to_string);
+        assert_eq!(local_only_media_args(&decode, "ffmpeg"),
+            ["-ss", "1", "-protocol_whitelist", "file,crypto,data,pipe,concat", "-i", "C:\\Videos\\clip.m3u8", "-f", "null", "-"].map(str::to_string));
+    }
     use std::fs;
     use std::time::{Duration, Instant};
 

@@ -257,6 +257,8 @@ export interface ImportResult {
   failed: number
   scanned: number
   folders: number
+  /** 单个文件导入失败时向用户显示的简短原因。 */
+  firstError?: string
 }
 
 export interface VideoProbeInfo {
@@ -342,7 +344,8 @@ export const VIDEO_EXTENSIONS = [
   '.rm',
   '.3gp',
   '.vob',
-  '.ogv'
+  '.ogv',
+  '.m3u8'
 ] as const
 
 export function isVideoFile(filePath: string): boolean {
