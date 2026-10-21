@@ -789,11 +789,12 @@ pub async fn videos_reindex(
     app: AppHandle,
     video_ids: Option<Vec<i64>>,
     mode: Option<String>,
-) -> Result<i64, String> {
+) -> Result<events::ReindexResult, String> {
     // 整库重建要读一遍视频表再批量入队，别占着窗口主线程。
-    Ok(tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
+    let count = tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
         .await
-        .map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(events::ReindexResult { count })
 }
 
 /// 同步文件夹监听（启动/停止各目录的磁盘监听以匹配启用状态）。

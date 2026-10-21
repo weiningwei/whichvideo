@@ -32,7 +32,6 @@ pub struct ImportResult {
 }
 
 /// 重建索引返回（镜像 videos.reindex 的 { count }）。
-#[allow(dead_code)]
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ReindexResult {

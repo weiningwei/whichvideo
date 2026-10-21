@@ -8,6 +8,7 @@ const bridge = readSource('src', 'renderer', 'src', 'lib', 'tauri-api.ts')
 const rendererMain = readSource('src', 'renderer', 'src', 'main.tsx')
 const rustMain = readSource('src-tauri', 'src', 'main.rs')
 const commandsSource = readSource('src-tauri', 'src', 'commands.rs')
+const eventsSource = readSource('src-tauri', 'src', 'events.rs')
 const indexerSource = readSource('src-tauri', 'src', 'indexer.rs')
 const mediaSource = readSource('src-tauri', 'src', 'media.rs')
 const dbSource = readSource('src-tauri', 'src', 'db.rs')
@@ -155,6 +156,14 @@ check(
     reindexCommand.includes('enqueue_many(app, &targets, true)') &&
     indexerSource.includes('reset_before_run') &&
     indexerSource.includes('process_video(app2, id, reset_before_run)')
+)
+check(
+  '重新索引返回值与前端 count 契约一致',
+  commandsSource.includes('Result<events::ReindexResult, String>') &&
+    commandsSource.includes('Ok(events::ReindexResult { count })') &&
+    /pub struct ReindexResult\s*\{\s*pub count: i64,\s*\}/.test(eventsSource) &&
+    /reindex\([^)]*\): Promise<\{ count: number \}>/.test(shared) &&
+    bridge.includes('invoke<{ count: number }>(IPC.videosReindex')
 )
 for (const [name, source] of [
   ['移除监听文件夹', foldersRemoveCommand],
