@@ -113,19 +113,19 @@ export function VideoRow({
             {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
           </div>
           <div className="min-w-0">
-            <div className={`line-clamp-1 break-all text-[12.5px] font-medium ${selected ? 'text-accent' : 'text-primary'}`} title={video.path}>{video.name}</div>
-            {showLocation && <div className="mt-0.5 truncate text-[10.5px] text-tertiary" title={video.path}>{shortDir(video.path, roots) || video.dir}</div>}
+            <div className={`line-clamp-1 break-all text-[13.5px] font-medium ${selected ? 'text-accent' : 'text-primary'}`} title={video.path}>{video.name}</div>
+            {showLocation && <div className="mt-0.5 truncate text-[11px] text-tertiary" title={video.path}>{shortDir(video.path, roots) || video.dir}</div>}
           </div>
         </div>
       </td>
       <td className={`whitespace-nowrap px-2 py-2 align-middle transition-colors ${rowBg}`}>
-        <div className={`flex items-center gap-1.5 text-[11.5px] ${status.text}`} title={statusTitle}>
+        <div className={`flex items-center gap-1.5 text-[12px] ${status.text}`} title={statusTitle}>
           <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{statusLabel}
         </div>
         {progress}
       </td>
-      <td className={`whitespace-nowrap px-2 py-2 text-[11.5px] tabular-nums text-secondary transition-colors ${rowBg}`}>{video.duration == null ? '—' : formatDuration(video.duration)}</td>
-      <td className={`whitespace-nowrap px-2 py-2 text-[11.5px] tabular-nums text-secondary transition-colors ${rowBg}`}>{formatBytes(video.size)}</td>
+      <td className={`whitespace-nowrap px-2 py-2 text-[12px] tabular-nums text-secondary transition-colors ${rowBg}`}>{video.duration == null ? '—' : formatDuration(video.duration)}</td>
+      <td className={`whitespace-nowrap px-2 py-2 text-[12px] tabular-nums text-secondary transition-colors ${rowBg}`}>{formatBytes(video.size)}</td>
       <td className={`sticky right-0 px-3 py-2 transition-colors ${rowBg}`} onClick={(e) => e.stopPropagation()}>
         <div className="relative flex items-center justify-end gap-1" data-video-menu={video.id}>
           <button className="icon-btn h-7 w-7 text-[11px]" onClick={() => onOpen(video.id)} title="播放" aria-label={`播放 ${video.name}`}>▶</button>

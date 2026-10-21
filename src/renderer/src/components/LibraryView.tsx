@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { blockModifierTextSelection } from '../lib/selection'
@@ -59,6 +59,22 @@ const STATE_STYLE: Record<string, { text: string; cls: string }> = {
   error: { text: '监听异常', cls: 'border-bad/40 bg-bad/10 text-bad' }
 }
 
+const COLUMN_WIDTHS_KEY = 'wv-library-column-widths'
+const DEFAULT_COLUMN_WIDTHS = [360, 128, 96, 96] as const
+const MIN_COLUMN_WIDTHS = [240, 112, 88, 88] as const
+const COLUMN_LABELS = ['视频', '状态', '时长', '大小'] as const
+
+function loadColumnWidths(): { widths: number[]; firstFixed: boolean } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null')
+    if (typeof saved?.firstFixed === 'boolean' && Array.isArray(saved.widths) && saved.widths.length === DEFAULT_COLUMN_WIDTHS.length &&
+      saved.widths.every((width: number, index: number) => Number.isFinite(width) && width >= MIN_COLUMN_WIDTHS[index] && width <= 2000)) {
+      return saved
+    }
+  } catch { /* localStorage 不可用时使用默认列宽 */ }
+  return { widths: [...DEFAULT_COLUMN_WIDTHS], firstFixed: false }
+}
+
 export function LibraryView(props: Props) {
   const {
     folders, videos, total, query, onSetQuery,
@@ -71,6 +87,15 @@ export function LibraryView(props: Props) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
   const [selectedFolderPath, setSelectedFolderPath] = useState<string | null>(null)
+  const [initialColumnLayout] = useState(loadColumnWidths)
+  const [columnWidths, setColumnWidths] = useState(initialColumnLayout.widths)
+  const [firstColumnFixed, setFirstColumnFixed] = useState(initialColumnLayout.firstFixed)
+  const [tableViewportWidth, setTableViewportWidth] = useState(0)
+  const resizeRef = useRef<{ index: number; pointerId: number; startX: number; startWidth: number } | null>(null)
+  const columnWidthsRef = useRef(columnWidths)
+  const firstColumnFixedRef = useRef(firstColumnFixed)
+  columnWidthsRef.current = columnWidths
+  firstColumnFixedRef.current = firstColumnFixed
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   /** 实际挂进 DOM 的行数：几千行的表格一次挂全会同时发几千个缩略图请求 */
   const [renderLimit, setRenderLimit] = useState(ROW_CHUNK)
@@ -101,6 +126,78 @@ export function LibraryView(props: Props) {
   const mountedRows = useMemo(() => rows.slice(0, renderLimit), [rows, renderLimit])
   const rowsRef = useRef(rows)
   rowsRef.current = rows
+
+  useEffect(() => {
+    const box = scrollRef.current
+    if (!box) return
+    const observer = new ResizeObserver(() => setTableViewportWidth(box.clientWidth))
+    observer.observe(box)
+    setTableViewportWidth(box.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+
+  const resizeHandle = (index: number) => (
+    <span
+      role="separator"
+      aria-label={`调整${COLUMN_LABELS[index]}列宽`}
+      aria-orientation="vertical"
+      aria-valuemin={MIN_COLUMN_WIDTHS[index]}
+      aria-valuemax={2000}
+      aria-valuenow={displayColumnWidths[index]}
+      tabIndex={0}
+      title={`拖动调整${COLUMN_LABELS[index]}列宽`}
+      className="group/resize absolute -right-1 top-0 z-20 flex h-full w-2 cursor-col-resize touch-none items-center justify-center focus-visible:outline-accent"
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+        event.preventDefault()
+        event.stopPropagation()
+        const change = event.key === 'ArrowRight' ? 10 : -10
+        const next = columnWidths.map((value, column) => column === index
+          ? Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[index], displayColumnWidths[index] + change)) : value)
+        if (index === 0) { firstColumnFixedRef.current = true; setFirstColumnFixed(true) }
+        columnWidthsRef.current = next
+        setColumnWidths(next)
+        try { localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify({ widths: next, firstFixed: firstColumnFixedRef.current })) } catch { /* 无持久化权限时本次调整仍有效 */ }
+      }}
+      onPointerDown={(event: ReactPointerEvent<HTMLSpanElement>) => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (index === 0) { firstColumnFixedRef.current = true; setFirstColumnFixed(true) }
+        event.currentTarget.setPointerCapture(event.pointerId)
+        resizeRef.current = {
+          index, pointerId: event.pointerId, startX: event.clientX,
+          startWidth: event.currentTarget.parentElement?.getBoundingClientRect().width ?? columnWidths[index]
+        }
+      }}
+      onPointerMove={(event: ReactPointerEvent<HTMLSpanElement>) => {
+        const resize = resizeRef.current
+        if (!resize || resize.pointerId !== event.pointerId) return
+        const width = Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
+        setColumnWidths((current) => current.map((value, column) => column === resize.index ? width : value))
+      }}
+      onPointerUp={(event: ReactPointerEvent<HTMLSpanElement>) => {
+        const resize = resizeRef.current
+        if (!resize || resize.pointerId !== event.pointerId) return
+        const width = Math.min(2000, Math.max(MIN_COLUMN_WIDTHS[resize.index], Math.round(resize.startWidth + event.clientX - resize.startX)))
+        const next = columnWidthsRef.current.map((value, column) => column === resize.index ? width : value)
+        columnWidthsRef.current = next
+        setColumnWidths(next)
+        resizeRef.current = null
+        try { localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify({ widths: next, firstFixed: firstColumnFixedRef.current })) } catch { /* 无持久化权限时本次调整仍有效 */ }
+      }}
+      onPointerCancel={() => { resizeRef.current = null }}
+    >
+      <span className="h-5 w-px bg-line group-hover/resize:w-0.5 group-hover/resize:bg-accent" />
+    </span>
+  )
+
+  const displayColumnWidths = [
+    firstColumnFixed ? columnWidths[0] : Math.min(2000, Math.max(columnWidths[0], tableViewportWidth - columnWidths.slice(1).reduce((sum, width) => sum + width, 80))),
+    ...columnWidths.slice(1)
+  ]
+  const actionWidth = Math.max(80, tableViewportWidth - displayColumnWidths.reduce((sum, width) => sum + width, 0))
+  const tableWidth = displayColumnWidths.reduce((sum, width) => sum + width, actionWidth)
   // 切视图、换筛选后从第一屏开始，避免沿用上一个大列表的挂载上限
   useEffect(() => {
     setRenderLimit(ROW_CHUNK)
@@ -277,20 +374,27 @@ export function LibraryView(props: Props) {
             }
           }}
         >
-          <table className="w-full min-w-[650px] border-separate border-spacing-0 text-[12px]">
-            <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[10.5px] text-tertiary backdrop-blur">
+          <table className="table-fixed border-separate border-spacing-0 text-[12px]" style={{ width: tableWidth }}>
+            <colgroup>
+              {displayColumnWidths.map((width, index) => <col key={COLUMN_LABELS[index]} style={{ width }} />)}
+              <col style={{ width: actionWidth }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[12px] text-secondary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
-                <th className="px-3 py-2 font-medium" aria-sort={query.sort === 'name' ? query.order === 'desc' ? 'descending' : 'ascending' : 'none'}>
+                <th className="relative border-r border-line px-3 py-2 font-semibold" aria-sort={query.sort === 'name' ? query.order === 'desc' ? 'descending' : 'ascending' : 'none'}>
                   <button onClick={() => onSetQuery(sortVideoQuery(query, 'name', true))}>视频{query.sort === 'name' ? query.order === 'desc' ? ' ↓' : ' ↑' : ''}</button>
+                  {resizeHandle(0)}
                 </th>
-                <th className="w-32 whitespace-nowrap px-2 py-2 font-medium">状态</th>
-                <th className="w-16 whitespace-nowrap px-2 py-2 font-medium" aria-sort={query.sort === 'duration' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                <th className="relative border-r border-line px-2 py-2 font-semibold">状态{resizeHandle(1)}</th>
+                <th className="relative border-r border-line px-2 py-2 font-semibold" aria-sort={query.sort === 'duration' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
                   <button onClick={() => onSetQuery(sortVideoQuery(query, 'duration', true))}>时长{query.sort === 'duration' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
+                  {resizeHandle(2)}
                 </th>
-                <th className="w-[72px] whitespace-nowrap px-2 py-2 font-medium" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                <th className="relative border-r border-line px-2 py-2 font-semibold" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
                   <button onClick={() => onSetQuery(sortVideoQuery(query, 'size', true))}>大小{query.sort === 'size' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
+                  {resizeHandle(3)}
                 </th>
-                <th className="sticky right-0 w-20 bg-surface-1 px-3 py-2 text-right font-medium">操作</th>
+                <th className="sticky right-0 bg-surface-1 px-3 py-2 text-right font-semibold">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -322,7 +426,7 @@ export function LibraryView(props: Props) {
                       <span className="w-3 text-[11px] text-tertiary">{(filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))) ? '⌄' : '›'}</span>
                       <FolderIcon />
                       <span className="min-w-0 flex-1">
-                        <span className={`block truncate text-[12.5px] font-medium ${selectedFolderPath === explorerPathKey(row.node.path) ? 'text-accent' : 'text-primary'}`} title={row.node.path}>{row.node.name}</span>
+                        <span className={`block truncate text-[13.5px] font-medium ${selectedFolderPath === explorerPathKey(row.node.path) ? 'text-accent' : 'text-primary'}`} title={row.node.path}>{row.node.name}</span>
                         {row.depth === 0 && <span className="block truncate text-[10.5px] text-tertiary" title={row.node.path}>{row.node.path}</span>}
                       </span>
                       <span className="shrink-0 text-[11px] tabular-nums text-tertiary">{row.node.count} 个视频</span>
