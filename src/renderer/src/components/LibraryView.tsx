@@ -389,17 +389,17 @@ export function LibraryView(props: Props) {
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-1/95 text-left text-[12px] text-secondary backdrop-blur">
               <tr onMouseDown={blockModifierTextSelection}>
-                <th className="relative border-r border-line px-3 py-2 font-semibold" aria-sort={query.sort === 'name' ? query.order === 'desc' ? 'descending' : 'ascending' : 'none'}>
-                  <button onClick={() => onSetQuery(sortVideoQuery(query, 'name', true))}>视频{query.sort === 'name' ? query.order === 'desc' ? ' ↓' : ' ↑' : ''}</button>
+                <th className="relative border-r border-line p-0 font-semibold" aria-sort={query.sort === 'name' ? query.order === 'desc' ? 'descending' : 'ascending' : 'none'}>
+                  <button className="block w-full px-3 py-2 text-left" onClick={() => onSetQuery(sortVideoQuery(query, 'name', true))}>视频{query.sort === 'name' ? query.order === 'desc' ? ' ↓' : ' ↑' : ''}</button>
                   {resizeHandle(0)}
                 </th>
                 <th className="relative border-r border-line px-2 py-2 font-semibold">状态{resizeHandle(1)}</th>
-                <th className="relative border-r border-line px-2 py-2 font-semibold" aria-sort={query.sort === 'duration' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
-                  <button onClick={() => onSetQuery(sortVideoQuery(query, 'duration', true))}>时长{query.sort === 'duration' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
+                <th className="relative border-r border-line p-0 font-semibold" aria-sort={query.sort === 'duration' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                  <button className="block w-full px-2 py-2 text-left" onClick={() => onSetQuery(sortVideoQuery(query, 'duration', true))}>时长{query.sort === 'duration' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
                   {resizeHandle(2)}
                 </th>
-                <th className="relative px-2 py-2 font-semibold" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
-                  <button onClick={() => onSetQuery(sortVideoQuery(query, 'size', true))}>大小{query.sort === 'size' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
+                <th className="relative p-0 font-semibold" aria-sort={query.sort === 'size' ? query.order === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                  <button className="block w-full px-2 py-2 text-left" onClick={() => onSetQuery(sortVideoQuery(query, 'size', true))}>大小{query.sort === 'size' ? query.order === 'asc' ? ' ↑' : ' ↓' : ''}</button>
                   {resizeHandle(3)}
                 </th>
                 <th className="sticky right-0 border-l border-line bg-surface-1 px-2 py-2 text-left font-semibold">操作</th>
