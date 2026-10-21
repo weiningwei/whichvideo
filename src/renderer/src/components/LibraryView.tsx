@@ -70,6 +70,7 @@ export function LibraryView(props: Props) {
   const [drawer, setDrawer] = useState<'folders' | 'settings' | null>(null)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
+  const [selectedFolderPath, setSelectedFolderPath] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   /** 实际挂进 DOM 的行数：几千行的表格一次挂全会同时发几千个缩略图请求 */
   const [renderLimit, setRenderLimit] = useState(ROW_CHUNK)
@@ -107,9 +108,9 @@ export function LibraryView(props: Props) {
   useEffect(() => { props.setSelectionOrder(shownVideos.map((video) => video.id)) }, [props.setSelectionOrder, shownVideos])
   const toggleFolder = (path: string) => {
     const key = explorerPathKey(path)
-    const wasOpen = filtering ? !closedFilteredPaths.has(key) : expandedPaths.has(key)
     setOpenMenuId(null)
-    if (wasOpen) clearSelection()
+    setSelectedFolderPath(key)
+    clearSelection()
     const setter = filtering ? setClosedFilteredPaths : setExpandedPaths
     setter((current) => {
       const next = new Set(current)
@@ -120,6 +121,7 @@ export function LibraryView(props: Props) {
   }
   useEffect(() => { setClosedFilteredPaths(new Set()) }, [query.keyword, query.status])
   useEffect(() => { clearSelection() }, [query.keyword, query.status, clearSelection])
+  useEffect(() => { setSelectedFolderPath(null) }, [treeVisible, query.keyword, query.status, query.folderId])
   useEffect(() => { setOpenMenuId(null) }, [treeVisible, query.keyword, query.status, query.sort])
   useEffect(() => {
     if (openMenuId !== null && !selectedVideoIds.has(openMenuId)) setOpenMenuId(null)
@@ -180,7 +182,14 @@ export function LibraryView(props: Props) {
   const {
     navigableItems, focusedIndex, focusedVideoId,
     moveCursor, jumpCursor, toggleFocusedSelection, handleRowClick, scrollRef
-  } = useVideoCursor({ videos: shownVideos, toggleVideoSelection, scrollSignal: renderLimit })
+  } = useVideoCursor({
+    videos: shownVideos,
+    toggleVideoSelection: (videoId, shiftKey, ctrlKey) => {
+      setSelectedFolderPath(null)
+      toggleVideoSelection(videoId, shiftKey, ctrlKey)
+    },
+    scrollSignal: renderLimit
+  })
 
   // 键盘光标可以走到还没挂载的行（导航在原表上算），这时把那段补挂上，
   // 否则滚进可视区的查询找不到对应 DOM。（必须放在 useVideoCursor 之后：
@@ -207,8 +216,12 @@ export function LibraryView(props: Props) {
     const next = entries[nextIndex]
     next?.focus()
     const videoId = next?.dataset.videoId
-    if (videoId) handleRowClick(Number(videoId), event.shiftKey, event.ctrlKey || event.metaKey)
-    else clearSelection()
+    if (videoId) {
+      handleRowClick(Number(videoId), event.shiftKey, event.ctrlKey || event.metaKey)
+    } else {
+      setSelectedFolderPath(next?.dataset.folderPath ? explorerPathKey(next.dataset.folderPath) : null)
+      clearSelection()
+    }
     setOpenMenuId(null)
   }
 
@@ -282,11 +295,13 @@ export function LibraryView(props: Props) {
             </thead>
             <tbody>
               {mountedRows.map((row) => row.type === 'folder' ? (
-                <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path}>
-                  <td colSpan={4} className="border-b border-line/50 bg-surface-1 p-0">
+                <tr key={`folder:${row.node.path}`} className="group" data-folder-path={row.node.path} aria-selected={selectedFolderPath === explorerPathKey(row.node.path)}>
+                  <td colSpan={4} className={`relative border-b border-line/50 p-0 ${selectedFolderPath === explorerPathKey(row.node.path) ? 'bg-row-selected' : 'bg-surface-1'}`}>
+                    {selectedFolderPath === explorerPathKey(row.node.path) && <span className="absolute inset-y-0 left-0 w-[2px] bg-accent" />}
                     <button
                       data-library-entry
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-row-hover focus-visible:outline-accent"
+                      data-folder-path={row.node.path}
+                      className={`flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-accent ${selectedFolderPath === explorerPathKey(row.node.path) ? '' : 'hover:bg-row-hover'}`}
                       style={{ paddingLeft: `${16 + row.depth * 22}px` }}
                       onClick={() => toggleFolder(row.node.path)}
                       onKeyDown={(event) => {
@@ -307,13 +322,13 @@ export function LibraryView(props: Props) {
                       <span className="w-3 text-[11px] text-tertiary">{(filtering ? !closedFilteredPaths.has(explorerPathKey(row.node.path)) : expandedPaths.has(explorerPathKey(row.node.path))) ? '⌄' : '›'}</span>
                       <FolderIcon />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12.5px] font-medium text-primary" title={row.node.path}>{row.node.name}</span>
+                        <span className={`block truncate text-[12.5px] font-medium ${selectedFolderPath === explorerPathKey(row.node.path) ? 'text-accent' : 'text-primary'}`} title={row.node.path}>{row.node.name}</span>
                         {row.depth === 0 && <span className="block truncate text-[10.5px] text-tertiary" title={row.node.path}>{row.node.path}</span>}
                       </span>
                       <span className="shrink-0 text-[11px] tabular-nums text-tertiary">{row.node.count} 个视频</span>
                     </button>
                   </td>
-                  <td className="sticky right-0 border-b border-line/50 bg-surface-1 px-3 text-right text-[10.5px] text-tertiary">
+                  <td className={`sticky right-0 border-b border-line/50 px-3 text-right text-[10.5px] text-tertiary ${selectedFolderPath === explorerPathKey(row.node.path) ? 'bg-row-selected' : 'bg-surface-1'}`}>
                     {row.node.folder && !row.node.folder.pinned
                       ? '一次性导入'
                       : row.node.folder
@@ -336,7 +351,7 @@ export function LibraryView(props: Props) {
                   depth={row.depth}
                   showLocation={!treeVisible || row.depth === 0}
                   roots={roots}
-                  focused={focusedVideoId === row.video.id}
+                  focused={selectedFolderPath === null && focusedVideoId === row.video.id}
                   onOpen={(id) => { handleRowClick(id, false, false); props.onOpen(id) }}
                   onReveal={(id) => { handleRowClick(id, false, false); props.onReveal(id) }}
                   onRemove={props.onRemoveVideo}
