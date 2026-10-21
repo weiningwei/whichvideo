@@ -118,6 +118,18 @@ export function useLibrary() {
           return result
         })
       },
+      async importDroppedPaths(paths: string[], watchFolders: boolean): Promise<ImportResult | null> {
+        if (paths.length === 0) return null
+        return withBusy(watchFolders ? '正在添加监视目录…' : '正在导入拖入的内容…', async () => {
+          const result = await window.whichvideo.videos.importPaths(paths, watchFolders)
+          notices.pushNotice(
+            result.failed ? 'error' : 'info',
+            `拖入处理完成：目录 ${result.folders}，新增视频 ${result.added}，已存在 ${result.duplicates}，失败 ${result.failed}${result.failed === 1 && result.firstError ? `（${result.firstError}）` : ''}`
+          )
+          await refreshAll()
+          return result
+        })
+      },
       async importFolderOnce(): Promise<ImportResult | null> {
         return withBusy('正在一次性导入文件夹…', async () => {
           const result = await window.whichvideo.videos.importFolderOnce()

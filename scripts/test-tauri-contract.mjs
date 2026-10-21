@@ -128,7 +128,7 @@ check(
     !commandsSource.includes('System.Windows.Forms.OpenFileDialog') &&
     !commandsSource.includes('System.Windows.Forms.FolderBrowserDialog')
 )
-const importFilesCommand = commandsSource.match(/pub (?:async )?fn videos_import\([\s\S]*?\n}\n\n\/\/\/ 递归导入/)?.[0] ?? ''
+const importFilesCommand = commandsSource.match(/fn import_videos_sync\([\s\S]*?\n}/)?.[0] ?? ''
 const importFolderOnce = indexerSource.match(/pub fn import_folder_once\([\s\S]*?\n}/)?.[0] ?? ''
 const reindexCommand = indexerSource.match(/pub fn reindex\([\s\S]*?\n}\n\n\/\/\/ 启动恢复/)?.[0] ?? ''
 const foldersAddPathCommand = commandsSource.match(/pub (?:async )?fn folders_add_path\([\s\S]*?\n}\n\n\/\/\/ 通过系统文件夹/)?.[0] ?? ''

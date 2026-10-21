@@ -105,7 +105,7 @@ export default function App() {
               onSetQuery={actions.setVideoQuery}
               onAddFolder={() => void actions.watchFolder()}
               onImportFolder={() => void actions.importFolderOnce()}
-              onAddFolderPath={(p) => void actions.addFolderPath(p)}
+              onDropPaths={(paths, watchFolders) => void actions.importDroppedPaths(paths, watchFolders)}
               onImportFiles={() => {
                 void actions.importFiles()
                 setTab('library')

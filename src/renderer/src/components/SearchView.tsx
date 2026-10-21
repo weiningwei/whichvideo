@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { SearchMatch, SearchResponse, VideoRecord } from '@shared/types'
 import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel } from '../lib/format'
 
@@ -40,8 +41,11 @@ export function SearchView(props: Props) {
   } = props
 
   const [dragging, setDragging] = useState(false)
+  const [dropError, setDropError] = useState<string | null>(null)
   const dragDepth = useRef(0)
+  const nativeDropAt = useRef(0)
   const [urlInput, setUrlInput] = useState('')
+  useEffect(() => { if (searching) setDropError(null) }, [searching])
 
   /**
    * 提交链接检索。
@@ -89,13 +93,40 @@ export function SearchView(props: Props) {
     return () => window.removeEventListener('paste', onPaste)
   }, [onSearchDataUrl])
 
+  // 桌面文件管理器拖入的本地路径由 Tauri 原生事件提供，网页 File.path 不可靠。
+  useEffect(() => {
+    let active = true
+    let unlisten: (() => void) | undefined
+    void getCurrentWindow().onDragDropEvent((event) => {
+      if (!active) return
+      if (event.payload.type === 'enter' || event.payload.type === 'over') {
+        setDragging(true)
+      } else if (event.payload.type === 'leave') {
+        setDragging(false)
+      } else {
+        nativeDropAt.current = Date.now()
+        dragDepth.current = 0
+        setDragging(false)
+        const path = event.payload.paths.find((candidate) => IMAGE_EXT.test(candidate))
+        if (path) { setDropError(null); onSearchPath(path) }
+        else setDropError('请拖入本地图片文件（JPG、PNG、WebP、BMP、GIF 或 AVIF）')
+      }
+    }).then((stop) => {
+      if (active) unlisten = stop
+      else stop()
+    }).catch(() => { if (active) setDragging(false) })
+    return () => { active = false; unlisten?.() }
+  }, [onSearchPath])
+
   const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault()
     dragDepth.current = 0
     setDragging(false)
+    if (Date.now() - nativeDropAt.current < 500) return
     const files = Array.from(event.dataTransfer.files ?? [])
     const image = files.find((f) => f.type.startsWith('image/') || IMAGE_EXT.test(f.name))
-    if (!image) return
+    if (!image) { setDropError('请拖入本地图片文件'); return }
+    setDropError(null)
     const path = (image as File & { path?: string }).path
     if (path) {
       onSearchPath(path)
@@ -214,9 +245,9 @@ export function SearchView(props: Props) {
 
         </div>
 
-        {error && (
+        {(error || dropError) && (
           <div className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-2.5 text-[12.5px] text-bad">
-            {error}
+            {dropError ?? error}
           </div>
         )}
 

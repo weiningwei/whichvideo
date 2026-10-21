@@ -653,6 +653,69 @@ pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, Strin
         .map_err(|e| e.to_string())?
 }
 
+/// 拖放的真实本地路径可混合文件与目录；目录默认只扫描一次，管理抽屉可明确选择持续监视。
+#[tauri::command]
+pub async fn videos_import_paths(
+    app: AppHandle,
+    paths: Vec<String>,
+    watch_folders: bool,
+) -> Result<events::ImportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || import_paths_sync(&app, paths, watch_folders))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn import_paths_sync(app: &AppHandle, paths: Vec<String>, watch_folders: bool) -> Result<events::ImportResult, String> {
+    let mut result = events::ImportResult::default();
+    let mut files = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut watching_added = false;
+    for path in paths {
+        let path = db::normalize_path(&path);
+        if !seen.insert(db::path_key(&path)) { continue; }
+        let entry = std::path::Path::new(&path);
+        if entry.is_file() {
+            files.push(path);
+        } else if entry.is_dir() {
+            let imported = if watch_folders {
+                indexer::import_folder(app.clone(), path, true, true).map(|(result, _)| result)
+            } else {
+                indexer::import_folder_once(app.clone(), path, true)
+            };
+            match imported {
+                Ok(imported) => {
+                    result.added += imported.added;
+                    result.duplicates += imported.duplicates;
+                    result.skipped += imported.skipped;
+                    result.failed += imported.failed;
+                    result.scanned += imported.scanned;
+                    result.folders += imported.folders.max(1);
+                    if result.first_error.is_none() { result.first_error = imported.first_error; }
+                    watching_added |= watch_folders;
+                }
+                Err(error) => {
+                    result.failed += 1;
+                    if result.first_error.is_none() { result.first_error = Some(error); }
+                }
+            }
+        } else {
+            result.failed += 1;
+            if result.first_error.is_none() { result.first_error = Some("拖入的文件或文件夹不存在或无法读取".to_string()); }
+        }
+    }
+    if !files.is_empty() {
+        let imported = indexer::import_files(app.clone(), files, None);
+        result.added += imported.added;
+        result.duplicates += imported.duplicates;
+        result.skipped += imported.skipped;
+        result.failed += imported.failed;
+        result.scanned += imported.scanned;
+        if result.first_error.is_none() { result.first_error = imported.first_error; }
+    }
+    if watching_added { watcher::sync_all(app)?; }
+    Ok(result)
+}
+
 /// 原生对话框与逐文件探测/哈希都是阻塞调用，不能在异步运行时线程上直接跑。
 fn import_videos_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
     let files = native_files_dialog(

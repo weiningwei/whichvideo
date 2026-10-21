@@ -409,6 +409,8 @@ export interface WhichVideoApi {
     ): Promise<{ count: number }>
     findDuplicates(minScore?: number): Promise<DuplicatePair[]>
     importFiles(): Promise<ImportResult>
+    /** 拖放本地文件或目录；目录可选择一次性导入或持续监视。 */
+    importPaths(paths: string[], watchFolders: boolean): Promise<ImportResult>
     /** 递归导入一个文件夹，但不登记为监听目录。 */
     importFolderOnce(): Promise<ImportResult>
     importImages(): Promise<string[]>
@@ -467,6 +469,7 @@ export const IPC = {
   videosReindex: 'videos_reindex',
   videosFindDuplicates: 'videos_find_duplicates',
   videosImport: 'videos_import',
+  videosImportPaths: 'videos_import_paths',
   videosImportFolderOnce: 'videos_import_folder_once',
   videosImportImages: 'videos_import_images',
   videosOpen: 'videos_open',

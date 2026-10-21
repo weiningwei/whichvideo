@@ -21,7 +21,7 @@ interface Props {
   query: VideoQuery
   onSetQuery: (query: VideoQuery) => void
   onAddFolder: () => void
-  onAddFolderPath: (dirPath: string) => void
+  onDropPaths: (paths: string[], watchFolders: boolean) => void
   /** 一次性递归导入目录，不建立监听。 */
   onImportFolder: () => void
   /** 快捷键 I：导入视频文件（与顶栏「+ 导入视频」同一个动作） */
@@ -84,6 +84,7 @@ export function LibraryView(props: Props) {
   } = props
 
   const [folderDrop, setFolderDrop] = useState(false)
+  const [libraryDrop, setLibraryDrop] = useState(false)
   const [drawer, setDrawer] = useState<'folders' | 'settings' | null>(null)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
@@ -233,35 +234,37 @@ export function LibraryView(props: Props) {
     if (openMenuId !== null && !selectedVideoIds.has(openMenuId)) setOpenMenuId(null)
   }, [selectedVideoIds, openMenuId])
   useEffect(() => { setOpenMenuId(null) }, [drawer, duplicates, framesVideo])
-  // 浏览器 DataTransfer 不保证暴露本地绝对路径，且旧实现把所有 / 强转成 \\，
-  // 会让 macOS/Linux 拖入目录失效。Tauri 原生事件提供真实路径，文件路径也不会
-  // 被悄悄截成父目录（后端会明确拒绝非目录）。
+  // 本地文件/目录须用 Tauri 原生路径，浏览器 DataTransfer 不保证提供绝对路径。
+  // 管理文件夹抽屉里的目录持续监视；库主区域里的目录只扫描一次。
   useEffect(() => {
-    if (drawer !== 'folders') return
     let active = true
     let unlisten: (() => void) | undefined
     void getCurrentWindow().onDragDropEvent((event) => {
       if (!active) return
       if (event.payload.type === 'enter' || event.payload.type === 'over') {
-        setFolderDrop(true)
+        setFolderDrop(drawer === 'folders')
+        setLibraryDrop(drawer === null)
       } else if (event.payload.type === 'leave') {
         setFolderDrop(false)
+        setLibraryDrop(false)
       } else {
         setFolderDrop(false)
-        const [path] = event.payload.paths
-        if (path) props.onAddFolderPath(path)
+        setLibraryDrop(false)
+        if (drawer !== 'settings' && event.payload.paths.length) {
+          props.onDropPaths(event.payload.paths, drawer === 'folders')
+        }
       }
     }).then((stop) => {
       if (active) unlisten = stop
       else stop()
     }).catch(() => {
-      if (active) setFolderDrop(false)
+      if (active) { setFolderDrop(false); setLibraryDrop(false) }
     })
     return () => {
       active = false
       unlisten?.()
     }
-  }, [drawer, props.onAddFolderPath])
+  }, [drawer, props.onDropPaths])
   useEffect(() => {
     if (openMenuId === null) return
     const dismiss = (event: PointerEvent) => {
@@ -347,6 +350,7 @@ export function LibraryView(props: Props) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
+      {libraryDrop && <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-accent bg-surface-1/95 text-[14px] font-medium text-accent">松开导入视频或文件夹 · 文件夹仅扫描一次</div>}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar
           query={query}
