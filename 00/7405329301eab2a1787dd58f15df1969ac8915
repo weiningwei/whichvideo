@@ -1,0 +1,23 @@
+src/renderer/src/components/VideoRow.tsx
+  s_10a8a0b511d2bf::t_3a6eaff7cb52c1 9-10,25,28,106-110,143-148
+src/renderer/src/hooks/useVideoCursor.ts
+  s_10a8a0b511d2bf::t_78c1bdbfab15b8 136-141,191
+src/renderer/src/components/LibraryView.tsx
+  s_10a8a0b511d2bf::t_f83b9abc760d16 101,290,476-482,485,490
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "007405329301eab2a1787dd58f15df1969ac8915",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
