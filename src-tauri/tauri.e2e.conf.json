@@ -1,0 +1,13 @@
+{
+  "identifier": "com.weiningwei.whichvideo.e2e",
+  "productName": "WhichVideo E2E",
+  "build": {
+    "beforeBuildCommand": "pnpm exec vite build --mode e2e"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": ["default", "e2e"]
+    }
+  }
+}

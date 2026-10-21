@@ -30,6 +30,7 @@
     "test:cursor": "node scripts/test-cursor.mjs",
     "test:range": "node scripts/test-range-select.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
+    "test:e2e": "node scripts/e2e/run.mjs",
     "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "test:events": "node scripts/test-video-events.mjs"
   },
@@ -37,16 +38,23 @@
     "@tauri-apps/api": "^2.5.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.5.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2.5.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
+    "@wdio/cli": "^9.31.2",
+    "@wdio/local-runner": "^9.31.2",
+    "@wdio/mocha-framework": "^9.31.2",
+    "@wdio/spec-reporter": "^9.31.2",
+    "@wdio/tauri-plugin": "^1.5.0",
+    "@wdio/tauri-service": "^1.5.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "webdriverio": "9.31.9"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "identifier": "e2e",
+  "description": "Desktop automation permissions for the dedicated test build",
+  "windows": ["main"],
+  "permissions": ["wdio:default", "wdio-webdriver:default"]
+}

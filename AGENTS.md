@@ -14,6 +14,7 @@
 pnpm dev              # Tauri 开发模式（Vite 热更新）
 pnpm typecheck        # 渲染端 TypeScript 类型检查
 pnpm test             # Rust、桥接契约、便携构建和 UI 回归门禁
+pnpm test:e2e         # 真实桌面用例：FFmpeg 导入、索引、搜图与重启恢复（Linux CI 用 xvfb-run）
 pnpm build            # 类型检查 + 图标 + release exe（不生成安装包）
 pnpm build:portable   # 轻量 release exe → dist/WhichVideo-portable（不内置 FFmpeg）
 pnpm build:win        # Tauri NSIS 安装包

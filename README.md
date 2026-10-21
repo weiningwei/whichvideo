@@ -406,11 +406,14 @@ pnpm icon                # 重新生成应用图标
 与单独运行方式见 [AGENTS.md](AGENTS.md)。打包与运行遇到怪问题（双击没反应、
 EPERM、Rust/NSIS 工具下载）见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
+`pnpm test:e2e` 另行启动真实桌面程序，用隔离数据目录和 FFmpeg 样本验收导入、索引、搜图及重启恢复；Windows、macOS 和 Linux CI 均运行该命令。运行条件与覆盖边界见 [docs/real-use-case-tests.md](docs/real-use-case-tests.md)。
+
 更多文档：
 
 - [docs/how-search-works.md](docs/how-search-works.md) —— 检索原理、算法来源与实测数据
 - [docs/troubleshooting.md](docs/troubleshooting.md) —— 打包与运行排障
 - [docs/releasing.md](docs/releasing.md) —— 多平台发行流程与验收清单
+- [docs/real-use-case-tests.md](docs/real-use-case-tests.md) —— 真实桌面用例看护
 - [AGENTS.md](AGENTS.md) —— 架构约束与自检清单
 
 ---

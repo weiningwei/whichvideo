@@ -22,7 +22,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils ffmpeg xvfb webkit2gtk-driver
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -34,7 +34,47 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       # test:rust 刻意使用 --offline；新 runner 必须先填充 Cargo 缓存。
       - run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
       - run: pnpm test
+      - name: Ensure FFmpeg for desktop use cases
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --no-progress -y
+          }
+          $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+          if (-not $ffmpeg) {
+            $ffmpeg = (Get-ChildItem 'C:\ProgramData\chocolatey\lib\ffmpeg' -Recurse -Filter ffmpeg.exe -File | Select-Object -First 1).FullName
+          }
+          $ffprobe = (Get-Command ffprobe -ErrorAction SilentlyContinue).Source
+          if (-not $ffprobe) { $ffprobe = Join-Path (Split-Path $ffmpeg) 'ffprobe.exe' }
+          if (-not (Test-Path $ffmpeg) -or -not (Test-Path $ffprobe)) { throw 'FFmpeg/ffprobe not found' }
+          "WHICHVIDEO_FFMPEG=$ffmpeg" >> $env:GITHUB_ENV
+          "WHICHVIDEO_FFPROBE=$ffprobe" >> $env:GITHUB_ENV
+          & $ffmpeg -version | Select-Object -First 1
+      - name: Ensure FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+      - name: Exercise real desktop use cases
+        if: runner.os != 'Linux'
+        run: pnpm test:e2e
+      - name: Exercise real desktop use cases on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:e2e
+      - name: Upload desktop use-case evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-evidence-${{ matrix.os }}
+          path: |
+            tmp/e2e/run-*/data/logs/**
+            tmp/e2e/run-*/screenshots/**
+            tmp/e2e/run-*/paths.json
+          if-no-files-found: ignore
