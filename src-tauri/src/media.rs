@@ -989,7 +989,7 @@ fn extract_frames_seek(
         parts.push(format!("[{}:v]trim=end_frame=1,scale=w={}:h=-2:flags=fast_bilinear[s{}]", i, w, i));
         labels.push(format!("[s{}]", i));
     }
-    parts.push(format!("{}concat=n={}:v=1:a=0[out]", labels.join(""), count));
+    parts.push(format!("{}concat=n={}:v=1:a=0,showinfo[out]", labels.join(""), count));
     let filter = parts.join(";");
 
     let mut args: Vec<String> = vec![
@@ -1019,12 +1019,12 @@ fn extract_frames_seek(
 
     let mut out = run_ffmpeg_with_progress(&args, progress.clone())?;
     // 旧 ffmpeg 回退：去掉 -fps_mode，concat 后接 setpts 重排成单调帧号网格。
-    if !out.success {
+    if !out.success && unsupported_fps_mode(&out.stderr) {
         let mut retry = args[..args.iter().position(|a| a == "-filter_complex").unwrap()].to_vec();
         let mut fb = parts.clone();
         let last = fb.len() - 1;
         fb[last] = format!(
-            "{}concat=n={}:v=1:a=0,setpts=N/FRAME_RATE/TB[out]",
+            "{}concat=n={}:v=1:a=0,setpts=N/FRAME_RATE/TB,showinfo[out]",
             labels.join(""),
             count
         );
@@ -1042,25 +1042,11 @@ fn extract_frames_seek(
         retry.push("pipe:1".to_string());
         out = run_ffmpeg_with_progress(&retry, progress)?;
     }
-    if out.stdout.is_empty() {
+    if !out.success {
         return Err(format!("抽帧失败：{}", out.stderr.trim()));
     }
-
-    let row_bytes = (w as usize) * 3;
-    if out.stdout.len() % count != 0 {
-        return Err(format!(
-            "抽帧失败：收到 {} 字节，无法均分为 {} 帧",
-            out.stdout.len(),
-            count
-        ));
-    }
-    let frame_size = out.stdout.len() / count;
-    if frame_size == 0 || !frame_size.is_multiple_of(row_bytes) {
-        return Err(format!(
-            "抽帧失败：单帧 {frame_size} 字节不是 {w} 宽 RGB24 的整数倍"
-        ));
-    }
-    let height = frame_size / row_bytes;
+    // showinfo 只用于校验尺寸和帧数；seek 帧时间仍来自计划，不能使用 concat 的 PTS。
+    let (frame_size, height) = validate_seek_output(out.stdout.len(), &out.stderr, count, w)?;
 
     let pixels = Arc::new(out.stdout);
     let mut frames = Vec::with_capacity(count);
@@ -1074,6 +1060,24 @@ fn extract_frames_seek(
         });
     }
     Ok(frames)
+}
+
+fn unsupported_fps_mode(stderr: &str) -> bool {
+    stderr.contains("Unrecognized option 'fps_mode'")
+        || stderr.contains("Option fps_mode not found")
+}
+
+fn validate_seek_output(bytes: usize, stderr: &str, count: usize, width: u32) -> Result<(usize, u32), String> {
+    let (times, actual_width, height) = parse_showinfo(stderr);
+    let frame_size = (actual_width as usize).checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(3))
+        .ok_or_else(|| "抽帧尺寸溢出".to_string())?;
+    if count == 0 || actual_width != width || height == 0 || times.len() != count
+        || frame_size.checked_mul(count) != Some(bytes)
+    {
+        return Err(format!("抽帧不完整：计划 {count} 帧，实际 {} 帧，尺寸 {actual_width}x{height}，收到 {bytes} 字节", times.len()));
+    }
+    Ok((frame_size, height))
 }
 
 /**
@@ -1292,6 +1296,37 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 mod tests {
     use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
     use std::sync::Arc;
+
+    #[test]
+    fn seek_extraction_validates_real_ffmpeg_output() {
+        if resolve_tools().is_none() { return; }
+        let path = std::env::temp_dir().join(format!("whichvideo-seek-{}.nut", std::process::id()));
+        let args = ["-v", "error", "-f", "lavfi", "-i",
+            "testsrc2=size=64x36:rate=10:duration=1", "-c:v", "rawvideo", "-y",
+            path.to_str().unwrap()].map(str::to_string);
+        let generated = super::run_ffmpeg_with_progress(&args, None).unwrap();
+        assert!(generated.success, "{}", generated.stderr);
+        let frames = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 0.5], 64, None).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!((frames[0].width, frames[0].height), (64, 36));
+        assert_eq!(frames[1].time, 0.5);
+        let missing = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 2.0], 64, None);
+        let _ = fs::remove_file(path);
+        assert!(missing.is_err());
+    }
+
+    #[test]
+    fn seek_output_rejects_missing_or_truncated_frames() {
+        let one = "[Parsed_showinfo_2 @ x] n:0 pts_time:0 s:320x180\n";
+        let two = format!("{one}{one}");
+        assert_eq!(super::validate_seek_output(320 * 180 * 3 * 2, &two, 2, 320).unwrap(), (320 * 180 * 3, 180));
+        // 曾被误拆成两张 320x90 的图。
+        assert!(super::validate_seek_output(320 * 180 * 3, one, 2, 320).is_err());
+        assert!(super::validate_seek_output(320 * 180 * 3, &two, 2, 320).is_err());
+        assert!(super::validate_seek_output(320 * 180 * 3 * 2, "", 2, 320).is_err());
+        assert!(super::unsupported_fps_mode("Unrecognized option 'fps_mode'."));
+        assert!(!super::unsupported_fps_mode("Error while decoding stream"));
+    }
 
     #[test]
     fn frame_pixels_share_output_without_mixing_adjacent_frames() {
