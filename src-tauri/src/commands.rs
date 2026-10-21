@@ -1044,20 +1044,9 @@ fn fail_response(code: &str, message: &str) -> SearchResponse {
     }
 }
 
-/// 把一张已解码的图归一化到 EXTRACT_WIDTH 宽、偶数高（与索引帧路径完全对称），
-/// 返回 RGB24 像素缓冲。查询图若保留原尺寸（尤其小图），toGray 盒式重采样与
-/// 直方图抽样都会和索引侧错开；放大到 320 不引入新信息，但让双方走完全相同的重采样路径。
-fn prepare_query_image(img: image::DynamicImage) -> Option<(Vec<u8>, u32, u32)> {
-    let (w, h) = (img.width(), img.height());
-    if w == 0 || h == 0 {
-        return None;
-    }
-    let tw = crate::constants::EXTRACT_WIDTH;
-    let th = ((2.0 * (h as f64 * tw as f64 / (2.0 * w as f64)).round()) as u32).max(2);
-    let resized = img.resize_exact(tw, th, image::imageops::FilterType::Triangle);
-    let rgb = resized.to_rgb8();
-    let (rw, rh) = (rgb.width(), rgb.height());
-    Some((rgb.into_raw(), rw, rh))
+/// 查询图与视频帧使用同一 FFmpeg RGB24 转换和缩放滤镜。
+fn prepare_query_image(img: image::DynamicImage) -> Result<(Vec<u8>, u32, u32), String> {
+    media::prepare_query_pixels(img)
 }
 
 /// 由归一化后的 RGB24 缓冲计算查询向量。
@@ -1323,8 +1312,8 @@ fn search_path_sync(app: &AppHandle, file_path: String) -> Result<SearchResponse
     };
     let (source_width, source_height) = (img.width(), img.height());
     let (buf, w, h) = match prepare_query_image(img) {
-        Some(v) => v,
-        None => return Ok(fail_response("decode-failed", "图片无法转成位图")),
+        Ok(v) => v,
+        Err(e) => return Ok(fail_response("decode-failed", &e)),
     };
     let qv = build_query_vector(&buf, w, h);
     let ild = hash::ImageDataLike {
@@ -1363,8 +1352,8 @@ fn search_data_url_sync(app: &AppHandle, data_url: String) -> Result<SearchRespo
     };
     let (source_width, source_height) = (img.width(), img.height());
     let (buf, w, h) = match prepare_query_image(img) {
-        Some(v) => v,
-        None => return Ok(fail_response("decode-failed", "图片无法转成位图")),
+        Ok(v) => v,
+        Err(e) => return Ok(fail_response("decode-failed", &e)),
     };
     let qv = build_query_vector(&buf, w, h);
     let ild = hash::ImageDataLike {
@@ -1410,10 +1399,10 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
     };
     let (source_width, source_height) = (img.width(), img.height());
     let (buf, w, h) = match prepare_query_image(img) {
-        Some(v) => v,
-        None => return Ok(Some(ClipboardSearchResult {
+        Ok(v) => v,
+        Err(e) => return Ok(Some(ClipboardSearchResult {
             data_url,
-            response: fail_response("decode-failed", "剪贴板图片无法转成位图"),
+            response: fail_response("decode-failed", &e),
         })),
     };
     let qv = build_query_vector(&buf, w, h);
@@ -1462,8 +1451,8 @@ fn search_url_sync(app: &AppHandle, url: String) -> Result<SearchResponse, Strin
     };
     let (source_width, source_height) = (img.width(), img.height());
     let (buf, w, h) = match prepare_query_image(img) {
-        Some(v) => v,
-        None => return Ok(fail_response("decode-failed", "下载的图片无法转成位图")),
+        Ok(v) => v,
+        Err(e) => return Ok(fail_response("decode-failed", &e)),
     };
     let qv = build_query_vector(&buf, w, h);
     let ild = hash::ImageDataLike {
@@ -1605,6 +1594,7 @@ mod tests {
 
     #[test]
     fn query_image_is_resized_to_exact_ffmpeg_dimensions() {
+        if media::resolve_tools().is_none() { return; }
         let image = image::DynamicImage::new_rgb8(1000, 333);
         let (pixels, width, height) = prepare_query_image(image).unwrap();
         assert_eq!((width, height), (crate::constants::EXTRACT_WIDTH, 106));

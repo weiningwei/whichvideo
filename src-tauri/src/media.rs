@@ -654,13 +654,20 @@ fn run_media_command_with_progress(
     timeout: Duration,
     progress: Option<FrameProgressCallback>,
 ) -> Result<FfmpegOutput, String> {
+    run_media_command_with_input(executable, args, label, timeout, progress, None)
+}
+
+fn run_media_command_with_input(
+    executable: &str, args: &[String], label: &str, timeout: Duration,
+    progress: Option<FrameProgressCallback>, input: Option<Vec<u8>>,
+) -> Result<FfmpegOutput, String> {
     // 本地媒体（尤其 HLS 清单）可能引用远程资源；探测、抽帧和预览只允许本地协议。
     let safe_args = local_only_media_args(args, label);
     let mut command = Command::new(executable);
     command
         .no_window()
         .args(&safe_args)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     set_own_process_group(&mut command);
@@ -682,12 +689,17 @@ fn run_media_command_with_progress(
     let stderr_reader = std::thread::spawn(move || {
         read_stderr_with_progress(&mut stderr_pipe, progress)
     });
+    let input_writer = input.map(|bytes| {
+        let mut pipe = child.stdin.take().expect("piped stdin");
+        std::thread::spawn(move || std::io::Write::write_all(&mut pipe, &bytes))
+    });
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if started.elapsed() >= timeout => {
                 terminate_child(&mut child);
+                if let Some(writer) = input_writer { let _ = writer.join(); }
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(format!("{label} 超时（已终止）"));
@@ -695,6 +707,7 @@ fn run_media_command_with_progress(
             Ok(None) => std::thread::sleep(MEDIA_POLL_INTERVAL),
             Err(e) => {
                 terminate_child(&mut child);
+                if let Some(writer) = input_writer { let _ = writer.join(); }
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(format!("等待 {label} 失败：{e}"));
@@ -709,6 +722,12 @@ fn run_media_command_with_progress(
         .join()
         .map_err(|_| format!("读取 {label} 错误输出的线程失败"))?
         .map_err(|e| format!("读取 {label} 错误输出失败：{e}"))?;
+    if let Some(writer) = input_writer {
+        let result = writer.join().map_err(|_| format!("写入 {label} 输入的线程失败"))?;
+        if status.success() {
+            result.map_err(|e| format!("写入 {label} 输入失败：{e}"))?;
+        }
+    }
     Ok(FfmpegOutput {
         success: status.success(),
         stdout,
@@ -960,6 +979,29 @@ fn parse_scene_times(stderr: &str) -> Vec<f64> {
     times
 }
 
+/// 查询图、seek 和全片抽帧共用同一 RGB24 重采样路径。
+fn fingerprint_filter(width: u32) -> String {
+    format!("format=rgb24,scale=w={width}:h=-2:flags=bilinear+accurate_rnd+bitexact,setsar=1")
+}
+
+pub fn prepare_query_pixels(img: image::DynamicImage) -> Result<(Vec<u8>, u32, u32), String> {
+    let (width, height) = (img.width(), img.height());
+    if width == 0 || height == 0 { return Err("图片尺寸为空".to_string()); }
+    let target_width = crate::constants::EXTRACT_WIDTH;
+    let args = vec!["-hide_banner".into(), "-v".into(), "info".into(),
+        "-f".into(), "rawvideo".into(), "-pixel_format".into(), "rgb24".into(),
+        "-video_size".into(), format!("{width}x{height}"), "-i".into(), "pipe:0".into(),
+        "-vf".into(), format!("{},showinfo", fingerprint_filter(target_width)),
+        "-frames:v".into(), "1".into(), "-pix_fmt".into(), "rgb24".into(),
+        "-f".into(), "rawvideo".into(), "pipe:1".into()];
+    let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    let out = run_media_command_with_input(&tools.ffmpeg, &args, "ffmpeg", FFMPEG_TIMEOUT,
+        None, Some(img.to_rgb8().into_raw()))?;
+    if !out.success { return Err(format!("图片预处理失败：{}", out.stderr)); }
+    let (_, target_height) = validate_seek_output(out.stdout.len(), &out.stderr, 1, target_width)?;
+    Ok((out.stdout, target_width, target_height))
+}
+
 /**
  * 抽帧路径 A：逐点 seek。每个时间点一个 `-ss/-i` 输入，各取第一帧后 concat 成单流
  * 输出（帧序由滤镜图拓扑保证，对齐计划时间点）。镜像 scan.ts::extractAndHashBySeek。
@@ -986,7 +1028,7 @@ fn extract_frames_seek(
         inputs.push(format!("{timestamp:.3}"));
         inputs.push("-i".to_string());
         inputs.push(file_path.to_string());
-        parts.push(format!("[{}:v]trim=end_frame=1,scale=w={}:h=-2:flags=fast_bilinear[s{}]", i, w, i));
+        parts.push(format!("[{}:v]trim=end_frame=1,{}[s{}]", i, fingerprint_filter(w), i));
         labels.push(format!("[s{}]", i));
     }
     parts.push(format!("{}concat=n={}:v=1:a=0,showinfo[out]", labels.join(""), count));
@@ -1107,7 +1149,7 @@ fn extract_frames_full_scan(
         "-i".to_string(),
         file_path.to_string(),
         "-vf".to_string(),
-        format!("fps={:.8},scale=w='min({},{})':h=-2,showinfo", rate, width, width),
+        format!("fps={:.8},{},showinfo", rate, fingerprint_filter(width)),
         "-frames:v".to_string(),
         count.to_string(),
         "-pix_fmt".to_string(),
@@ -1296,6 +1338,32 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 mod tests {
     use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
     use std::sync::Arc;
+
+    #[test]
+    fn query_seek_and_full_scan_produce_identical_pixels() {
+        if resolve_tools().is_none() { return; }
+        for (width, height) in [(640, 358), (101, 67), (50, 89)] {
+            let pixels: Vec<u8> = (0..width * height * 3).map(|i| ((i * 37 + i / 13) % 256) as u8).collect();
+            let img = image::DynamicImage::ImageRgb8(image::RgbImage::from_raw(width, height, pixels.clone()).unwrap());
+            let query = super::prepare_query_pixels(img).unwrap();
+            let path = std::env::temp_dir().join(format!("whichvideo-preprocess-{}-{width}.nut", std::process::id()));
+            let args = ["-v", "error", "-f", "rawvideo", "-pixel_format", "rgb24", "-video_size",
+                &format!("{width}x{height}"), "-framerate", "1", "-i", "pipe:0", "-c:v", "rawvideo", "-y",
+                path.to_str().unwrap()].map(str::to_string);
+            let tools = resolve_tools().unwrap();
+            let generated = super::run_media_command_with_input(&tools.ffmpeg, &args, "ffmpeg",
+                Duration::from_secs(10), None, Some(pixels)).unwrap();
+            assert!(generated.success, "{}", generated.stderr);
+            let seek = super::extract_frames_seek(path.to_str().unwrap(), &[0.0], 320, None);
+            let scan = super::extract_frames_full_scan(path.to_str().unwrap(), &[0.0], Some(1.0), 320, None);
+            let _ = fs::remove_file(path);
+            for frames in [seek.unwrap(), scan.unwrap()] {
+                assert_eq!(frames.len(), 1);
+                assert_eq!((frames[0].width, frames[0].height), (query.1, query.2));
+                assert_eq!(&*frames[0].rgb, query.0.as_slice());
+            }
+        }
+    }
 
     #[test]
     fn seek_extraction_validates_real_ffmpeg_output() {
