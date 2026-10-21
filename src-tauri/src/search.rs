@@ -333,26 +333,18 @@ impl FrameSearchIndex {
         if self.words.is_empty() || max_count < 1 {
             return Vec::new();
         }
-        let count = self.video_ids.len();
-        let mut first: Option<usize> = None;
-        let mut last = 0usize;
-        for i in 0..count {
-            if self.video_ids[i] == video_id {
-                if first.is_none() {
-                    first = Some(i);
-                }
-                last = i;
-            }
-        }
-        let first = match first {
-            Some(f) => f,
-            None => return Vec::new(),
-        };
-        let span = last - first + 1;
-        let n = max_count.min(span);
+        let indices: Vec<usize> = self.video_ids.iter().enumerate()
+            .filter_map(|(i, &id)| (id == video_id).then_some(i))
+            .collect();
+        let n = max_count.min(indices.len());
         let mut vecs = Vec::with_capacity(n);
         for k in 0..n {
-            let mid = first + (((k * (span - 1)) as f64 / (n - 1).max(1) as f64).round() as usize);
+            let position = if n == 1 {
+                indices.len() / 2
+            } else {
+                (k as f64 * (indices.len() - 1) as f64 / (n - 1) as f64).round() as usize
+            };
+            let mid = indices[position];
             let off = mid * framepack::FRAME_STRIDE;
             let color = self.buffer[off + framepack::COLOR_OFFSET
                 ..off + framepack::COLOR_OFFSET + framepack::COLOR_BYTES]
@@ -533,6 +525,29 @@ mod tests {
         buffer[off + framepack::META_OFFSET + 4..off + framepack::META_OFFSET + 8]
             .copy_from_slice(&time_ms.to_le_bytes());
         video_ids.push(video_id);
+    }
+
+    #[test]
+    fn representative_vectors_only_sample_the_requested_video() {
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        for (i, id) in [1, 2, 1, 2, 1].into_iter().enumerate() {
+            append_frame(&mut buffer, &mut video_ids, id, i as u32, 0,
+                &[i as u8; framepack::STRUCT_BYTES],
+                &[0; framepack::COLOR_BYTES], &[0; framepack::SPATIAL_BYTES]);
+        }
+        let index = FrameSearchIndex {
+            words: buffer.chunks_exact(4)
+                .map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect(),
+            buffer, video_ids, built_at: 0,
+        };
+        let markers = |limit| index.video_frame_vectors(1, limit).iter()
+            .map(|v| v.struct_hash[0]).collect::<Vec<_>>();
+        assert_eq!(markers(8), vec![0, 2, 4]);
+        assert_eq!(markers(2), vec![0, 4]);
+        assert_eq!(markers(1), vec![2]);
+        assert!(markers(0).is_empty());
+        assert!(index.video_frame_vectors(99, 8).is_empty());
     }
 
     #[test]
