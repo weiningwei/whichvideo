@@ -998,6 +998,10 @@ fn scan_video_files_with(
     }
     let mut out = Vec::new();
     walk(root_path, 0, recursive, &mut out, &mut on_found)?;
+    // 普通视频目录无需做 HLS 片段排除；逐文件 canonicalize 在大目录或网络盘上代价很高。
+    if !out.iter().any(|path| std::path::Path::new(path).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("m3u8"))) {
+        return Ok(out);
+    }
     let referenced = out.iter()
         .filter(|path| path.to_ascii_lowercase().ends_with(".m3u8"))
         .flat_map(|path| playlist_parts(std::path::Path::new(path)))
