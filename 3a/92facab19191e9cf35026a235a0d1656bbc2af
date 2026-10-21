@@ -1,0 +1,21 @@
+src/renderer/src/components/LibraryView.tsx
+  s_10a8a0b511d2bf::t_8ad14b6634c21e 73,112-113,124,185-192,219-221,223-224,298-300,303-304,325,331
+  s_10a8a0b511d2bf::t_e204ef92329652 354
+  s_10a8a0b511d2bf::t_7dad2dcfdebfd2 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a92facab19191e9cf35026a235a0d1656bbc2af",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
