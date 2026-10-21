@@ -117,8 +117,8 @@ export function Toolbar(props: ToolbarProps) {
       </div>
 
       <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-line/60 px-4 py-2">
-            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${treeVisible ? 'border-accent/50 text-accent' : ''}`} onClick={() => !treeVisible && onToggleTree()} aria-pressed={treeVisible}>文件夹</button>
-            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${!treeVisible ? 'border-accent/50 text-accent' : ''}`} onClick={() => treeVisible && onToggleTree()} aria-pressed={!treeVisible}>全部视频</button>
+            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${treeVisible ? 'border-accent/50 bg-row-selected font-medium text-accent' : ''}`} onClick={() => !treeVisible && onToggleTree()} aria-pressed={treeVisible}>文件夹</button>
+            <button className={`btn px-2.5 py-1.5 text-[11.5px] ${!treeVisible ? 'border-accent/50 bg-row-selected font-medium text-accent' : ''}`} onClick={() => treeVisible && onToggleTree()} aria-pressed={!treeVisible}>全部视频</button>
             <div className="relative min-w-[180px] max-w-sm flex-1">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tertiary">⌕</span>
               <input
