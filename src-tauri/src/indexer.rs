@@ -677,8 +677,8 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         finish_ready(app, video_id);
         return;
     }
-    // 全新跑或无法安全续传时清旧帧与进度；全片解码必须从片头一次完成。
-    if start_index == 0 {
+    // 全新跑或无法安全续传时清旧帧与进度；强制重建已在开始时清过一次。
+    if start_index == 0 && !reset_before_run {
         let reset_result = {
             let state = app.state::<AppState>();
             let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
