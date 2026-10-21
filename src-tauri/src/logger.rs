@@ -2,6 +2,7 @@
 
 use crate::constants::MAX_LOG_BYTES;
 use crate::paths;
+use chrono::{DateTime, FixedOffset, Local};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -34,11 +35,11 @@ pub fn init() -> PathBuf {
 }
 
 fn stamped(message: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    format!("[{millis}] {message}")
+    stamped_at(message, Local::now().fixed_offset())
+}
+
+fn stamped_at(message: &str, at: DateTime<FixedOffset>) -> String {
+    format!("[{}] {message}", at.format("%Y-%m-%d %H:%M:%S%.3f %:z"))
 }
 
 pub fn log(message: &str) {
@@ -62,6 +63,15 @@ pub fn install_panic_hook() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_timestamp_is_readable_local_datetime_with_offset() {
+        let at = DateTime::parse_from_rfc3339("2026-10-21T15:51:36.900+08:00").unwrap();
+        assert_eq!(
+            stamped_at("[import] 完成", at),
+            "[2026-10-21 15:51:36.900 +08:00] [import] 完成"
+        );
+    }
 
     #[test]
     fn oversized_log_rotates_once() {

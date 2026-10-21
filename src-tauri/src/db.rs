@@ -233,7 +233,7 @@ fn reconcile_folder_ownership(conn: &Connection) -> SqlResult<()> {
     Ok(())
 }
 
-/// 当前毫秒时间戳（避免引入 chrono 依赖）。
+/// 当前 Unix 毫秒时间戳，用于数据库字段。
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
