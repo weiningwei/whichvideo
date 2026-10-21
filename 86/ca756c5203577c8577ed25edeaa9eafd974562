@@ -1,0 +1,36 @@
+src/renderer/src/components/LibraryView.tsx
+  s_10a8a0b511d2bf::t_621437ade6e32a 648,650
+src-tauri/src/db.rs
+  s_10a8a0b511d2bf::t_f40cc01afdb156 390-403,930-934,981
+  s_10a8a0b511d2bf::t_8af15a3caf88d0 206-235
+  s_10a8a0b511d2bf::t_9ebf3657dfbd8e 955
+  s_10a8a0b511d2bf::t_086968a98f6897 1478
+  s_10a8a0b511d2bf::t_8edf29bc1e83fa 1482-1503
+  s_10a8a0b511d2bf::t_d1762ecd000410 116-123
+  s_10a8a0b511d2bf::t_b2e8998cf917a2 1449-1477,1479-1481
+scripts/ui-smoke.mjs
+  s_10a8a0b511d2bf::t_774e060c1001a7 228-235
+  s_10a8a0b511d2bf::t_b7640b939c948c 254
+scripts/test-tauri-contract.mjs
+  s_10a8a0b511d2bf::t_7e5caad3f764db 182-183,186-187
+src/renderer/src/lib/libraryExplorer.ts
+  s_10a8a0b511d2bf::t_7396c12a7638e4 34,36-38,41,43,48,52,54,57-85
+src-tauri/src/commands.rs
+  s_10a8a0b511d2bf::t_0adc5a404c816d 141,144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86ca756c5203577c8577ed25edeaa9eafd974562",
+  "prompts": {},
+  "sessions": {
+    "s_10a8a0b511d2bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e0a-9ee5-75a2-840a-1a3dea284c67",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "weiningwei <weiningwei09@gmail.com>"
+    }
+  }
+}
