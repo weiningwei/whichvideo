@@ -225,6 +225,14 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const legacyRoots = explorer.buildExplorerTree([], [{ ...video, folderId: null }])
   const directInWatchedDir = explorer.buildExplorerTree([folder], [{ ...video, folderId: null }])
   check('一次性导入保留文件夹，单独导入视频留在顶层', importedRoots.folders.length === 1 && importedRoots.folders[0].folder?.id === 2 && importedRoots.folders[0].count === 1 && legacyRoots.looseVideos[0]?.id === video.id && directInWatchedDir.looseVideos[0]?.id === video.id)
+  const outerFolder = { ...folder, id: 20, path: 'E:\\Media', pathKey: 'e:\\media', name: 'Media' }
+  const innerFolder = { ...folder, id: 21, path: 'E:\\Media\\Series\\A', pathKey: 'e:\\media\\series\\a', name: 'A' }
+  const innerVideo = { ...video, id: 22, path: 'E:\\Media\\Series\\A\\episode.mp4', dir: innerFolder.path, folderId: innerFolder.id }
+  const overlappingTree = explorer.buildExplorerTree([innerFolder, outerFolder], [innerVideo])
+  const outerNode = overlappingTree.folders[0]
+  const intermediate = outerNode?.children[0]
+  const innerNode = intermediate?.children[0]
+  check('后导入多级父目录时合并成一棵树且视频只出现一次', overlappingTree.folders.length === 1 && outerNode?.folder?.id === outerFolder.id && intermediate?.name === 'Series' && innerNode?.folder?.id === innerFolder.id && outerNode?.count === 1 && innerNode?.count === 1 && innerNode?.videos[0]?.id === innerVideo.id)
   const unixFolder = { ...folder, id: 10, path: '/media/Movies', pathKey: '/media/Movies' }
   const unixVideo = { ...video, id: 11, path: '/media/Movies/A/clip.mp4', dir: '/media/Movies/A', folderId: 10 }
   const unixTree = explorer.buildExplorerTree([unixFolder], [unixVideo])
@@ -243,7 +251,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('监视管理和设置改为按需抽屉', toolbarSource.includes("setDrawer") || (toolbarSource.includes('onManageFolders') && toolbarSource.includes('onOpenSettings')))
   check('管理抽屉明确说明添加和拖入都会持续监视', drawerSource.includes('＋ 监视文件夹') && source('LibraryView.tsx').includes('拖入文件夹将自动监视'))
   check('文件夹拖放使用 Tauri 原生绝对路径且不截断文件路径', source('LibraryView.tsx').includes("from '@tauri-apps/api/window'") && source('LibraryView.tsx').includes('onDragDropEvent') && !source('LibraryView.tsx').includes('extractDroppedDir') && !source('LibraryView.tsx').includes("replace(/\\//g, '\\\\')"))
-  check('移除文件夹明确确认且说明不删除磁盘文件', source('LibraryView.tsx').includes('从库中移除') && source('LibraryView.tsx').includes('不会删除磁盘上的文件'))
+  check('移除文件夹明确确认且说明重叠目录保留、磁盘文件不受影响', source('LibraryView.tsx').includes('从库中移除') && source('LibraryView.tsx').includes('未被其他导入目录覆盖的视频') && source('LibraryView.tsx').includes('不会删除磁盘文件'))
   check('抽屉覆盖内容而非永久占宽', drawerSource.includes('absolute inset-0') && drawerSource.includes('if (!mode) return null'))
   check('定位和索引等低频动作放入更多菜单', rowSource.includes('查看索引帧') && rowSource.includes('在资源管理器中显示') && rowSource.includes('按${sampling') && rowSource.includes('从视频库移除'))
   check('索引进度仍区分检测与抽帧', rowSource.includes('检测场景') && rowSource.includes('抽取帧'))

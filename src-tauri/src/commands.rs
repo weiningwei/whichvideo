@@ -138,12 +138,11 @@ fn remove_folder_sync(app: &AppHandle, folder_id: i64) -> Result<(), String> {
     drop(guard);
     folder.ok_or("文件夹不存在")?;
     watcher::stop(app, folder_id)?;
-    let videos = {
+    let ids = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard.as_ref().ok_or("数据库未初始化")?;
-        db::folder_video_paths(conn, folder_id).map_err(|e| e.to_string())?
+        db::detach_folder_videos(conn, folder_id).map_err(|e| e.to_string())?
     };
-    let ids: Vec<i64> = videos.iter().map(|(id, _)| *id).collect();
     indexer::cancel_many(app, &ids);
     let stats = {
         let guard = state.db.lock().map_err(|e| e.to_string())?;

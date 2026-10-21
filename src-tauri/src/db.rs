@@ -113,6 +113,14 @@ pub fn open_db() -> SqlResult<Connection> {
     ] {
         let _ = conn.execute(stmt, []);
     }
+    let reconciled: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM settings WHERE key = 'folder_ownership_v1')",
+        [], |row| row.get(0),
+    )?;
+    if !reconciled {
+        reconcile_folder_ownership(&conn)?;
+        conn.execute("INSERT INTO settings (key, value) VALUES ('folder_ownership_v1', 'done')", [])?;
+    }
     Ok(conn)
 }
 
@@ -193,6 +201,36 @@ pub fn normalize_path(p: &str) -> String {
 pub(crate) fn path_key(p: &str) -> String {
     let normalized = normalize_path(p);
     if cfg!(windows) { normalized.to_lowercase() } else { normalized }
+}
+
+/// 一个视频只归属路径上最具体的已导入目录；路径分隔符防止 Media2 匹配 Media。
+fn closest_folder(conn: &Connection, video_path: &str, excluded_id: Option<i64>) -> SqlResult<Option<i64>> {
+    let key = path_key(video_path);
+    let separator = if cfg!(windows) { "\\" } else { "/" };
+    let mut stmt = conn.prepare(
+        "SELECT id FROM image_folders
+         WHERE (?3 IS NULL OR id != ?3)
+           AND substr(?1, 1, length(path_key)) = path_key
+           AND (substr(path_key, -1) = ?2 OR substr(?1, length(path_key) + 1, 1) = ?2)
+         ORDER BY length(path_key) DESC LIMIT 1",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![key, separator, excluded_id])?;
+    rows.next()?.map(|row| row.get(0)).transpose()
+}
+
+/// 修复旧版本导入父目录时覆盖子目录归属的记录，不改变单独导入的视频。
+fn reconcile_folder_ownership(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("SELECT id, path, folder_id FROM videos WHERE folder_id IS NOT NULL")?;
+    let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?)))?;
+    for row in rows {
+        let (id, path, folder_id) = row?;
+        if let Some(closest) = closest_folder(conn, &path, None)? {
+            if closest != folder_id {
+                conn.execute("UPDATE videos SET folder_id = ? WHERE id = ?", rusqlite::params![closest, id])?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 当前毫秒时间戳（避免引入 chrono 依赖）。
@@ -347,6 +385,20 @@ pub fn folder_video_paths(conn: &Connection, folder_id: i64) -> SqlResult<Vec<(i
     let mut stmt = conn.prepare("SELECT id, path FROM videos WHERE folder_id = ? ORDER BY id")?;
     let rows = stmt.query_map([folder_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect()
+}
+
+/// 移除导入目录时，把仍被其他导入目录覆盖的视频转给最具体的剩余目录。
+/// 返回真正需要从库中删除的视频；磁盘文件始终不受影响。
+pub fn detach_folder_videos(conn: &Connection, folder_id: i64) -> SqlResult<Vec<i64>> {
+    let mut removed = Vec::new();
+    for (id, path) in folder_video_paths(conn, folder_id)? {
+        if let Some(other_id) = closest_folder(conn, &path, Some(folder_id))? {
+            conn.execute("UPDATE videos SET folder_id = ? WHERE id = ?", rusqlite::params![other_id, id])?;
+        } else {
+            removed.push(id);
+        }
+    }
+    Ok(removed)
 }
 
 /* ------------------------------------------------------------------ */
@@ -875,6 +927,11 @@ pub fn upsert_video(
     let normalized = normalize_path(&input.path);
     let key = path_key(&normalized);
     let (name, dir, ext) = split_path(&normalized);
+    let folder_id = if input.folder_id.is_some() {
+        closest_folder(conn, &normalized, None)?.or(input.folder_id)
+    } else {
+        None
+    };
 
     if let Some(existing) = find_folder_video_by_key(conn, &key)? {
         // 既有：比较关键字段判断是否变化（内容变化 → 重抽）
@@ -895,7 +952,7 @@ pub fn upsert_video(
                 input.width,
                 input.height,
                 input.video_codec,
-                input.folder_id,
+                folder_id.or(existing.folder_id),
                 input.file_hash,
                 existing.id
             ],
@@ -921,7 +978,7 @@ pub fn upsert_video(
                 input.height,
                 input.video_codec,
                 now_ms(),
-                input.folder_id,
+                folder_id,
                 input.file_hash
             ],
         )?;
@@ -1387,6 +1444,61 @@ mod tests {
         let linked = folder_video_paths(&conn, folder.id).unwrap();
         assert_eq!(linked.len(), 1);
         assert!(linked[0].1.ends_with("linked.mp4"));
+    }
+
+    #[test]
+    fn overlapping_imports_keep_the_nearest_folder_and_transfer_on_removal() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let (parent_path, child_path, other_path) = if cfg!(windows) {
+            ("C:\\Media", "C:\\Media\\Series\\A", "C:\\Media2")
+        } else {
+            ("/Media", "/Media/Series/A", "/Media2")
+        };
+        let child = insert_imported_folder(&conn, child_path, true).unwrap();
+        let separator = if cfg!(windows) { "\\" } else { "/" };
+        let path = format!("{child_path}{separator}episode.mp4");
+        let input = |folder_id| UpsertVideoInput {
+            path: path.clone(), size: 1, mtime_ms: 1, duration: Some(1.0),
+            width: None, height: None, video_codec: None, folder_id, file_hash: None,
+        };
+        let (original, _, _) = upsert_video(&conn, &input(Some(child.id))).unwrap();
+        let parent = insert_imported_folder(&conn, parent_path, true).unwrap();
+        let (reimported, created, changed) = upsert_video(&conn, &input(Some(parent.id))).unwrap();
+        assert_eq!(reimported.id, original.id);
+        assert!(!created && !changed);
+        assert_eq!(reimported.folder_id, Some(child.id));
+        assert!(detach_folder_videos(&conn, parent.id).unwrap().is_empty());
+
+        let other = insert_imported_folder(&conn, other_path, true).unwrap();
+        assert_eq!(closest_folder(&conn, &path, Some(child.id)).unwrap(), Some(parent.id));
+        assert_ne!(closest_folder(&conn, &path, None).unwrap(), Some(other.id));
+        assert!(detach_folder_videos(&conn, child.id).unwrap().is_empty());
+        assert_eq!(get_video(&conn, original.id).unwrap().unwrap().folder_id, Some(parent.id));
+        remove_folder(&conn, child.id).unwrap();
+        assert_eq!(detach_folder_videos(&conn, parent.id).unwrap(), vec![original.id]);
+    }
+
+    #[test]
+    fn existing_overlapping_folders_recover_video_ownership() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let (parent_path, child_path, separator) = if cfg!(windows) {
+            ("C:\\Media", "C:\\Media\\Series", "\\")
+        } else {
+            ("/Media", "/Media/Series", "/")
+        };
+        let parent = insert_imported_folder(&conn, parent_path, true).unwrap();
+        let child = insert_imported_folder(&conn, child_path, true).unwrap();
+        let path = format!("{child_path}{separator}episode.mp4");
+        let (video, _, _) = upsert_video(&conn, &UpsertVideoInput {
+            path, size: 1, mtime_ms: 1, duration: None, width: None,
+            height: None, video_codec: None, folder_id: Some(child.id), file_hash: None,
+        }).unwrap();
+        // 模拟旧版数据库中被父目录重新扫描覆盖的归属。
+        conn.execute("UPDATE videos SET folder_id = ? WHERE id = ?", rusqlite::params![parent.id, video.id]).unwrap();
+        reconcile_folder_ownership(&conn).unwrap();
+        assert_eq!(get_video(&conn, video.id).unwrap().unwrap().folder_id, Some(child.id));
     }
 
     #[cfg(windows)]

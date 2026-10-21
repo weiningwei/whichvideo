@@ -645,9 +645,9 @@ function FolderCard({
         <button
           className="ml-auto rounded-lg px-2 py-1 text-[11px] text-bad hover:bg-bad/10"
           onClick={() => {
-            if (window.confirm(`从视频库移除「${folder.name}」及其关联视频？\n不会删除磁盘上的文件。`)) onRemove(folder.id)
+            if (window.confirm(`从视频库移除「${folder.name}」？仅移除未被其他导入目录覆盖的视频，不会删除磁盘文件。`)) onRemove(folder.id)
           }}
-          title="从索引库移除文件夹及其视频，不删除磁盘文件"
+          title="从索引库移除目录及未被其他导入目录覆盖的视频，不删除磁盘文件"
         >
           从库中移除
         </button>

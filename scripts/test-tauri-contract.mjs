@@ -179,11 +179,12 @@ check(
     foldersRescanCommand.includes('watcher::sync_all(&app)?')
 )
 check(
-  '移除文件夹会删除关联视频索引但保留单独导入的视频',
-  foldersRemoveCommand.includes('db::folder_video_paths') &&
+  '移除文件夹会保留其他导入目录覆盖的视频与单独导入的视频',
+  foldersRemoveCommand.includes('db::detach_folder_videos') &&
     foldersRemoveCommand.includes('db::remove_video_ids') &&
     foldersRemoveCommand.includes('db::remove_folder') &&
-    dbSource.includes('WHERE folder_id = ? ORDER BY id')
+    dbSource.includes('WHERE folder_id = ? ORDER BY id') &&
+    dbSource.includes('closest_folder(conn, &path, Some(folder_id))')
 )
 check(
   '删除视频会取消后台索引并广播删除事件',

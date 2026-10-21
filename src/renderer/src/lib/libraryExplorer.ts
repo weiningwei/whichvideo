@@ -31,14 +31,47 @@ function contains(root: string, dir: string): boolean {
   const separator = a.startsWith('/') ? '/' : '\\'
   return b === a || b.startsWith(a.endsWith(separator) ? a : a + separator)
 }
-/** 只有明确导入的文件夹形成目录节点；单独导入的视频留在顶层。 */
+/** 导入目录按实际路径嵌套；单独导入的视频仍留在顶层。 */
 export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[]): ExplorerTree {
-  const roots: ExplorerNode[] = folders.map((folder) => ({
-    path: normalizeDirPath(folder.path), name: folder.name, folder,
-    children: [], videos: [], count: 0
-  }))
-  const byFolderId = new Map(folders.map((folder, i) => [folder.id, roots[i]]))
+  const roots: ExplorerNode[] = []
+  const byFolderId = new Map<number, ExplorerNode>()
+  const allNodes = new Map<string, ExplorerNode>()
   const looseVideos: VideoRecord[] = []
+
+  const ensurePath = (root: ExplorerNode, dir: string, video?: VideoRecord): void => {
+    let node = root
+    if (video) node.count++
+    const relative = dir.slice(root.path.length).replace(/^[\\/]/, '')
+    for (const part of relative ? relative.split(/[\\/]/).filter(Boolean) : []) {
+      const separator = node.path.startsWith('/') ? '/' : '\\'
+      const path = node.path.replace(/[\\/]$/, '') + separator + part
+      let child = allNodes.get(key(path))
+      if (!child) {
+        child = { path, name: part, folder: null, children: [], videos: [], count: 0 }
+        node.children.push(child)
+        allNodes.set(key(path), child)
+      }
+      if (video) child.count++
+      node = child
+    }
+    if (video) node.videos.push(video)
+  }
+
+  for (const folder of [...folders].sort((a, b) => a.path.length - b.path.length)) {
+    const path = normalizeDirPath(folder.path)
+    const parent = [...byFolderId.values()]
+      .filter((node) => contains(node.path, path) && key(node.path) !== key(path))
+      .sort((a, b) => b.path.length - a.path.length)[0]
+    if (parent) ensurePath(parent, path)
+    let node = allNodes.get(key(path))
+    if (!node) {
+      node = { path, name: folder.name, folder: null, children: [], videos: [], count: 0 }
+      roots.push(node)
+      allNodes.set(key(path), node)
+    }
+    node.folder = folder
+    byFolderId.set(folder.id, node)
+  }
 
   for (const video of videos) {
     const dir = normalizeDirPath(video.dir)
@@ -47,21 +80,9 @@ export function buildExplorerTree(folders: WatchedFolder[], videos: VideoRecord[
       looseVideos.push(video)
       continue
     }
-    root.count++
-    let node = root
-    const relative = dir.slice(root.path.length).replace(/^[\\/]/, '')
-    for (const part of relative ? relative.split(/[\\/]/).filter(Boolean) : []) {
-      const separator = node.path.startsWith('/') ? '/' : '\\'
-      const path = node.path.replace(/[\\/]$/, '') + separator + part
-      let child = node.children.find((item) => key(item.path) === key(path))
-      if (!child) {
-        child = { path, name: part, folder: null, children: [], videos: [], count: 0 }
-        node.children.push(child)
-      }
-      child.count++
-      node = child
-    }
-    node.videos.push(video)
+    // 视频归属子目录时，父级导入目录的计数也应包含它。
+    const top = roots.find((node) => contains(node.path, root.path)) ?? root
+    ensurePath(top, dir, video)
   }
   const sort = (nodes: ExplorerNode[]) => {
     nodes.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
