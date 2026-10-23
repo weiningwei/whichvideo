@@ -12,6 +12,7 @@
  * 选择持久化到 localStorage，键名带 wv- 前缀避免与其他应用串味。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { readStoredText, writeStoredText } from '../lib/storage'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
 export type ResolvedTheme = 'dark' | 'light'
@@ -20,12 +21,8 @@ const STORAGE_KEY = 'wv-theme'
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 
 function readStored(): ThemeMode {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    if (v === 'dark' || v === 'light' || v === 'system') return v
-  } catch {
-    /* 隐私模式下 localStorage 可能抛错，用默认即可 */
-  }
+  const v = readStoredText(STORAGE_KEY)
+  if (v === 'dark' || v === 'light' || v === 'system') return v
   return 'dark'
 }
 
@@ -40,9 +37,10 @@ function apply(theme: ResolvedTheme): void {
 }
 
 export function useTheme() {
-  const [mode, setMode] = useState<ThemeMode>(readStored)
+  const [initialMode] = useState<ThemeMode>(readStored)
+  const [mode, setMode] = useState<ThemeMode>(initialMode)
   const [resolved, setResolved] = useState<ResolvedTheme>(() =>
-    readStored() === 'system' ? systemTheme() : (readStored() as ResolvedTheme)
+    initialMode === 'system' ? systemTheme() : initialMode
   )
 
   const sync = useCallback((next: ThemeMode) => {
@@ -53,11 +51,7 @@ export function useTheme() {
 
   useEffect(() => {
     sync(mode)
-    try {
-      localStorage.setItem(STORAGE_KEY, mode)
-    } catch {
-      /* 存不下不影响本次会话使用 */
-    }
+    writeStoredText(STORAGE_KEY, mode)
   }, [mode, sync])
 
   // 「跟随系统」时要跟随系统的实时变化（用户在 Windows 设置里切换深浅色）

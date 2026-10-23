@@ -161,6 +161,8 @@ Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，�
   Escape 和滚动关闭；组件只维护当前打开项及业务动作。
 - 一次性用户反馈统一进入 `useNotices` 并由 `NoticeStack` 展示；通知层负责容量、相同消息去重、
   自动关闭和悬停暂停，业务模块不得自行实现通知定时器或浮层。
+- 渲染端偏好统一通过 `lib/storage.ts` 读写；业务 hook 负责校验自身数据结构，不直接访问
+  `localStorage`，存储不可用或内容损坏时回退默认值。
 - 选中行使用左侧 2px 强调条、`bg-row-selected` 和文件名 `text-accent`。
 - 操作列的 sticky 单元格必须沿用不透明的 `row-*` 行底 token。
 - Shift/Ctrl 点击只阻止修饰键触发的原生文本选择，不要给整行加 `select-none`。

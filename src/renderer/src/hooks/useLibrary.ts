@@ -23,6 +23,7 @@ import {
 } from '@shared/types'
 import type { ImportProgressEvent } from '../lib/importProgress'
 import type { Notice } from './useNotices'
+import { readStoredText, writeStoredText } from '../lib/storage'
 
 /**
  * 文件夹 / 全部视频视图选择。使用新键，避免旧导航窗格的“隐藏”设置
@@ -31,22 +32,12 @@ import type { Notice } from './useNotices'
 const TREE_VISIBLE_KEY = 'wv-library-folder-view'
 
 function readTreeVisible(): boolean {
-  try {
-    const v = localStorage.getItem(TREE_VISIBLE_KEY)
-    // 默认是文件夹视图，导入目录初始折叠。
-    if (v === '0') return false
-  } catch {
-    /* 隐私模式 localStorage 抛错，用默认 */
-  }
-  return true
+  // 默认是文件夹视图，导入目录初始折叠。
+  return readStoredText(TREE_VISIBLE_KEY) !== '0'
 }
 
 function writeTreeVisible(value: boolean): void {
-  try {
-    localStorage.setItem(TREE_VISIBLE_KEY, value ? '1' : '0')
-  } catch {
-    /* 存不下不影响本次会话 */
-  }
+  writeStoredText(TREE_VISIBLE_KEY, value ? '1' : '0')
 }
 
 export interface LibraryState {

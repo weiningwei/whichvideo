@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { readStoredJson, writeStoredJson } from '../lib/storage'
 
 const COLUMN_WIDTHS_KEY = 'wv-library-column-widths'
 const DEFAULT_COLUMN_WIDTHS = [360, 128, 96, 96] as const
@@ -7,13 +8,12 @@ export const COLUMN_LABELS = ['视频', '状态', '时长', '大小'] as const
 export const ACTION_COLUMN_WIDTH = 88
 
 function loadColumnWidths(): { widths: number[]; firstFixed: boolean } {
-  try {
-    const saved = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null')
-    if (typeof saved?.firstFixed === 'boolean' && Array.isArray(saved.widths) && saved.widths.length === DEFAULT_COLUMN_WIDTHS.length &&
-      saved.widths.every((width: number, index: number) => Number.isFinite(width) && width >= MIN_COLUMN_WIDTHS[index] && width <= 2000)) {
-      return saved
-    }
-  } catch { /* localStorage 不可用时使用默认列宽 */ }
+  const saved = readStoredJson(COLUMN_WIDTHS_KEY)
+  if (typeof saved === 'object' && saved !== null && 'firstFixed' in saved && 'widths' in saved &&
+    typeof saved.firstFixed === 'boolean' && Array.isArray(saved.widths) && saved.widths.length === DEFAULT_COLUMN_WIDTHS.length &&
+    saved.widths.every((width: unknown, index: number) => typeof width === 'number' && Number.isFinite(width) && width >= MIN_COLUMN_WIDTHS[index] && width <= 2000)) {
+    return { widths: saved.widths, firstFixed: saved.firstFixed }
+  }
   return { widths: [...DEFAULT_COLUMN_WIDTHS], firstFixed: false }
 }
 
@@ -65,7 +65,7 @@ export function useLibraryColumns(scrollRef: RefObject<HTMLDivElement | null>) {
         if (index === 0) { firstColumnFixedRef.current = true; setFirstColumnFixed(true) }
         columnWidthsRef.current = next
         setColumnWidths(next)
-        try { localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify({ widths: next, firstFixed: firstColumnFixedRef.current })) } catch { /* 无持久化权限时本次调整仍有效 */ }
+        writeStoredJson(COLUMN_WIDTHS_KEY, { widths: next, firstFixed: firstColumnFixedRef.current })
       }}
       onPointerDown={(event: ReactPointerEvent<HTMLSpanElement>) => {
         if (event.button !== 0) return
@@ -92,7 +92,7 @@ export function useLibraryColumns(scrollRef: RefObject<HTMLDivElement | null>) {
         columnWidthsRef.current = next
         setColumnWidths(next)
         resizeRef.current = null
-        try { localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify({ widths: next, firstFixed: firstColumnFixedRef.current })) } catch { /* 无持久化权限时本次调整仍有效 */ }
+        writeStoredJson(COLUMN_WIDTHS_KEY, { widths: next, firstFixed: firstColumnFixedRef.current })
       }}
       onPointerCancel={() => { resizeRef.current = null }}
     >
