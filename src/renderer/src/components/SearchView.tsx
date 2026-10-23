@@ -380,7 +380,7 @@ function ResultCard({
             <div className={`text-[15px] font-semibold ${scoreColor(match.score)}`}>
               {formatPercent(match.score)}
             </div>
-            <div className="text-[10px] text-muted">{scoreLabel(match.score)}</div>
+            <div className="text-[10px] text-muted">画面相似度 · {scoreLabel(match.score)}</div>
           </div>
         </div>
 

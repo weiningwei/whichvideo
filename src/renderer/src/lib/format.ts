@@ -77,15 +77,14 @@ export function shortDir(path: string, roots: string[]): string {
 }
 
 export function scoreColor(score: number): string {
-  if (score >= 0.92) return 'text-[#34d399]'
-  if (score >= 0.84) return 'text-[#a3e635]'
-  if (score >= 0.76) return 'text-[#fbbf24]'
-  return 'text-[#f87171]'
+  if (score >= 0.84) return 'text-ok'
+  if (score >= 0.76) return 'text-warn'
+  return 'text-muted'
 }
 
 export function scoreLabel(score: number): string {
-  if (score >= 0.92) return '几乎确定'
-  if (score >= 0.84) return '高度相似'
-  if (score >= 0.76) return '可能匹配'
-  return '弱匹配'
+  if (score >= 0.92) return '很相似'
+  if (score >= 0.84) return '较相似'
+  if (score >= 0.76) return '有些相似'
+  return '相似度较低'
 }
