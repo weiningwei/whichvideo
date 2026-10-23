@@ -122,6 +122,7 @@ fn main() {
             commands::library_export_diagnostics,
             commands::library_data_dir,
             commands::library_media_tools,
+            commands::library_refresh_media_tools,
             commands::library_select_media_tools_dir,
             commands::library_clear_media_tools_dir,
             commands::library_reset,

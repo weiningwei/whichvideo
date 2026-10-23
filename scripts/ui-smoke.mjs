@@ -168,10 +168,20 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const settings = jsx(SettingsPanel, {
     settings: null,
     dataDir: { dir: 'E:\\WhichVideo\\data', source: 'install', toolsReady: true },
-    mediaTools: { ready: true, source: 'path', directory: 'D:\\ffmpeg\\bin', ffmpeg: 'D:\\ffmpeg\\bin\\ffmpeg.exe', ffprobe: 'D:\\ffmpeg\\bin\\ffprobe.exe', message: '使用系统 PATH 中的 FFmpeg' },
-    onChange: noop, onSelectMediaTools: noop, onClearMediaTools: noop,
+    mediaTools: { ready: true, source: 'path', directory: 'D:\\ffmpeg\\bin', configuredDirectory: null, ffmpeg: 'D:\\ffmpeg\\bin\\ffmpeg.exe', ffprobe: 'D:\\ffmpeg\\bin\\ffprobe.exe', message: '使用系统 PATH 中的 FFmpeg' },
+    onChange: noop, onSelectMediaTools: noop, onRefreshMediaTools: noop, onClearMediaTools: noop,
     onReset: noop, onOpenDatabaseFolder: noop, onExportDiagnostics: noop
   })
+  const mediaSettingsHtml = render(settings)
+  check('媒体工具设置显示生效路径与重新检测入口', mediaSettingsHtml.includes('D:\\ffmpeg\\bin\\ffmpeg.exe') && mediaSettingsHtml.includes('D:\\ffmpeg\\bin\\ffprobe.exe') && mediaSettingsHtml.includes('重新检测'))
+  const overriddenTools = render(jsx(SettingsPanel, {
+    settings: null,
+    dataDir: null,
+    mediaTools: { ready: true, source: 'environment', directory: 'D:\\ffmpeg\\bin', configuredDirectory: 'E:\\manual', ffmpeg: 'D:\\ffmpeg\\bin\\ffmpeg.exe', ffprobe: 'D:\\ffmpeg\\bin\\ffprobe.exe', message: '使用环境变量指定的 FFmpeg' },
+    onChange: noop, onSelectMediaTools: noop, onRefreshMediaTools: noop, onClearMediaTools: noop,
+    onReset: noop, onOpenDatabaseFolder: noop, onExportDiagnostics: noop
+  }))
+  check('手动目录被环境变量覆盖时明确提示', overriddenTools.includes('环境变量优先于手动目录') && overriddenTools.includes('E:\\manual') && overriddenTools.includes('恢复自动检测'))
   const libraryProps = {
     folders: [folder], videos: [video], total: 1, query: {}, onSetQuery: noop,
     onAddFolder: noop, onAddFolderPath: noop, onImportFolder: noop, onImportFiles: noop,

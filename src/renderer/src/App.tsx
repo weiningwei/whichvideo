@@ -135,6 +135,7 @@ export default function App() {
                   mediaTools={state.mediaTools}
                   onChange={(patch) => void actions.updateSettings(patch)}
                   onSelectMediaTools={() => void actions.selectMediaToolsDir()}
+                  onRefreshMediaTools={() => void actions.refreshMediaTools()}
                   onClearMediaTools={() => void actions.clearMediaToolsDir()}
                   onReset={() => void actions.resetLibrary()}
                   onOpenDatabaseFolder={() => void actions.openDatabaseFolder()}

@@ -98,6 +98,8 @@ export interface MediaToolsStatus {
   source: 'environment' | 'configured' | 'path' | 'system' | 'development' | 'missing'
   /** ffmpeg 与 ffprobe 所在目录 */
   directory: string | null
+  /** 设置中保存的目录；可能被环境变量覆盖，或当前不可用 */
+  configuredDirectory: string | null
   ffmpeg: string | null
   ffprobe: string | null
   message: string
@@ -383,6 +385,7 @@ export interface WhichVideoApi {
     updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
     dataDir(): Promise<DataDirInfo>
     mediaTools(): Promise<MediaToolsStatus>
+    refreshMediaTools(): Promise<MediaToolsStatus>
     selectMediaToolsDir(): Promise<MediaToolsStatus>
     clearMediaToolsDir(): Promise<MediaToolsStatus>
     openDatabaseFolder(): Promise<string>
@@ -450,6 +453,7 @@ export const IPC = {
   librarySettings: 'library_settings',
   libraryDataDir: 'library_data_dir',
   libraryMediaTools: 'library_media_tools',
+  libraryRefreshMediaTools: 'library_refresh_media_tools',
   librarySelectMediaToolsDir: 'library_select_media_tools_dir',
   libraryClearMediaToolsDir: 'library_clear_media_tools_dir',
   libraryUpdateSettings: 'library_update_settings',

@@ -931,6 +931,21 @@ pub fn library_media_tools() -> Result<media::MediaToolsStatus, String> {
     Ok(media::tools_status())
 }
 
+/// 重查当前环境中的 FFmpeg，并恢复此前因工具缺失而等待的索引任务。
+#[tauri::command]
+pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let was_ready = media::tools_ready();
+        let status = media::refresh_tools();
+        if !was_ready && status.ready {
+            indexer::resume_pending(app);
+        }
+        Ok(status)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 选择同时包含 ffmpeg 与 ffprobe 的目录，验证后持久化。
 #[tauri::command]
 pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
@@ -946,11 +961,16 @@ fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatu
     let Some(dir) = dirs.pop() else {
         return Ok(media::tools_status());
     };
+    let was_ready = media::tools_ready();
     let status = media::configure_dir(Some(dir.clone()))?;
     let state = app.state::<AppState>();
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
     db::set_ffmpeg_dir(conn, Some(&dir)).map_err(|e| e.to_string())?;
+    drop(guard);
+    if !was_ready && status.ready {
+        indexer::resume_pending(app.clone());
+    }
     logger::log(&format!("FFmpeg 目录已设置：{dir}（source={}）", status.source));
     Ok(status)
 }

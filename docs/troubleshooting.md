@@ -55,6 +55,7 @@ $LASTEXITCODE
 - 推荐在「索引设置 → 媒体工具」选择同时包含两者的 `bin` 目录。
 - 也可加入系统 `PATH`，或设置 `WHICHVIDEO_BIN_DIR`。
 - 需要分别指定时，同时设置 `WHICHVIDEO_FFMPEG` 和 `WHICHVIDEO_FFPROBE`，不要混用不同版本。
+- 设置页显示当前生效的两个工具路径和已保存的手动目录；环境变量优先于手动目录。安装工具或修改当前进程可见的 `PATH` 后，可点「重新检测」。
 - 开发环境可运行 `pnpm fetch:ffmpeg` 放到 `resources/bin`；该目录只在 debug/test 构建中自动探测。
 
 媒体工具缺失不会阻止界面启动，但新增目录后的探测、索引和图片检索会失败。开发者可运行 `pnpm test:rust` 检查后端回归；

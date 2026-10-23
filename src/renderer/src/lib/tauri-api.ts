@@ -21,6 +21,7 @@ export const tauriApi: WhichVideoApi = {
     updateSettings: (patch) => invokeChecked(IPC.libraryUpdateSettings, { patch }),
     dataDir: () => invokeChecked(IPC.libraryDataDir),
     mediaTools: () => invokeChecked(IPC.libraryMediaTools),
+    refreshMediaTools: () => invokeChecked(IPC.libraryRefreshMediaTools),
     selectMediaToolsDir: () => invokeChecked(IPC.librarySelectMediaToolsDir),
     clearMediaToolsDir: () => invokeChecked(IPC.libraryClearMediaToolsDir),
     openDatabaseFolder: () => invokeChecked(IPC.libraryOpenDb),

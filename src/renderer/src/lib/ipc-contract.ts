@@ -66,7 +66,7 @@ const importResult = shape({
 })
 const mediaTools = shape({
   ready: boolean, source: oneOf('environment', 'configured', 'path', 'system', 'development', 'missing'),
-  directory: nullable(text), ffmpeg: nullable(text), ffprobe: nullable(text), message: text
+  directory: nullable(text), configuredDirectory: nullable(text), ffmpeg: nullable(text), ffprobe: nullable(text), message: text
 })
 const frameProgress = shape({
   videoId: number, done: number, total: number, phase: optional(oneOf('detecting', 'extracting'))
@@ -91,6 +91,7 @@ export const responses = {
   library_settings: settings,
   library_data_dir: shape({ dir: text, source: oneOf('env', 'install'), toolsReady: boolean }),
   library_media_tools: mediaTools,
+  library_refresh_media_tools: mediaTools,
   library_select_media_tools_dir: mediaTools,
   library_clear_media_tools_dir: mediaTools,
   library_update_settings: settings,

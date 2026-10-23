@@ -33,6 +33,7 @@ pub struct MediaToolsStatus {
     pub ready: bool,
     pub source: String,
     pub directory: Option<String>,
+    pub configured_directory: Option<String>,
     pub ffmpeg: Option<String>,
     pub ffprobe: Option<String>,
     pub message: String,
@@ -44,6 +45,7 @@ impl Default for MediaToolsStatus {
             ready: false,
             source: "missing".to_string(),
             directory: None,
+            configured_directory: None,
             ffmpeg: None,
             ffprobe: None,
             message: "未找到 FFmpeg。请安装 FFmpeg，或手动选择包含 ffmpeg 和 ffprobe 的 bin 目录。".to_string(),
@@ -152,6 +154,7 @@ fn status_for(tools: ToolPaths, source: &str, message: &str) -> (Option<ToolPath
         ready: true,
         source: source.to_string(),
         directory,
+        configured_directory: None,
         ffmpeg: Some(tools.ffmpeg.clone()),
         ffprobe: Some(tools.ffprobe.clone()),
         message: message.to_string(),
@@ -244,7 +247,8 @@ fn detect_tools(configured_dir: Option<&std::path::Path>) -> (Option<ToolPaths>,
 }
 
 fn refresh_locked(state: &mut ToolState) {
-    let (tools, status) = detect_tools(state.configured_dir.as_deref());
+    let (tools, mut status) = detect_tools(state.configured_dir.as_deref());
+    status.configured_directory = state.configured_dir.as_ref().map(|dir| dir.to_string_lossy().into_owned());
     state.tools = tools;
     state.status = status;
     state.resolved = true;
@@ -280,6 +284,13 @@ pub fn tools_status() -> MediaToolsStatus {
     if !state.resolved {
         refresh_locked(&mut state);
     }
+    state.status.clone()
+}
+
+/// 用户修改 PATH 或安装媒体工具后，显式清除本进程的探测缓存。
+pub fn refresh_tools() -> MediaToolsStatus {
+    let mut state = tool_state().write().unwrap_or_else(|e| e.into_inner());
+    refresh_locked(&mut state);
     state.status.clone()
 }
 

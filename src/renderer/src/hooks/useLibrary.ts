@@ -273,6 +273,14 @@ export function useLibrary() {
           notices.pushNotice(status.ready ? 'info' : 'warn', status.message)
         })
       },
+      async refreshMediaTools(): Promise<void> {
+        await withBusy('正在重新检测 FFmpeg…', async () => {
+          const status = await window.whichvideo.library.refreshMediaTools()
+          core.setMediaTools(status)
+          await core.refreshAll()
+          notices.pushNotice(status.ready ? 'info' : 'warn', status.message)
+        })
+      },
       async clearMediaToolsDir(): Promise<void> {
         const status = await window.whichvideo.library.clearMediaToolsDir()
         core.setMediaTools(status)

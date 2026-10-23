@@ -29,11 +29,16 @@ const search = {
   comparedFrames: 0, elapsedMs: 1, found: false, matches: []
 }
 
-check('37 个命令都有返回值校验器', () => {
+check('38 个命令都有返回值校验器', () => {
   const ipcBlock = readFileSync(resolve('src/shared/types.ts'), 'utf8').match(/export const IPC = \{([\s\S]*?)\} as const/)?.[1] ?? ''
   const channels = [...ipcBlock.matchAll(/^\s*\w+: '(\w+)'/gm)]
     .map((match) => match[1]).filter((name) => name !== 'library_event')
-  if (channels.length !== 37 || channels.some((name) => !(name in responses))) throw new Error('命令校验器不齐')
+  if (channels.length !== 38 || channels.some((name) => !(name in responses))) throw new Error('命令校验器不齐')
+})
+check('媒体工具重检返回生效路径与手动目录', () => {
+  const status = { ready: true, source: 'environment', directory: 'D:\\tools', configuredDirectory: 'E:\\manual', ffmpeg: 'D:\\tools\\ffmpeg.exe', ffprobe: 'D:\\tools\\ffprobe.exe', message: '环境变量' }
+  if (decodeResponse('library_refresh_media_tools', status).configuredDirectory !== 'E:\\manual') throw new Error('正确值被拒绝')
+  rejects(() => decodeResponse('library_refresh_media_tools', { ...status, configuredDirectory: undefined }))
 })
 check('重新索引要求 count 对象，数字与缺失字段会报错', () => {
   if (decodeResponse('videos_reindex', { count: 1 }).count !== 1) throw new Error('正确值被拒绝')

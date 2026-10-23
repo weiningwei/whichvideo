@@ -8,6 +8,7 @@ interface Props {
   mediaTools: MediaToolsStatus | null
   onChange: (patch: Partial<AppSettings>) => void
   onSelectMediaTools: () => void
+  onRefreshMediaTools: () => void
   onClearMediaTools: () => void
   onReset: () => void
   onOpenDatabaseFolder: () => void
@@ -20,6 +21,7 @@ export function SettingsPanel({
   mediaTools,
   onChange,
   onSelectMediaTools,
+  onRefreshMediaTools,
   onClearMediaTools,
   onReset,
   onOpenDatabaseFolder,
@@ -52,13 +54,30 @@ export function SettingsPanel({
           </span>
         </div>
         <div className="mt-1 break-all text-[10.5px] leading-relaxed text-secondary">
-          {mediaTools?.ready ? mediaTools.directory : mediaTools?.message ?? '正在检测…'}
+          {mediaTools?.message ?? '正在检测…'}
         </div>
+        {mediaTools?.ready && (
+          <div className="mt-2 space-y-1 break-all text-[10.5px] leading-relaxed text-secondary">
+            <div>当前 ffmpeg：{mediaTools.ffmpeg}</div>
+            <div>当前 ffprobe：{mediaTools.ffprobe}</div>
+          </div>
+        )}
+        {mediaTools?.configuredDirectory && mediaTools.source !== 'configured' && (
+          <div className="mt-2 break-all text-[10.5px] leading-relaxed text-warn">
+            已保存的手动目录未生效：{mediaTools.configuredDirectory}。
+            {mediaTools.source === 'environment'
+              ? '环境变量优先于手动目录。'
+              : mediaTools.ready
+                ? '当前使用其他可用来源；请检查该目录中的两个工具。'
+                : '请检查该目录中的两个工具。'}
+          </div>
+        )}
         <div className="mt-2 flex gap-2">
           <button className="btn text-[11px] hover:bg-ink-700/70" onClick={onSelectMediaTools}>
             {mediaTools?.ready ? '更换目录' : '选择 bin 目录'}
           </button>
-          {mediaTools?.source === 'configured' && (
+          <button className="btn text-[11px] hover:bg-ink-700/70" onClick={onRefreshMediaTools}>重新检测</button>
+          {mediaTools?.configuredDirectory && (
             <button className="btn text-[11px] hover:bg-ink-700/70" onClick={onClearMediaTools}>
               恢复自动检测
             </button>
