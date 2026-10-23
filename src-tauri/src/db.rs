@@ -1429,6 +1429,57 @@ mod tests {
         assert!(!frame_prefix_is_complete(&conn, 1, 1).unwrap());
     }
 
+    #[test]
+    fn interrupted_index_reopens_with_committed_prefix_and_finishes() {
+        let root = std::env::temp_dir().join(format!(
+            "whichvideo-index-restart-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("library.db");
+        let frame = |frame_index, time_ms| NewFrame {
+            dhash: frame_index + 1,
+            struct_hash: vec![2; 128],
+            color: vec![3; 48],
+            spatial: vec![4; 64],
+            frame_index,
+            time_ms,
+        };
+        let id = {
+            let mut conn = Connection::open(&path).unwrap();
+            configure_connection(&conn).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            let (video, _, _) = upsert_video(&conn, &UpsertVideoInput {
+                path: root.join("video.mp4").to_string_lossy().into_owned(),
+                size: 100, mtime_ms: 1, duration: Some(3.0),
+                width: Some(320), height: Some(180), video_codec: Some("mpeg4".into()),
+                folder_id: None, file_hash: None,
+            }).unwrap();
+            commit_frame_batch(&mut conn, video.id, &[frame(0, 1000)], &[1000], 10).unwrap();
+            video.id
+        };
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            configure_connection(&conn).unwrap();
+            let pending = list_pending_videos(&conn).unwrap();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].id, id);
+            assert_eq!(pending[0].processed_timestamps, vec![1000]);
+            assert!(frame_prefix_is_complete(&conn, id, 1).unwrap());
+            commit_frame_batch(&mut conn, id, &[frame(1, 2000)], &[1000, 2000], 20).unwrap();
+            set_ready_with_thumbnail(&conn, id, None).unwrap();
+            assert!(list_pending_videos(&conn).unwrap().is_empty());
+            let video = get_video(&conn, id).unwrap().unwrap();
+            assert_eq!(video.status, "ready");
+            assert_eq!(video.frame_count, 2);
+            assert_eq!(video.processed_timestamps, vec![1000, 2000]);
+            let matrix = load_video_frame_matrix(&conn, id).unwrap();
+            assert_eq!(matrix.video_ids, vec![id, id]);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn path_normalization_preserves_windows_drive_roots() {

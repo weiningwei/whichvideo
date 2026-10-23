@@ -14,6 +14,8 @@ GitHub Actions 中的 `Extended search benchmark` 可手动触发，在 Windows�
 
 这项评测针对单帧指纹与内存检索，不覆盖视频采样、SQLite、重排及时间精修。合成画面能稳定比较算法版本，仍不能代表真实视频内容；真实截图、字幕和编码差异需要另建获授权的真实样本集。
 
+Rust 回归测试还模拟索引批次写入后关闭数据库、重新打开并完成剩余批次，验证续传进度、帧前缀和最终状态。启动恢复保留已提交批次；全片解码或帧前缀不完整时从头重建。
+
 失败时保留 `tmp/e2e/run-*` 中的桌面样本、`data/logs` 和截图，以及 `tmp/search-benchmark/run-*` 中的评测报告；Windows、macOS、Linux CI 会上传失败证据。测试只使用临时数据目录，不会读取或修改用户现有的视频库。测试不会访问远程图片，版本检查的联网结果不参与判定。
 
 测试构建通过 Cargo `e2e` feature 和 `tauri.e2e.conf.json` 才加载 WebDriver 插件与权限。正式发行配置只启用 `default` capability，正常 `pnpm build` 不含测试插件。

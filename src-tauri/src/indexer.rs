@@ -415,6 +415,7 @@ fn finish(app: AppHandle, video_id: i64, outcome: Option<bool>) {
 
 fn finish_cancelled(app: AppHandle, video_id: i64) {
     clear_frame_progress(&app, video_id);
+    update_search_index_for_video(&app, video_id);
     finish(app, video_id, None);
 }
 
@@ -674,13 +675,17 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         processed.clear();
     }
     if start_index >= timestamps.len() {
-        // 最后一个批次已写入，可能在标记 ready 前退出；恢复时补齐持久化状态。
+        // 最后一个批次已写入，可能在标记 ready 前退出；恢复时补齐缩略图和状态。
+        let thumb_time = duration
+            .map(|d| d * 0.12)
+            .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
+        let thumbnail = media::make_thumbnail(&video.path, thumb_time, constants::EXTRACT_WIDTH);
         let ready_result = {
             let state = app.state::<AppState>();
             let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             guard.as_mut()
                 .ok_or_else(|| "数据库未初始化".to_string())
-                .and_then(|c| db::set_ready_with_thumbnail(c, video_id, None).map_err(|e| e.to_string()))
+                .and_then(|c| db::set_ready_with_thumbnail(c, video_id, thumbnail.as_deref()).map_err(|e| e.to_string()))
         };
         if let Err(error) = ready_result {
             fail(app, video_id, &format!("完成索引状态写入失败：{error}"), frames_changed);
@@ -762,7 +767,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             Ok(f) => f,
             Err(e) => {
                 if is_cancelled(&app, video_id) {
-                    frames_store::remove_video(video_id);
                     finish_cancelled(app, video_id);
                     return;
                 }
@@ -773,7 +777,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         let elapsed = started.elapsed().as_millis() as i64;
 
         if is_cancelled(&app, video_id) {
-            frames_store::remove_video(video_id);
             finish_cancelled(app, video_id);
             return;
         }
@@ -832,7 +835,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 }
             }
             if is_cancelled(&app, video_id) {
-                frames_store::remove_video(video_id);
                 finish_cancelled(app, video_id);
                 return;
             }
@@ -850,7 +852,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
 
     // 缩略图（兜底：失败也标记完成）
     if is_cancelled(&app, video_id) {
-        frames_store::remove_video(video_id);
         finish_cancelled(app, video_id);
         return;
     }
@@ -859,7 +860,6 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         .and_then(|frame| frames_store::encode_jpeg(&frame.rgb, frame.width, frame.height).ok())
         .or_else(|| media::make_thumbnail(&video.path, thumb_time, constants::EXTRACT_WIDTH));
     if is_cancelled(&app, video_id) {
-        frames_store::remove_video(video_id);
         finish_cancelled(app, video_id);
         return;
     }
@@ -1452,8 +1452,9 @@ pub fn resume_pending(app: AppHandle) {
         return;
     }
     log(&format!("恢复索引队列：{} 个待处理视频", pending.len()));
-    // 一次入队，不为每个待处理视频各广播一条事件（启动瞬间的卡顿来源之一）。
-    enqueue_many(app, &pending, true);
+    // 一次入队；保留已提交批次，续传前会核验帧前缀是否完整。
+    // 不为每个待处理视频各广播一条事件（启动瞬间的卡顿来源之一）。
+    enqueue_many(app, &pending, false);
 }
 
 fn log(msg: &str) {
