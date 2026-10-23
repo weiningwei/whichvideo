@@ -34,6 +34,7 @@ src-tauri/src/db.rs           SQLite 持久层（rusqlite）
 src-tauri/src/paths.rs        数据目录判定与全部落盘路径
 src-tauri/src/indexer.rs      抽帧与索引队列
 src-tauri/src/search.rs       常驻内存帧索引、检索与时间纠偏
+src-tauri/src/search_service.rs 查询图指纹、候选重排与搜索结果编排
 src-tauri/src/media.rs        ffmpeg/ffprobe 调用
 src-tauri/src/platform_open.rs 原生打开文件、定位和发布页
 src-tauri/src/url_image.rs    跨平台网页取图

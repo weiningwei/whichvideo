@@ -9,6 +9,7 @@ const ipcContractSource = readSource('src', 'renderer', 'src', 'lib', 'ipc-contr
 const rendererMain = readSource('src', 'renderer', 'src', 'main.tsx')
 const rustMain = readSource('src-tauri', 'src', 'main.rs')
 const commandsSource = readSource('src-tauri', 'src', 'commands.rs')
+const searchServiceSource = readSource('src-tauri', 'src', 'search_service.rs')
 const eventsSource = readSource('src-tauri', 'src', 'events.rs')
 const indexerSource = readSource('src-tauri', 'src', 'indexer.rs')
 const mediaSource = readSource('src-tauri', 'src', 'media.rs')
@@ -232,7 +233,8 @@ check(
     commandsSource.includes(`pub async fn ${name}`)
   ) &&
     (commandsSource.match(/spawn_blocking\(/g) ?? []).length >= 5 &&
-    commandsSource.includes('let videos: HashMap<i64, db::VideoRecord>')
+    searchServiceSource.includes('let videos: HashMap<i64, db::VideoRecord>') &&
+    searchServiceSource.indexOf('let videos: HashMap<i64, db::VideoRecord>') < searchServiceSource.indexOf('let decoded = rerank_matches')
 )
 check(
   '库统计/文件夹/视频列表不占用窗口主线程',

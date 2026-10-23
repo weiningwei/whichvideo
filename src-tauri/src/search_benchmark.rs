@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{commands, db, framepack, media, search};
+    use crate::{db, framepack, media, search, search_service};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -50,7 +50,7 @@ mod tests {
         let image = image::open(path).unwrap_or_else(|e| panic!("无法解码 {}：{e}", path.display()));
         let (pixels, width, height) = media::prepare_query_pixels(image)
             .unwrap_or_else(|e| panic!("无法预处理 {}：{e}", path.display()));
-        commands::build_query_vector(&pixels, width, height)
+        search_service::build_query_vector(&pixels, width, height)
     }
 
     fn append_frame(matrix: &mut db::FrameMatrix, video_id: i64, vector: &search::QueryVector) {

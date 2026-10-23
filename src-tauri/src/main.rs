@@ -16,6 +16,7 @@ mod platform_open;
 mod process_ext;
 mod sampling;
 mod search;
+mod search_service;
 #[cfg(test)]
 mod search_benchmark;
 mod state;
