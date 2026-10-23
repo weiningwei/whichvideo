@@ -14,9 +14,10 @@
  *
  * 弹层结构沿用 ShortcutHelp 的模式：fixed 遮罩 + card、Esc 捕获、点遮罩关闭。
  */
-import { useEffect, useState } from 'react'
-import type { FrameManifestEntry, VideoRecord } from '@shared/types'
+import { useState } from 'react'
+import type { VideoRecord } from '@shared/types'
 import { useModalFocus } from '../hooks/useModalFocus'
+import { useFrameManifest } from '../hooks/useVideoMedia'
 
 interface Props {
   video: VideoRecord | null
@@ -123,23 +124,7 @@ function FrameCard({
 
 export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
   const dialogRef = useModalFocus<HTMLDivElement>(video !== null, onClose)
-  const [manifest, setManifest] = useState<FrameManifestEntry[] | null>(null)
-  const [manifestError, setManifestError] = useState(false)
-
-  useEffect(() => {
-    setManifest(null)
-    setManifestError(false)
-    if (!video) {
-      return
-    }
-    let alive = true
-    void window.whichvideo.videos.frameManifest(video.id)
-      .then((list) => { if (alive) setManifest(list) })
-      .catch(() => { if (alive) setManifestError(true) })
-    return () => {
-      alive = false
-    }
-  }, [video?.id])
+  const { manifest, error: manifestError } = useFrameManifest(video?.id ?? null)
 
   if (!video) return null
 

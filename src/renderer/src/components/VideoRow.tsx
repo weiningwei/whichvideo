@@ -5,6 +5,7 @@ import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useConfirm } from './ConfirmDialog'
 import { PopoverItem, PopoverMenu } from './PopoverMenu'
+import { useVideoPreview } from '../hooks/useVideoMedia'
 
 export function VideoRow({
   video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
@@ -33,18 +34,10 @@ export function VideoRow({
   onNavigateKey: (event: ReactKeyboardEvent<HTMLElement>) => void
 }) {
   const confirm = useConfirm()
-  const [thumb, setThumb] = useState<string | null>(null)
+  const thumb = useVideoPreview(video.id, video.indexedAt)
   const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    let alive = true
-    void window.whichvideo.videos.thumbnail(video.id)
-      .then((data) => { if (alive) setThumb(data) })
-      .catch(() => { if (alive) setThumb(null) })
-    return () => { alive = false }
-  }, [video.id, video.indexedAt])
 
   useEffect(() => {
     if (video.status !== 'indexing') { setFrameProgress(null); return }

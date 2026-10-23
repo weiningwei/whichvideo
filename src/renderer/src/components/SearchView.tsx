@@ -4,6 +4,7 @@ import type { SearchMatch, SearchResponse, VideoRecord } from '@shared/types'
 import type { SearchOutcome } from '../hooks/useSearch'
 import { urlInputAfterSearch } from '../lib/searchUrlInput'
 import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel } from '../lib/format'
+import { useVideoPreview } from '../hooks/useVideoMedia'
 
 interface Props {
   search: SearchResponse | null
@@ -336,28 +337,13 @@ function ResultCard({
   onReindex: (id: number) => void
 }) {
   const video: VideoRecord = match.video
-  const [thumb, setThumb] = useState<string | null>(null)
+  const thumb = useVideoPreview(video.id, video.indexedAt, match.timeSeconds)
   /**
    * 命中预览按 timeMs 现场解码：拿到用户截图附近的真实画面，验证"这张图
    * 是不是这个视频"。matchFrame 失败（文件已删/解码超时）时静默回退到
    * 视频级缩略图——后者只是兜底，不应该出现在正常命中里。
    * 切换命中时重拉（依赖 match.timeSeconds + match.videoId）。
    */
-  useEffect(() => {
-    let alive = true
-    const timeMs = Math.round(match.timeSeconds * 1000)
-    void window.whichvideo.videos
-      .matchFrame(video.id, timeMs)
-      .then((data) => (data ? data : window.whichvideo.videos.thumbnail(video.id)))
-      .then((data) => {
-        if (alive) setThumb(data)
-      })
-      .catch(() => { if (alive) setThumb(null) })
-    return () => {
-      alive = false
-    }
-  }, [video.id, match.timeSeconds])
-
   const meta = useMemo(() => {
     const bits: string[] = []
     if (video.width && video.height) bits.push(`${video.width}×${video.height}`)
