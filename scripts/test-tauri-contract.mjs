@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -22,6 +22,10 @@ const platformOpen = readSource('src-tauri', 'src', 'platform_open.rs')
 const watcherSource = readSource('src-tauri', 'src', 'watcher.rs')
 const stateSource = readSource('src-tauri', 'src', 'state.rs')
 const constantsSource = readSource('src-tauri', 'src', 'constants.rs')
+const backendModuleSources = readdirSync(join(root, 'src-tauri', 'src'))
+  .filter((name) => name.endsWith('.rs') && name !== 'state.rs')
+  .map((name) => readSource('src-tauri', 'src', name))
+  .join('\n')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readSource('src-tauri', 'src', name))
   .join('\n')
@@ -107,6 +111,15 @@ check(
 )
 check('渲染入口安装 Tauri API', rendererMain.includes('window.whichvideo = tauriApi'))
 check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.includes('尚未实现'))
+check(
+  '数据库连接由 AppState 统一管理且运行期不可为空',
+  stateSource.includes('db: Mutex<Connection>') &&
+    stateSource.includes('pub fn db(&self)') &&
+    stateSource.includes('pub fn db_recover(&self)') &&
+    !backendModuleSources.includes('.db.lock()') &&
+    !backendModuleSources.includes('数据库未初始化'),
+  '业务模块只能通过 state.db() 或 state.db_recover() 访问连接'
+)
 check(
   '全部 IPC 返回值统一经过运行时校验',
   bridge.includes('value = await invoke<unknown>(command, args)') &&

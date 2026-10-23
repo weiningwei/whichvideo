@@ -243,10 +243,8 @@ pub(crate) fn perform_search(
     }
     let started = std::time::SystemTime::now();
     let settings = {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_settings(conn).unwrap_or_else(|_| db::default_settings())
     };
     let candidate_limit = (settings.max_results as usize).max(RERANK_TOP_K);
@@ -265,10 +263,8 @@ pub(crate) fn perform_search(
     // 后续重排/精修会多次启动 FFmpeg，先把候选视频快照出来，绝不能在这些
     // 外部进程运行期间持有全局 SQLite 互斥锁。
     let videos: HashMap<i64, db::VideoRecord> = {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         results
             .iter()
             .filter_map(|hit| {

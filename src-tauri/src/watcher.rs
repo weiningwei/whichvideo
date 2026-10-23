@@ -9,6 +9,7 @@ use crate::db;
 use crate::events::LibraryEvent;
 use crate::frames_store;
 use crate::indexer;
+use crate::logger;
 use crate::state::AppState;
 use notify::event::EventKind;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -39,10 +40,9 @@ fn pending_changes() -> &'static Mutex<HashMap<String, PendingImport>> {
 fn watcher_settings(app: &AppHandle) -> db::AppSettings {
     let state = app.state::<AppState>();
     state
-        .db
-        .lock()
+        .db()
         .ok()
-        .and_then(|guard| guard.as_ref().and_then(|conn| db::get_settings(conn).ok()))
+        .and_then(|conn| db::get_settings(&conn).ok())
         .unwrap_or_else(db::default_settings)
 }
 
@@ -99,8 +99,8 @@ fn drain_pending_imports(app: AppHandle) {
             if Path::new(&item.path).is_file() {
                 let root = {
                     let state = app.state::<AppState>();
-                    state.db.lock().ok().and_then(|guard| guard.as_ref()
-                        .and_then(|conn| db::get_folder(conn, item.folder_id).ok().flatten())
+                    state.db().ok().and_then(|conn|
+                        db::get_folder(&conn, item.folder_id).ok().flatten()
                         .map(|folder| folder.path))
                 };
                 if root.as_deref().is_some_and(|root| indexer::is_playlist_part(&item.path, root)) {
@@ -129,9 +129,8 @@ fn drain_pending_imports(app: AppHandle) {
 pub fn sync_all(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     let folders = {
-        let g = state.db.lock().map_err(|e| e.to_string())?;
-        let c = g.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
-        db::list_folders(c).map_err(|e| e.to_string())?
+        let conn = state.db()?;
+        db::list_folders(&conn).map_err(|e| e.to_string())?
     };
 
     // 停止已不需要的监听（移除 map 项即让 watcher 析构停止）。
@@ -235,24 +234,26 @@ fn remove_by_path(app: &AppHandle, path: &str) {
     let norm = db::normalize_path(path);
     let state = app.state::<AppState>();
     let existing = {
-        let g = state.db.lock();
-        match g {
-            Ok(guard) => guard
-                .as_ref()
-                .and_then(|c| db::find_by_path(c, &norm).ok().flatten()),
-            Err(_) => None,
-        }
+        let conn = match state.db() {
+            Ok(conn) => conn,
+            Err(error) => {
+                logger::error(logger::Module::Watcher, "database_unavailable", &format!("operation=remove_by_path error={error}"));
+                return;
+            }
+        };
+        db::find_by_path(&conn, &norm).ok().flatten()
     };
     let Some(existing) = existing else { return };
     indexer::cancel(app, existing.id);
     let removed = {
-        let g = state.db.lock();
-        match g {
-            Ok(guard) => guard
-                .as_ref()
-                .and_then(|c| db::remove_video(c, existing.id).ok().flatten()),
-            Err(_) => None,
-        }
+        let conn = match state.db() {
+            Ok(conn) => conn,
+            Err(error) => {
+                logger::error(logger::Module::Watcher, "database_unavailable", &format!("operation=remove_by_path error={error}"));
+                return;
+            }
+        };
+        db::remove_video(&conn, existing.id).ok().flatten()
     };
     if let Some(v) = removed {
         frames_store::remove_video(v.id);
@@ -276,36 +277,31 @@ fn remove_under(app: &AppHandle, dir: &str) {
     let state = app.state::<AppState>();
     // 删除前先取出 id 与路径：事件里的 path 供界面提示用，删完就查不到了。
     let videos: Vec<(i64, String)> = {
-        let g = state.db.lock();
-        match g {
-            Ok(guard) => guard
-                .as_ref()
-                .map(|c| {
-                    db::video_ids_under(c, &norm)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|id| {
-                            db::get_video(c, id)
-                                .ok()
-                                .flatten()
-                                .map(|video| (video.id, video.path))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            Err(_) => Vec::new(),
-        }
+        let conn = match state.db() {
+            Ok(conn) => conn,
+            Err(error) => {
+                logger::error(logger::Module::Watcher, "database_unavailable", &format!("operation=remove_under error={error}"));
+                return;
+            }
+        };
+        db::video_ids_under(&conn, &norm)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| {
+                db::get_video(&conn, id)
+                    .ok()
+                    .flatten()
+                    .map(|video| (video.id, video.path))
+            })
+            .collect()
     };
     for (id, _) in &videos {
         indexer::cancel(app, *id);
     }
     {
         let ids: Vec<i64> = videos.iter().map(|(id, _)| *id).collect();
-        let g = state.db.lock();
-        if let Ok(guard) = g {
-            if let Some(c) = guard.as_ref() {
-                let _ = db::remove_video_ids(c, &ids);
-            }
+        if let Ok(conn) = state.db() {
+            let _ = db::remove_video_ids(&conn, &ids);
         }
     }
     for (id, path) in &videos {
@@ -326,18 +322,15 @@ fn remove_under(app: &AppHandle, dir: &str) {
 
 fn set_folder_state(app: &AppHandle, folder_id: i64, state_name: &str, message: Option<&str>) {
     let state = app.state::<AppState>();
-    let g = state.db.lock();
-    if let Ok(guard) = g {
-        if let Some(c) = guard.as_ref() {
-            let _ = db::update_folder_state(c, folder_id, state_name, message);
-            if let Ok(Some(f)) = db::get_folder(c, folder_id) {
-                let _ = app.emit(
-                    constants::EVENT_CHANNEL,
-                    LibraryEvent::FolderUpdated { folder: f },
-                );
-            }
+    if let Ok(conn) = state.db() {
+        let _ = db::update_folder_state(&conn, folder_id, state_name, message);
+        if let Ok(Some(f)) = db::get_folder(&conn, folder_id) {
+            let _ = app.emit(
+                constants::EVENT_CHANNEL,
+                LibraryEvent::FolderUpdated { folder: f },
+            );
         }
-    }
+    };
 }
 
 /// 停止单个目录监听。

@@ -33,10 +33,8 @@ pub async fn library_stats(app: AppHandle) -> Result<db::LibraryStats, crate::er
     let result: Result<_, String> = async {
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<AppState>();
-            let guard = state.db.lock().map_err(|e| e.to_string())?;
-            let conn = guard
-                .as_ref()
-                .ok_or_else(|| "数据库未初始化".to_string())?;
+            let guard = state.db()?;
+            let conn = &*guard;
             db::stats(conn).map_err(|e| e.to_string())
         })
         .await
@@ -62,10 +60,8 @@ pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, crat
     let result: Result<_, String> = async {
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<AppState>();
-            let guard = state.db.lock().map_err(|e| e.to_string())?;
-            let conn = guard
-                .as_ref()
-                .ok_or_else(|| "数据库未初始化".to_string())?;
+            let guard = state.db()?;
+            let conn = &*guard;
             db::list_folders(conn).map_err(|e| e.to_string())
         })
         .await
@@ -95,10 +91,8 @@ fn add_folder_path_sync(app: &AppHandle, dir_path: String) -> Result<db::Watched
     let (_, folder_id) = indexer::import_folder(app.clone(), dir_path, true, true)?;
     watcher::sync_all(&app)?;
     let state = app.state::<AppState>();
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let guard = state.db()?;
+    let conn = &*guard;
     db::get_folder(conn, folder_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "文件夹登记后无法读取".to_string())
@@ -124,8 +118,8 @@ fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder
     for dir in picked {
         let (_, id) = indexer::import_folder(app.clone(), dir, true, true)?;
         let state = app.state::<AppState>();
-        let g = state.db.lock().map_err(|e| e.to_string())?;
-        let c = g.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let g = state.db()?;
+        let c = &*g;
         let folder = db::get_folder(c, id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "文件夹登记后无法读取".to_string())?;
@@ -153,24 +147,22 @@ pub async fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), crate:
 /// `FolderRemoved` 之后 `refreshAll` 对齐，所以这里只发一条汇总事件。
 fn remove_folder_sync(app: &AppHandle, folder_id: i64) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let guard = state.db()?;
+    let conn = &*guard;
     let folder = db::get_folder(conn, folder_id).map_err(|e| e.to_string())?;
     // 停监听会去拿监听表的锁，先把数据库锁放掉，避免锁顺序反转。
     drop(guard);
     folder.ok_or("文件夹不存在")?;
     watcher::stop(app, folder_id)?;
     let ids = {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or("数据库未初始化")?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::detach_folder_videos(conn, folder_id).map_err(|e| e.to_string())?
     };
     indexer::cancel_many(app, &ids);
     let stats = {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or("数据库未初始化")?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::remove_video_ids(conn, &ids).map_err(|e| e.to_string())?;
         db::remove_folder(conn, folder_id).map_err(|e| e.to_string())?;
         db::stats(conn).map_err(|e| e.to_string())?
@@ -208,8 +200,8 @@ pub async fn folders_rescan(
 fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events::ImportResult, String> {
     let targets: Vec<db::WatchedFolder> = {
         let state = app.state::<AppState>();
-        let g = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = g.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let g = state.db()?;
+        let conn = &*g;
         match folder_id {
             Some(id) => db::get_folder(conn, id).map_err(|e| e.to_string())?.into_iter().collect(),
             None => db::list_folders(conn).map_err(|e| e.to_string())?,
@@ -224,12 +216,10 @@ fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events
             });
             if total.first_error.is_none() { total.first_error = Some("目录不存在".to_string()); }
             let state = app.state::<AppState>();
-            let g = state.db.lock().map_err(|e| e.to_string())?;
-            if let Some(c) = g.as_ref() {
-                let _ = db::update_folder_state(c, folder.id, "missing", Some("目录不存在"));
-                if let Ok(Some(f)) = db::get_folder(c, folder.id) {
-                    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderUpdated { folder: f });
-                }
+            let g = state.db()?;
+            let _ = db::update_folder_state(&g, folder.id, "missing", Some("目录不存在"));
+            if let Ok(Some(f)) = db::get_folder(&g, folder.id) {
+                let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderUpdated { folder: f });
             }
             continue;
         }
@@ -257,10 +247,8 @@ pub fn folders_set_enabled(
 ) -> Result<db::WatchedFolder, crate::error::AppError> {
     let result: Result<_, String> = (|| {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::set_folder_enabled(conn, folder_id, enabled).map_err(|e| e.to_string())?;
         let folder = db::get_folder(conn, folder_id)
             .map_err(|e| e.to_string())?
@@ -276,10 +264,8 @@ pub fn folders_set_enabled(
 #[tauri::command]
 pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::VideoRecord>, crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_video(conn, video_id).map_err(|e| e.to_string())
     })();
     crate::error::command_result("videos_get", result)
@@ -292,10 +278,8 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), crate::error::
         indexer::cancel(&app, video_id);
         let state = app.state::<AppState>();
         let removed = {
-            let guard = state.db.lock().map_err(|e| e.to_string())?;
-            let conn = guard
-                .as_ref()
-                .ok_or_else(|| "数据库未初始化".to_string())?;
+            let guard = state.db()?;
+            let conn = &*guard;
             db::remove_video(conn, video_id).map_err(|e| e.to_string())?
         };
         frames_store::remove_video(video_id);
@@ -341,10 +325,8 @@ fn remove_videos_sync(app: &AppHandle, video_ids: Vec<i64>) -> Result<(), String
     indexer::cancel_many(app, &video_ids);
     let state = app.state::<AppState>();
     {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::remove_video_ids(conn, &video_ids).map_err(|e| e.to_string())?;
     }
     for id in &video_ids {
@@ -362,10 +344,8 @@ fn remove_videos_sync(app: &AppHandle, video_ids: Vec<i64>) -> Result<(), String
 #[tauri::command]
 pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         let video = db::get_video(conn, video_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "视频不存在".to_string())?;
@@ -382,10 +362,8 @@ pub fn videos_open(
     at_seconds: Option<f64>,
 ) -> Result<(), crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         let video = db::get_video(conn, video_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "视频不存在".to_string())?;
@@ -431,8 +409,8 @@ fn pair_key(a: i64, b: i64) -> (i64, i64) {
 fn ensure_file_hash(app: &AppHandle, video_id: i64) -> Result<Option<String>, String> {
     let video = {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_video(conn, video_id).map_err(|e| e.to_string())?
     };
     let Some(video) = video else { return Ok(None) };
@@ -441,8 +419,8 @@ fn ensure_file_hash(app: &AppHandle, video_id: i64) -> Result<Option<String>, St
     }
     let hash = media::sha256_of_file(&video.path)?;
     let state = app.state::<AppState>();
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+    let guard = state.db()?;
+    let conn = &*guard;
     db::set_file_hash(conn, video_id, &hash).map_err(|e| e.to_string())?;
     Ok(Some(hash))
 }
@@ -467,8 +445,8 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
     let threshold = min_score.filter(|v| v.is_finite() && *v > 0.0 && *v <= 1.0).unwrap_or(0.88);
     let identical_candidates = {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::find_identical_file_pairs(conn).map_err(|e| e.to_string())?
     };
     let mut pairs = Vec::new();
@@ -498,8 +476,8 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
         seen.insert(key);
         let videos = {
             let state = app.state::<AppState>();
-            let guard = state.db.lock().map_err(|e| e.to_string())?;
-            let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+            let guard = state.db()?;
+            let conn = &*guard;
             (
                 db::get_video(conn, id_a).map_err(|e| e.to_string())?,
                 db::get_video(conn, id_b).map_err(|e| e.to_string())?,
@@ -582,8 +560,8 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
 
     {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         for hit in rough_hits {
             if let (Some(video_a), Some(video_b)) = (
                 db::get_video(conn, hit.id_a).map_err(|e| e.to_string())?,
@@ -645,10 +623,8 @@ fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Opti
     }
     let path = {
         let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_video(conn, video_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "视频不存在".to_string())?
@@ -663,10 +639,8 @@ pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::Vi
     let result: Result<_, String> = async {
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<AppState>();
-            let guard = state.db.lock().map_err(|e| e.to_string())?;
-            let conn = guard
-                .as_ref()
-                .ok_or_else(|| "数据库未初始化".to_string())?;
+            let guard = state.db()?;
+            let conn = &*guard;
             db::list_videos(conn, &query).map_err(|e| e.to_string())
         })
         .await
@@ -683,10 +657,8 @@ pub fn videos_thumbnail(
     video_id: i64,
 ) -> Result<Option<String>, crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_thumbnail(conn, video_id).map_err(|e| e.to_string())
     })();
     crate::error::command_result("videos_thumbnail", result)
@@ -699,10 +671,8 @@ pub fn videos_frame_manifest(
     video_id: i64,
 ) -> Result<Vec<db::FrameManifestEntry>, crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::list_frame_manifest(conn, video_id).map_err(|e| e.to_string())
     })();
     crate::error::command_result("videos_frame_manifest", result)
@@ -907,10 +877,8 @@ pub fn watcher_sync(app: AppHandle) -> Result<(), crate::error::AppError> {
 #[tauri::command]
 pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::get_settings(conn).map_err(|e| e.to_string())
     })();
     crate::error::command_result("library_settings", result)
@@ -935,10 +903,8 @@ pub async fn library_update_settings(
 /// 只能跑在阻塞线程，不能占着窗口主线程。
 fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db::AppSettings, String> {
     let state = app.state::<AppState>();
-    let mut guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_mut()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
+    let mut guard = state.db()?;
+    let conn = &mut *guard;
     let previous = db::get_settings(conn).map_err(|e| e.to_string())?;
     let updated = db::update_settings(conn, &patch).map_err(|e| e.to_string())?;
     if let Some(mode) = patch.sampling_mode.as_deref() {
@@ -991,10 +957,8 @@ fn reset_library_sync(app: &AppHandle) -> Result<(), String> {
     indexer::cancel_all(app);
     let state = app.state::<AppState>();
     {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::clear_all(conn).map_err(|e| e.to_string())?;
     }
     // watcher 析构前已进入回调的事件可能刚刚入队；清库后再收口一次。
@@ -1106,8 +1070,8 @@ fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatu
     let was_ready = media::tools_ready();
     let status = media::configure_dir(Some(dir.clone()))?;
     let state = app.state::<AppState>();
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+    let guard = state.db()?;
+    let conn = &*guard;
     db::set_ffmpeg_dir(conn, Some(&dir)).map_err(|e| e.to_string())?;
     drop(guard);
     if !was_ready && status.ready {
@@ -1121,8 +1085,8 @@ fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatu
 #[tauri::command]
 pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::MediaToolsStatus, crate::error::AppError> {
     let result: Result<_, String> = (|| {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        let guard = state.db()?;
+        let conn = &*guard;
         db::set_ffmpeg_dir(conn, None).map_err(|e| e.to_string())?;
         let status = media::configure_dir(None)?;
         logger::info(logger::Module::Media, "tools_directory_cleared", &format!("source={}", status.source));

@@ -78,8 +78,8 @@ fn check_once(app: &AppHandle) {
 pub fn start_if_enabled(app: &AppHandle) {
     let enabled = {
         let state = app.state::<AppState>();
-        let Ok(guard) = state.db.lock() else { return };
-        let Some(conn) = guard.as_ref() else { return };
+        let Ok(guard) = state.db() else { return };
+        let conn = &*guard;
         db::get_settings(conn)
             .map(|settings| settings.update_check)
             .unwrap_or(false)

@@ -7,12 +7,12 @@ use crate::search::FrameSearchIndex;
 use crate::watcher::WatcherMap;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 /// 应用级状态：持有一个 SQLite 连接。打开失败会在启动阶段提示后退出，
-/// 连接仍用 Option 包一层以保持命令侧的防御性取值。
+/// 因此运行期连接始终存在，不再让各模块重复处理“不可能的未初始化”分支。
 pub struct AppState {
-    pub db: Mutex<Option<Connection>>,
+    db: Mutex<Connection>,
     /// 索引器队列与实时进度（M7）。
     pub indexer: Mutex<IndexerState>,
     /// 全量帧指纹常驻内存索引；只在帧数据发生变化后重建。
@@ -43,7 +43,7 @@ impl AppState {
         let concurrency = settings.concurrency.clamp(1, 8) as usize;
         frames_store::configure_enabled(settings.keep_frame_images);
         Ok(AppState {
-            db: Mutex::new(Some(conn)),
+            db: Mutex::new(conn),
             indexer: Mutex::new(IndexerState {
                 concurrency,
                 ..Default::default()
@@ -55,16 +55,25 @@ impl AppState {
         })
     }
 
+    /// 命令和可失败流程使用的数据库入口。锁中毒统一作为错误向上传播。
+    pub fn db(&self) -> Result<MutexGuard<'_, Connection>, String> {
+        self.db.lock().map_err(|_| "数据库状态锁已损坏".to_string())
+    }
+
+    /// 后台索引任务不能因某个工作线程 panic 永久停摆；恢复锁的同时留下诊断日志。
+    pub fn db_recover(&self) -> MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|poisoned| {
+            logger::error(logger::Module::Library, "database_lock_recovered", "");
+            poisoned.into_inner()
+        })
+    }
+
     /// 帧数据被批量删除或增量更新失败时，从数据库恢复内存搜索索引。
     ///
     /// 只在锁内读取快照，构建放到锁外；并且先放数据库锁再取搜索索引锁，
     /// 避免与搜索、索引任务形成锁顺序反转。
     pub fn rebuild_search_index(&self) {
-        let matrix = self.db.lock().ok().and_then(|guard| {
-            guard
-                .as_ref()
-                .and_then(|conn| db::load_frame_matrix(conn).ok())
-        });
+        let matrix = self.db().ok().and_then(|conn| db::load_frame_matrix(&conn).ok());
         if let Some(matrix) = matrix {
             let rebuilt = FrameSearchIndex::from_matrix(matrix);
             if let Ok(mut current) = self.search_index.lock() {

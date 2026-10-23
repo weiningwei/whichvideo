@@ -84,16 +84,13 @@ struct MediaToolsInfo {
 pub fn write_archive(app: &AppHandle, output: &Path) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (database_available, stats, settings, folders) = {
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        match guard.as_ref() {
-            Some(conn) => (
-                true,
-                db::stats(conn).ok(),
-                db::get_settings(conn).ok(),
-                db::list_folders(conn).unwrap_or_default(),
-            ),
-            None => (false, None, None, Vec::new()),
-        }
+        let conn = state.db()?;
+        (
+            true,
+            db::stats(&conn).ok(),
+            db::get_settings(&conn).ok(),
+            db::list_folders(&conn).unwrap_or_default(),
+        )
     };
     let folder_summary = summarize_folders(&folders);
     let indexer = {
