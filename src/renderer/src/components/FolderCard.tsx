@@ -31,12 +31,14 @@ export function FolderCard({
   folder,
   onRemove,
   onRescan,
-  onToggle
+  onToggle,
+  scanning
 }: {
   folder: WatchedFolder
   onRemove: (id: number) => void
   onRescan: (id?: number) => void
   onToggle: (id: number, enabled: boolean) => void
+  scanning: boolean
 }) {
   const style = FOLDER_STATE_STYLE[folder.watchState] ?? FOLDER_STATE_STYLE.idle
   return (
@@ -70,8 +72,8 @@ export function FolderCard({
         >
           {folder.enabled ? '暂停监听' : '恢复监听'}
         </button>}
-        <button className="btn px-2 py-1 text-[11px]" onClick={() => onRescan(folder.id)}>
-          扫描
+        <button className="btn px-2 py-1 text-[11px]" disabled={scanning} onClick={() => onRescan(folder.id)}>
+          {scanning ? '扫描中…' : '扫描'}
         </button>
         <button
           className="ml-auto rounded-lg px-2 py-1 text-[11px] text-bad hover:bg-bad/10"

@@ -107,6 +107,9 @@ export default function App() {
               total={state.total}
               lastImportResult={state.lastImportResult}
               onRetryImportFailures={() => void actions.retryImportFailures()}
+              busy={state.busy}
+              importProgress={state.importProgress}
+              indexStatus={state.status}
               query={videoQuery}
               onSetQuery={actions.setVideoQuery}
               onAddFolder={() => void actions.watchFolder()}

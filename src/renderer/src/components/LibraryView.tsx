@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import type { DuplicatePair, ImportResult, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import type { DuplicatePair, ImportResult, IndexerStatus, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import type { ImportProgressEvent } from '../lib/importProgress'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
 import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
@@ -22,6 +23,9 @@ interface Props {
   total: number
   lastImportResult: ImportResult | null
   onRetryImportFailures: () => void
+  busy: string | null
+  importProgress: ImportProgressEvent | null
+  indexStatus: IndexerStatus | null
   query: VideoQuery
   onSetQuery: (query: VideoQuery) => void
   onAddFolder: () => void
@@ -248,6 +252,9 @@ export function LibraryView(props: Props) {
       {libraryDrop && <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-accent bg-surface-1/95 text-[14px] font-medium text-accent">松开导入视频或文件夹 · 文件夹仅扫描一次</div>}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar
+          busy={props.busy}
+          importProgress={props.importProgress}
+          indexStatus={props.indexStatus}
           query={query}
           onSetQuery={onSetQuery}
           videos={shownVideos}
@@ -275,7 +282,7 @@ export function LibraryView(props: Props) {
             <div className="flex flex-wrap items-center gap-2">
               <span>上次导入：新增 {props.lastImportResult.added}，已存在 {props.lastImportResult.duplicates}，跳过 {props.lastImportResult.skipped}，失败 {props.lastImportResult.failed}</span>
               {props.lastImportResult.failed > 0 && <button className="btn" onClick={() => setReportExpanded((open) => !open)}>{reportExpanded ? '收起详情' : '查看失败详情'}</button>}
-              {props.lastImportResult.failures.length > 0 && <button className="btn" onClick={props.onRetryImportFailures}>重试失败项</button>}
+              {props.lastImportResult.failures.length > 0 && <button className="btn" disabled={Boolean(props.busy || props.importProgress)} onClick={props.onRetryImportFailures}>重试失败项</button>}
             </div>
             {reportExpanded && props.lastImportResult.failures.length > 0 && (
               <ul className="mt-2 max-h-44 space-y-1 overflow-auto" aria-label="导入失败详情">
@@ -458,6 +465,7 @@ export function LibraryView(props: Props) {
                   folder={folder}
                   onRemove={props.onRemoveFolder}
                   onRescan={props.onRescan}
+                  scanning={Boolean(props.busy || props.importProgress)}
                   onToggle={props.onToggleFolder}
                 />
               ))}

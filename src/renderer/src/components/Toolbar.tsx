@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord } from '@shared/types'
+import type { DuplicatePair, IndexerStatus, SamplingMode, VideoQuery, VideoRecord } from '@shared/types'
+import type { ImportProgressEvent } from '../lib/importProgress'
 import { reverseVideoSort, sortVideoQuery } from '../lib/videoSort'
 
 interface ToolbarProps {
+  busy: string | null
+  importProgress: ImportProgressEvent | null
+  indexStatus: IndexerStatus | null
   query: VideoQuery
   onSetQuery: (query: VideoQuery) => void
   videos: VideoRecord[]
@@ -27,6 +31,7 @@ interface ToolbarProps {
 
 export function Toolbar(props: ToolbarProps) {
   const {
+    busy, importProgress, indexStatus,
     query, onSetQuery, videos, total, selectedVideoIds, onSelectAll, treeVisible, onToggleTree,
     onImportFiles, onImportFolder, onWatchFolder, onManageFolders, onOpenSettings,
     onFindDuplicates, onDuplicatesResolved, onReindex, onRescan, onRemoveVideos,
@@ -36,6 +41,14 @@ export function Toolbar(props: ToolbarProps) {
   const [moreOpen, setMoreOpen] = useState(false)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
   const [removingVideos, setRemovingVideos] = useState(false)
+  const importing = Boolean(importProgress || busy?.includes('导入') || busy?.includes('扫描') || busy?.includes('监视目录'))
+  const processing = Boolean(busy || importProgress)
+  const indexing = Boolean(indexStatus?.running)
+  const progressLabel = importProgress
+    ? importProgress.total > 0
+      ? `导入 ${importProgress.processed}/${importProgress.total} · 新增 ${importProgress.added}`
+      : `正在遍历文件 · 已发现 ${importProgress.processed}`
+    : busy ?? (indexing ? `索引 ${indexStatus?.done ?? 0}/${indexStatus?.total ?? 0}` : null)
   useEffect(() => { setAddOpen(false); setMoreOpen(false) }, [selectedVideoIds])
   useEffect(() => {
     if (!addOpen && !moreOpen) return
@@ -78,13 +91,15 @@ export function Toolbar(props: ToolbarProps) {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          {progressLabel && <span role="status" className="max-w-48 truncate text-[11px] tabular-nums text-accent" title={progressLabel}>{progressLabel}</span>}
           <div className="relative" data-toolbar-menu>
             <button
               className="btn border-accent-strong bg-accent px-3.5 text-surface-0 hover:opacity-90"
+              disabled={processing}
               onClick={() => { setAddOpen((v) => !v); setMoreOpen(false) }}
               aria-expanded={addOpen}
             >
-              ＋ 添加
+              {importing ? '添加中…' : '＋ 添加'}
             </button>
             {addOpen && (
               <Menu align="right">
@@ -107,9 +122,9 @@ export function Toolbar(props: ToolbarProps) {
             </button>
             {moreOpen && (
               <Menu align="right">
-                <MenuItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} onClick={runDuplicateScan} />
-                <MenuItem label="重新扫描所有文件夹" onClick={() => { setMoreOpen(false); onRescan() }} />
-                <MenuItem label="重建全部索引" onClick={() => { setMoreOpen(false); onReindex() }} />
+                <MenuItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} disabled={scanningDuplicates || processing} onClick={runDuplicateScan} />
+                <MenuItem label="重新扫描所有文件夹" disabled={processing} onClick={() => { setMoreOpen(false); onRescan() }} />
+                <MenuItem label="重建全部索引" disabled={processing || indexing} onClick={() => { setMoreOpen(false); onReindex() }} />
               </Menu>
             )}
           </div>
@@ -160,7 +175,7 @@ export function Toolbar(props: ToolbarProps) {
             {selectedVideoIds.size > 0 ? (
               <div className="flex items-center gap-2 border-l border-line pl-2">
                 <span className="whitespace-nowrap text-[11.5px] font-medium text-accent">已选 {selectedVideoIds.size}</span>
-                <button className="btn py-1.5 text-[11.5px]" onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
+                <button className="btn py-1.5 text-[11.5px]" disabled={processing || indexing} onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
                 <button className="btn btn-danger py-1.5 text-[11.5px]" disabled={removingVideos} onClick={async () => {
                   const ids = [...selectedVideoIds]
                   if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件）`)) return
@@ -184,9 +199,9 @@ function Menu({ children, align }: { children: React.ReactNode; align: 'right' }
   return <div className={`popover absolute top-full z-40 mt-2 w-56 p-1.5 ${align === 'right' ? 'right-0' : 'left-0'}`}>{children}</div>
 }
 
-function MenuItem({ label, hint, onClick }: { label: string; hint?: string; onClick: () => void }) {
+function MenuItem({ label, hint, disabled, onClick }: { label: string; hint?: string; disabled?: boolean; onClick: () => void }) {
   return (
-    <button className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-surface-3" onClick={onClick}>
+    <button className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-surface-3 disabled:opacity-50" disabled={disabled} onClick={onClick}>
       <span className="text-[12.5px] text-primary">{label}</span>
       {hint && <span className="mt-0.5 text-[10.5px] text-tertiary">{hint}</span>}
     </button>
