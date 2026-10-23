@@ -99,7 +99,36 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scene_cache (
+  video_id INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  cache_key TEXT NOT NULL,
+  scene_times TEXT NOT NULL
+);
 "#;
+
+pub fn cached_scene_times(conn: &Connection, video_id: i64, key: &str) -> SqlResult<Option<Vec<f64>>> {
+    use rusqlite::OptionalExtension;
+    let json: Option<String> = conn.query_row(
+        "SELECT scene_times FROM scene_cache WHERE video_id = ? AND cache_key = ?",
+        rusqlite::params![video_id, key], |row| row.get(0),
+    ).optional()?;
+    // 损坏缓存只触发重新检测，不影响索引；空数组也是有效检测结果。
+    Ok(json.and_then(|value| serde_json::from_str::<Vec<f64>>(&value).ok())
+        .filter(|times| times.iter().all(|t| t.is_finite() && *t >= 0.0)
+            && times.windows(2).all(|pair| pair[0] <= pair[1])))
+}
+
+pub fn cache_scene_times(conn: &Connection, video_id: i64, key: &str, times: &[f64]) -> SqlResult<()> {
+    let json = serde_json::to_string(times)
+        .map_err(|error| SqlError::ToSqlConversionFailure(Box::new(error)))?;
+    conn.execute(
+        "INSERT INTO scene_cache (video_id, cache_key, scene_times) VALUES (?, ?, ?)
+         ON CONFLICT(video_id) DO UPDATE SET cache_key=excluded.cache_key, scene_times=excluded.scene_times",
+        rusqlite::params![video_id, key, json],
+    )?;
+    Ok(())
+}
 
 pub fn open_db() -> SqlResult<Connection> {
     let _ = fs::create_dir_all(paths::db_dir());
@@ -1304,6 +1333,43 @@ pub fn remove_videos_under(conn: &Connection, dir: &str) -> SqlResult<Vec<i64>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scene_cache_survives_reopen_and_migrates_without_losing_videos() {
+        let path = std::env::temp_dir().join(format!("whichvideo-scenes-{}-{}.db",
+            std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        {
+            let conn = Connection::open(&path).unwrap();
+            configure_connection(&conn).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            conn.execute_batch("DROP TABLE scene_cache;
+                INSERT INTO videos (id,path,path_key,name,dir,ext,added_at)
+                VALUES (1,'clip.mp4','clip.mp4','clip','library','mp4',1);").unwrap();
+            // 启动时在旧库上新增缓存表，保留已有视频。
+            conn.execute_batch(SCHEMA).unwrap();
+            assert!(get_video(&conn, 1).unwrap().is_some());
+            cache_scene_times(&conn, 1, "version-a", &[1.5, 3.0]).unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            configure_connection(&conn).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            assert_eq!(cached_scene_times(&conn, 1, "version-a").unwrap(), Some(vec![1.5, 3.0]));
+            assert_eq!(cached_scene_times(&conn, 1, "version-b").unwrap(), None);
+            cache_scene_times(&conn, 1, "version-b", &[]).unwrap();
+            assert_eq!(cached_scene_times(&conn, 1, "version-b").unwrap(), Some(vec![]));
+            assert_eq!(cached_scene_times(&conn, 1, "version-a").unwrap(), None);
+            for corrupt in ["broken", "[3,1]", "[-1]", "[null]"] {
+                conn.execute("UPDATE scene_cache SET scene_times = ?", [corrupt]).unwrap();
+                assert_eq!(cached_scene_times(&conn, 1, "version-b").unwrap(), None);
+            }
+            conn.execute("DELETE FROM videos WHERE id = 1", []).unwrap();
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM scene_cache", [], |r| r.get(0)).unwrap();
+            assert_eq!(count, 0);
+        }
+        fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn duration_sort_keeps_unknown_lengths_last_in_both_directions() {

@@ -627,7 +627,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     set_sampling_override(&app, &[video_id], &effective);
     let (timestamps, scene_sampling) = if effective == "scene" {
         set_frame_progress(&app, video_id, 0, duration.unwrap_or(0.0).round() as i64, Some("detecting"));
-        match media::detect_scenes(&video.path, 0.3, || is_cancelled(&app, video_id)) {
+        match detect_scenes_cached(&app, video_id, &video.path) {
             Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.uniform_interval_seconds as usize),
             Err(e) => {
                 if is_cancelled(&app, video_id) {
@@ -898,6 +898,35 @@ fn resume_start_index(processed: &[i64], timestamps: &[f64], uses_full_scan: boo
     } else {
         0
     }
+}
+
+fn detect_scenes_cached(app: &AppHandle, video_id: i64, path: &str) -> Result<Vec<f64>, String> {
+    const THRESHOLD: f64 = 0.3;
+    if is_cancelled(app, video_id) { return Err("场景检测已取消".to_string()); }
+    let key = media::scene_cache_key(path, THRESHOLD);
+    if let Some(key) = key.as_deref() {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(conn) = guard.as_ref() {
+            match db::cached_scene_times(conn, video_id, key) {
+                Ok(Some(times)) => return Ok(times),
+                Ok(None) => {}
+                Err(error) => log(&format!("读取场景缓存失败，重新检测：{error}")),
+            }
+        }
+    }
+    let times = media::detect_scenes(path, THRESHOLD, || is_cancelled(app, video_id))?;
+    // 检测期间文件或工具变化时，不把旧结果写入新版本的缓存。
+    if !is_cancelled(app, video_id) && key.is_some() && media::scene_cache_key(path, THRESHOLD) == key {
+        let state = app.state::<AppState>();
+        let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(conn) = guard.as_ref() {
+            if let Err(error) = db::cache_scene_times(conn, video_id, key.as_deref().unwrap(), &times) {
+                log(&format!("保存场景缓存失败：{error}"));
+            }
+        }
+    }
+    Ok(times)
 }
 
 fn plan_detected_scenes(scenes: &[f64], duration: Option<f64>, interval_seconds: usize) -> (Vec<f64>, bool) {

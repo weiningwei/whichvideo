@@ -901,6 +901,29 @@ pub struct RawFrame {
     pub rgb: FramePixels,
 }
 
+/// 只缓存独立视频文件。清单/播放列表的外部片段不受自身元数据保护。
+/// 修改场景滤镜、时间解析或解码语义时递增版本。
+pub fn scene_cache_key(file_path: &str, threshold: f64) -> Option<String> {
+    let path = std::path::Path::new(file_path);
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    if !matches!(extension.as_str(), "mp4" | "mkv" | "avi" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "ts" | "m2ts") {
+        return None;
+    }
+    let tools = resolve_tools()?;
+    scene_cache_key_for_files(path, std::path::Path::new(&tools.ffmpeg), threshold)
+}
+
+fn scene_cache_key_for_files(video: &std::path::Path, ffmpeg: &std::path::Path, threshold: f64) -> Option<String> {
+    fn identity(path: &std::path::Path) -> Option<(PathBuf, u64, u128)> {
+        let canonical = std::fs::canonicalize(path).ok()?;
+        let metadata = std::fs::metadata(&canonical).ok()?;
+        if !metadata.is_file() { return None; }
+        Some((canonical, metadata.len(), metadata.modified().ok()?
+            .duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos()))
+    }
+    serde_json::to_string(&(1u32, threshold.to_bits(), identity(video)?, identity(ffmpeg)?)).ok()
+}
+
 /// 检测场景切换时间点（秒，升序）。只有选中的场景帧经过 showinfo；
 /// 不输出全帧进度日志（run_ffmpeg 同步等待退出，无法实时消费该进度）。
 pub fn detect_scenes(
@@ -1593,6 +1616,30 @@ mod tests {
     #[test]
     fn cancelled_scene_detection_does_not_start_ffmpeg() {
         assert_eq!(detect_scenes("missing.mp4", 0.3, || true).unwrap_err(), "场景检测已取消");
+    }
+
+    #[test]
+    fn scene_cache_identity_tracks_inputs_tools_and_detection_parameters() {
+        let root = std::env::temp_dir().join(format!("whichvideo-scene-key-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let video = root.join("video.mp4");
+        let tool = root.join("ffmpeg");
+        fs::write(&video, b"video").unwrap();
+        fs::write(&tool, b"tool").unwrap();
+        let key = super::scene_cache_key_for_files(&video, &tool, 0.3).unwrap();
+        assert_eq!(super::scene_cache_key_for_files(&video, &tool, 0.3), Some(key.clone()));
+        assert_ne!(super::scene_cache_key_for_files(&video, &tool, 0.4), Some(key.clone()));
+        let modified = fs::metadata(&video).unwrap().modified().unwrap();
+        fs::File::options().write(true).open(&video).unwrap().set_times(
+            fs::FileTimes::new().set_modified(modified + Duration::from_secs(2))).unwrap();
+        assert_ne!(super::scene_cache_key_for_files(&video, &tool, 0.3), Some(key));
+        let key = super::scene_cache_key_for_files(&video, &tool, 0.3).unwrap();
+        fs::write(&tool, b"updated tool").unwrap();
+        assert_ne!(super::scene_cache_key_for_files(&video, &tool, 0.3), Some(key));
+        assert!(super::scene_cache_key("playlist.m3u8", 0.3).is_none());
+        assert!(super::scene_cache_key("playlist.m3u", 0.3).is_none());
+        assert!(super::scene_cache_key("external-reference.mov", 0.3).is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
