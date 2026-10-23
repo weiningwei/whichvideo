@@ -26,6 +26,10 @@ const backendModuleSources = readdirSync(join(root, 'src-tauri', 'src'))
   .filter((name) => name.endsWith('.rs') && name !== 'state.rs')
   .map((name) => readSource('src-tauri', 'src', name))
   .join('\n')
+const eventProducerSources = readdirSync(join(root, 'src-tauri', 'src'))
+  .filter((name) => name.endsWith('.rs') && name !== 'events.rs')
+  .map((name) => readSource('src-tauri', 'src', name))
+  .join('\n')
 const processSources = ['commands.rs', 'media.rs', 'updater.rs']
   .map((name) => readSource('src-tauri', 'src', name))
   .join('\n')
@@ -63,6 +67,13 @@ check(
     !indexerSource.includes('"library_event"') &&
     !watcherSource.includes('"library_event"'),
   rustEventChannel
+)
+check(
+  '后端事件统一发送并记录失败',
+  eventsSource.includes('pub fn emit(') &&
+    eventsSource.includes('event_emit_failed') &&
+    !eventProducerSources.includes('.emit('),
+  '业务模块只调用 events::emit'
 )
 
 const rustExtensionBlock =

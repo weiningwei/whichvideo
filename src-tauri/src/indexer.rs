@@ -7,7 +7,7 @@
 
 use crate::constants;
 use crate::db;
-use crate::events::{ImportResult, LibraryEvent};
+use crate::events::{self, ImportResult, LibraryEvent};
 use crate::framepack;
 use crate::frames_store;
 use crate::hash;
@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 /// 索引器队列与实时状态。
 #[derive(Default)]
@@ -131,17 +131,13 @@ impl IndexerState {
 /* 事件广播辅助                                                        */
 /* ------------------------------------------------------------------ */
 
-fn emit(app: &AppHandle, event: LibraryEvent) {
-    let _ = app.emit(constants::EVENT_CHANNEL, event);
-}
-
 fn broadcast_status(app: &AppHandle) {
     let state = app.state::<AppState>();
     let status = {
         let idx = state.indexer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         idx.status()
     };
-    emit(app, LibraryEvent::Status { status });
+    events::emit(app, LibraryEvent::Status { status });
 }
 
 const STATUS_BROADCAST_INTERVAL: Duration = Duration::from_millis(200);
@@ -198,7 +194,7 @@ fn emit_stats(app: &AppHandle) {
         db::stats(&guard).ok()
     };
     if let Some(stats) = stats {
-        emit(app, LibraryEvent::Stats { stats });
+        events::emit(app, LibraryEvent::Stats { stats });
     }
 }
 
@@ -209,7 +205,7 @@ fn emit_video_updated(app: &AppHandle, id: i64) {
         db::get_video(&guard, id).ok().flatten()
     };
     if let Some(video) = video {
-        emit(app, LibraryEvent::VideoUpdated { video: Box::new(video) });
+        events::emit(app, LibraryEvent::VideoUpdated { video: Box::new(video) });
     }
 }
 
@@ -437,7 +433,7 @@ fn fail(app: AppHandle, video_id: i64, error: &str, frames_changed: bool) {
         update_search_index_for_video(&app, video_id);
     }
     emit_video_updated(&app, video_id);
-    emit(
+    events::emit(
         &app,
         LibraryEvent::Notice {
             level: "error".to_string(),
@@ -1265,7 +1261,7 @@ impl ImportProgress {
     }
 
     fn report(&self, app: &AppHandle, processed: i64, added: i64, skipped: i64, failed: i64, finished: bool) {
-        emit(
+        events::emit(
             app,
             LibraryEvent::ImportProgress {
                 id: self.id,
@@ -1349,7 +1345,7 @@ pub fn import_folder_once(app: AppHandle, dir_path: String, recursive: bool) -> 
         let conn = state.db_recover();
         let _ = db::mark_folder_scanned(&conn, folder.id);
         if let Ok(Some(updated)) = db::get_folder(&conn, folder.id) {
-            emit(&app, LibraryEvent::FolderUpdated { folder: updated });
+            events::emit(&app, LibraryEvent::FolderUpdated { folder: updated });
         }
     }
     Ok(result)
@@ -1407,7 +1403,7 @@ pub fn import_folder(
         db::get_folder(&conn, folder.id).ok().flatten()
     };
     if let Some(f) = refreshed {
-        emit(&app, LibraryEvent::FolderUpdated { folder: f });
+        events::emit(&app, LibraryEvent::FolderUpdated { folder: f });
     }
     // 扫描结束的计数是最终值，直接播报。
     broadcast_stats_now(&app);

@@ -3,8 +3,11 @@
 //! 经 Tauri 事件通道播给渲染端（`library_event`）。当前由 indexer（M7）与
 //! 后续模块（M11 事件广播）产出；渲染端通过 listen(IPC.eventChannel) 订阅。
 
+use crate::constants;
 use crate::db::{AppSettings, IndexerStatus, LibraryStats, VideoRecord, WatchedFolder};
+use crate::logger;
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 /// 单视频帧级进度（镜像 shared/types.ts::FrameProgress）。
 #[derive(Serialize, Clone)]
@@ -82,6 +85,36 @@ pub enum LibraryEvent {
     },
 }
 
+impl LibraryEvent {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Status { .. } => "status",
+            Self::VideoUpdated { .. } => "video-updated",
+            Self::VideoRemoved { .. } => "video-removed",
+            Self::FolderUpdated { .. } => "folder-updated",
+            Self::FolderRemoved { .. } => "folder-removed",
+            Self::Stats { .. } => "stats",
+            Self::Notice { .. } => "notice",
+            Self::SettingsUpdated { .. } => "settings-updated",
+            Self::DuplicateScanProgress { .. } => "duplicate-scan-progress",
+            Self::ImportProgress { .. } => "import-progress",
+        }
+    }
+}
+
+/// 所有后端事件都经过这里发送；失败只记录事件类型，不复制可能很大的事件载荷。
+pub fn emit(app: &AppHandle, event: LibraryEvent) {
+    let kind = event.kind();
+    if let Err(error) = app.emit(constants::EVENT_CHANNEL, event) {
+        logger::warn_keyed(
+            logger::Module::App,
+            "event_emit_failed",
+            kind,
+            &format!("event={kind} error={error}"),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ImportFailure, ImportResult, LibraryEvent};
@@ -115,6 +148,7 @@ mod tests {
         assert_eq!(progress["processed"], 5);
         assert_eq!(progress["total"], 10);
         assert_eq!(progress["finished"], false);
+        assert_eq!(LibraryEvent::FolderRemoved { folder_id: 3 }.kind(), "folder-removed");
     }
 
     #[test]

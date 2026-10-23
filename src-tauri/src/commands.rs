@@ -20,7 +20,7 @@ use base64::Engine;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::process::Command;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -176,8 +176,8 @@ fn remove_folder_sync(app: &AppHandle, folder_id: i64) -> Result<(), String> {
         .lock()
         .map_err(|e| e.to_string())?
         .remove_videos(&ids);
-    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderRemoved { folder_id });
-    let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::Stats { stats });
+    events::emit(app, events::LibraryEvent::FolderRemoved { folder_id });
+    events::emit(app, events::LibraryEvent::Stats { stats });
     watcher::sync_all(app)?;
     Ok(())
 }
@@ -219,7 +219,7 @@ fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events
             let g = state.db()?;
             let _ = db::update_folder_state(&g, folder.id, "missing", Some("目录不存在"));
             if let Ok(Some(f)) = db::get_folder(&g, folder.id) {
-                let _ = app.emit(constants::EVENT_CHANNEL, events::LibraryEvent::FolderUpdated { folder: f });
+                events::emit(app, events::LibraryEvent::FolderUpdated { folder: f });
             }
             continue;
         }
@@ -290,8 +290,8 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), crate::error::
             .map_err(|e| e.to_string())?
             .remove_video(video_id);
         if let Some(video) = removed {
-            let _ = app.emit(
-                constants::EVENT_CHANNEL,
+            events::emit(
+                &app,
                 events::LibraryEvent::VideoRemoved {
                     video_id: video.id,
                     path: video.path,
@@ -459,8 +459,8 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
         let (hash_a, hash_b) = match hashes {
             Ok(value) => value,
             Err(error) => {
-                let _ = app.emit(
-                    constants::EVENT_CHANNEL,
+                events::emit(
+                    app,
                     events::LibraryEvent::Notice {
                         level: "warn".to_string(),
                         message: format!("文件指纹计算失败：{error}"),
@@ -543,15 +543,15 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
             }
             let done = position as i64 + 1;
             if done % 16 == 0 || done == total {
-                let _ = app.emit(
-                    constants::EVENT_CHANNEL,
+                events::emit(
+                    app,
                     events::LibraryEvent::DuplicateScanProgress { done, total },
                 );
             }
         }
         if total == 0 {
-            let _ = app.emit(
-                constants::EVENT_CHANNEL,
+            events::emit(
+                app,
                 events::LibraryEvent::DuplicateScanProgress { done: 0, total: 0 },
             );
         }
@@ -923,8 +923,8 @@ fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db:
     // 先撤销后台任务的旧写入代次，再清理目录；之后旧任务无法重新创建帧图。
     frames_store::configure_enabled(updated.keep_frame_images);
     if patch.keep_frame_images == Some(false) && previous.keep_frame_images && frames_store::remove_all() {
-        let _ = app.emit(
-            constants::EVENT_CHANNEL,
+        events::emit(
+            app,
             events::LibraryEvent::Notice {
                 level: "info".to_string(),
                 message: "已清空全部索引帧图片".to_string(),
@@ -932,8 +932,8 @@ fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db:
         );
     }
     let _ = watcher::sync_all(app);
-    let _ = app.emit(
-        constants::EVENT_CHANNEL,
+    events::emit(
+        app,
         events::LibraryEvent::SettingsUpdated { settings: updated.clone() },
     );
     Ok(updated)

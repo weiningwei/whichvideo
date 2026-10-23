@@ -4,9 +4,8 @@
 //! 视频文件新增/覆盖 → 入索引队列；删除 → 从库移除并播报；子目录被删 → 移除其下全部视频。
 //! 监听只处理启动后的磁盘变更；初始已有文件由扫描流程负责。
 
-use crate::constants;
 use crate::db;
-use crate::events::LibraryEvent;
+use crate::events::{self, LibraryEvent};
 use crate::frames_store;
 use crate::indexer;
 use crate::logger;
@@ -18,7 +17,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 /// 等待稳定后再导入的文件（key = path_key）。同一路径的新事件覆盖旧条目，
 /// 天然实现 debounce。
@@ -257,8 +256,8 @@ fn remove_by_path(app: &AppHandle, path: &str) {
     };
     if let Some(v) = removed {
         frames_store::remove_video(v.id);
-        let _ = app.emit(
-            constants::EVENT_CHANNEL,
+        events::emit(
+            app,
             LibraryEvent::VideoRemoved {
                 video_id: v.id,
                 path: v.path.clone(),
@@ -306,8 +305,8 @@ fn remove_under(app: &AppHandle, dir: &str) {
     }
     for (id, path) in &videos {
         frames_store::remove_video(*id);
-        let _ = app.emit(
-            constants::EVENT_CHANNEL,
+        events::emit(
+            app,
             LibraryEvent::VideoRemoved {
                 video_id: *id,
                 path: path.clone(),
@@ -325,8 +324,8 @@ fn set_folder_state(app: &AppHandle, folder_id: i64, state_name: &str, message: 
     if let Ok(conn) = state.db() {
         let _ = db::update_folder_state(&conn, folder_id, state_name, message);
         if let Ok(Some(f)) = db::get_folder(&conn, folder_id) {
-            let _ = app.emit(
-                constants::EVENT_CHANNEL,
+            events::emit(
+                app,
                 LibraryEvent::FolderUpdated { folder: f },
             );
         }
