@@ -11,17 +11,11 @@ pub const EXTRACT_WIDTH: u32 = 320;
 #[allow(dead_code)]
 pub const PROBE_MAX_WIDTH: u32 = 320;
 
-/// 场景模式未指定预算时的兜底帧数；均匀模式由时间间隔控制。
-pub const DEFAULT_FRAME_BUDGET: usize = 240;
-
 /**
  * 两条抽帧路径的历史成本交叉点（帧数）；长视频或高采样密度由索引器优先分批 seek，
  * 避免单次全片解码的内存和超时风险。
  */
 pub const SEEK_VS_FULLSCAN_CROSSOVER: usize = 48;
-
-/// 场景采样：镜头长度达到该值（秒）才补中点帧 —— 过短镜头的中点贴近场景点，无意义。
-pub const SCENE_MIDPOINT_MIN_GAP: f64 = 2.0;
 
 /// 递归扫描最大深度。
 pub const MAX_SCAN_DEPTH: usize = 24;

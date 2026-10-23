@@ -278,9 +278,7 @@ export interface VideoProbeInfo {
 }
 
 export interface AppSettings {
-  /** 场景检测模式的抽帧预算；均匀采样不受此限制。 */
-  framesPerVideo: number
-  /** 均匀采样的时间间隔（秒），每个时间段取中点。 */
+  /** 采样时间间隔（秒）；均匀模式按间隔分段，场景模式在各镜头内分段。 */
   uniformIntervalSeconds: number
   /** 抽帧并发数 */
   concurrency: number
@@ -295,8 +293,8 @@ export interface AppSettings {
   /**
    * 抽帧采样模式：
    * - 'uniform'：按固定时间间隔采样，短镜头仍可能漏采。
-   * - 'scene'：场景检测采样 —— ffmpeg 场景切换点 + 长镜头内部补充，
-   *   每个镜头至少一帧，召回显著更高；代价是额外一次场景检测解码 +
+   * - 'scene'：场景检测采样 —— ffmpeg 场景切换点 + 各镜头内部按间隔采样，
+   *   每个镜头至少一帧；代价是额外一次场景检测解码 +
    *   逐点 seek 抽帧，索引更慢。更改后需重建索引才对已索引视频生效。
    */
   samplingMode: SamplingMode
@@ -311,7 +309,6 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  framesPerVideo: 240,
   uniformIntervalSeconds: 15,
   concurrency: 2,
   minHashScore: 0.6,

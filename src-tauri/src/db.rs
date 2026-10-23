@@ -106,6 +106,8 @@ pub fn open_db() -> SqlResult<Connection> {
     let conn = Connection::open(paths::db_path())?;
     configure_connection(&conn)?;
     conn.execute_batch(SCHEMA)?;
+    // 旧版按每视频帧数封顶；新计划只使用时间间隔，清理失效设置。
+    conn.execute("DELETE FROM settings WHERE key = 'framesPerVideo'", [])?;
     // 兼容早期数据库：补齐可能缺失的列（已有则 ALTER 报错并忽略）。
     for stmt in [
         "ALTER TABLE videos ADD COLUMN file_hash TEXT",
@@ -466,7 +468,6 @@ pub struct FrameManifestEntry {
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
-    pub frames_per_video: i64,
     pub uniform_interval_seconds: i64,
     pub concurrency: i64,
     pub min_hash_score: f64,
@@ -481,7 +482,6 @@ pub struct AppSettings {
 /// Rust 侧镜像 src/shared/types.ts 的 DEFAULT_SETTINGS（含 String 字段，故用函数而非 const）。
 pub fn default_settings() -> AppSettings {
     AppSettings {
-        frames_per_video: 240,
         uniform_interval_seconds: 15,
         concurrency: 2,
         min_hash_score: 0.6,
@@ -677,11 +677,6 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
     for r in rows {
         let (key, value) = r?;
         match key.as_str() {
-            "framesPerVideo" => {
-                if let Ok(v) = serde_json::from_str::<i64>(&value) {
-                    s.frames_per_video = v;
-                }
-            }
             "uniformIntervalSeconds" => {
                 if let Ok(v) = serde_json::from_str::<i64>(&value) {
                     s.uniform_interval_seconds = v;
@@ -735,9 +730,8 @@ pub fn get_settings(conn: &Connection) -> SqlResult<AppSettings> {
 }
 
 /// 把设置收敛到安全范围。界面本来就有上下限，但后端不能依赖调用方：
-/// 负数帧数转 usize 会变成天文数字，并发数过大则会拉起同样多的索引线程。
+/// 非法时间间隔转 usize 会导致过密采样，并发数过大则会拉起同样多的索引线程。
 fn clamp_settings(s: &mut AppSettings) {
-    s.frames_per_video = s.frames_per_video.clamp(1, 400);
     s.uniform_interval_seconds = s.uniform_interval_seconds.clamp(1, 3600);
     s.concurrency = s.concurrency.clamp(1, 8);
     s.min_hash_score = if s.min_hash_score.is_finite() {
@@ -825,7 +819,6 @@ pub fn idle_indexer_status() -> IndexerStatus {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
-    pub frames_per_video: Option<i64>,
     pub uniform_interval_seconds: Option<i64>,
     pub concurrency: Option<i64>,
     pub min_hash_score: Option<f64>,
@@ -838,13 +831,9 @@ pub struct SettingsPatch {
 }
 
 pub fn update_settings(conn: &mut Connection, patch: &SettingsPatch) -> SqlResult<AppSettings> {
-    // 写入前先收敛到安全范围，避免非 UI 调用方把负数帧数或上千并发写进库。
+    // 写入前先收敛到安全范围，避免非 UI 调用方写入过密采样或上千并发。
     let default_score = default_settings().min_hash_score;
     let candidates: Vec<(String, Option<String>)> = vec![
-        (
-            "framesPerVideo".into(),
-            patch.frames_per_video.map(|v| v.clamp(1, 400).to_string()),
-        ),
         (
             "uniformIntervalSeconds".into(),
             patch.uniform_interval_seconds.map(|v| v.clamp(1, 3600).to_string()),
@@ -1364,7 +1353,6 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         let patch = SettingsPatch {
-            frames_per_video: Some(-5),
             uniform_interval_seconds: Some(-5),
             concurrency: Some(1_000),
             min_hash_score: Some(2.5),
@@ -1374,7 +1362,6 @@ mod tests {
             ..Default::default()
         };
         let settings = update_settings(&mut conn, &patch).unwrap();
-        assert_eq!(settings.frames_per_video, 1);
         assert_eq!(settings.uniform_interval_seconds, 1);
         assert_eq!(settings.concurrency, 8);
         assert_eq!(settings.min_hash_score, 1.0);

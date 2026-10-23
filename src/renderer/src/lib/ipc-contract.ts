@@ -56,7 +56,7 @@ const status = shape({
   finishedAt: nullable(number), lastError: nullable(text)
 })
 const settings = shape({
-  framesPerVideo: number, uniformIntervalSeconds: number, concurrency: number, minHashScore: number, maxResults: number,
+  uniformIntervalSeconds: number, concurrency: number, minHashScore: number, maxResults: number,
   awaitWriteMs: number, pruneOnDelete: boolean, samplingMode: oneOf('uniform', 'scene'),
   updateCheck: boolean, keepFrameImages: boolean
 })

@@ -87,21 +87,12 @@ export function SettingsPanel({
 
       <SectionTitle>索引质量</SectionTitle>
       <Field
-        label="均匀采样间隔（秒）"
-        hint="每隔指定时间取一帧；间隔越短，长视频的索引时间和占用越大。修改后需重建已有索引。"
+        label="采样间隔（秒）"
+        hint="均匀模式按间隔采样；场景模式每个镜头至少取一帧，并在长镜头内按间隔补帧。间隔越短，索引时间和占用越大。修改后需重建已有索引。"
         value={value.uniformIntervalSeconds}
         min={1}
         max={3600}
         onChange={(v) => onChange({ uniformIntervalSeconds: v })}
-      />
-      <Field
-        label="场景采样帧数上限"
-        hint="仅用于场景检测模式，限制每个视频最多保留的场景代表帧。"
-        value={value.framesPerVideo}
-        min={8}
-        max={400}
-        step={8}
-        onChange={(v) => onChange({ framesPerVideo: v })}
       />
       <Field
         label="并发任务"
