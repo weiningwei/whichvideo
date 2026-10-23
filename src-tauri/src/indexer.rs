@@ -419,6 +419,15 @@ fn finish_cancelled(app: AppHandle, video_id: i64) {
     finish(app, video_id, None);
 }
 
+/// 解码期间源文件被替换时，丢弃本轮结果并安排一次强制重建。当前任务仍在
+/// active_ids 中，enqueue 会把同一视频延后到本线程收尾之后，避免并发写入。
+fn restart_after_source_change(app: AppHandle, video_id: i64) {
+    log(&format!("视频 {video_id} 在索引期间发生变化，重新开始索引"));
+    clear_frame_progress(&app, video_id);
+    enqueue(app.clone(), video_id, true);
+    finish(app, video_id, None);
+}
+
 fn fail(app: AppHandle, video_id: i64, error: &str, frames_changed: bool) {
     log(&format!("视频 {video_id} 索引失败：{error}"));
     {
@@ -510,7 +519,7 @@ fn thumbnail_reuse_window(duration: Option<f64>, sample_count: usize, scene_seek
         .unwrap_or(THUMBNAIL_REUSE_WINDOW_SECONDS)
 }
 
-fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
+fn process_video(app: AppHandle, video_id: i64, mut reset_before_run: bool) {
     if is_cancelled(&app, video_id) {
         finish_cancelled(app, video_id);
         return;
@@ -577,32 +586,58 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     }
     emit_video_updated(&app, video_id);
 
-    if !std::path::Path::new(&video.path).exists() {
-        fail(app, video_id, "文件已不存在", frames_changed);
+    let Some(source_identity) = file_identity(&video.path) else {
+        fail(app, video_id, "文件已不存在或无法读取元数据", frames_changed);
         return;
+    };
+    let source_changed = source_identity != (video.size, video.mtime_ms);
+    // 播放列表的片段可以在清单元数据不变时被替换，不能跨进程续传旧前缀。
+    let unsafe_resume = !video.processed_timestamps.is_empty() && is_playlist(&video.path);
+    let source_requires_reset = source_changed || unsafe_resume;
+    if source_requires_reset && !reset_before_run {
+        let reset_result = {
+            let state = app.state::<AppState>();
+            let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.as_mut()
+                .ok_or_else(|| "数据库未初始化".to_string())
+                .and_then(|c| db::reset_frame_index_progress(c, video_id).map_err(|e| e.to_string()))
+        };
+        match reset_result {
+            Ok(removed) => frames_changed |= removed > 0,
+            Err(error) => {
+                fail(app, video_id, &format!("源文件变化后重置索引失败：{error}"), frames_changed);
+                return;
+            }
+        }
+        frames_store::remove_video(video_id);
+        reset_before_run = true;
     }
 
-    // 缺时长则探测
-    let (duration, width, height, _codec) = if video.duration.is_none() {
+    // 源文件变化后旧媒体信息和文件哈希均不可信，必须重新探测并更新记录。
+    let (duration, width, height, _codec) = if source_requires_reset || video.duration.is_none() {
         match media::probe_video(&video.path) {
             Ok(p) => {
                 let input = db::UpsertVideoInput {
                     path: video.path.clone(),
-                    size: video.size,
-                    mtime_ms: video.mtime_ms,
+                    size: source_identity.0,
+                    mtime_ms: source_identity.1,
                     duration: p.duration,
                     width: p.width,
                     height: p.height,
                     video_codec: p.video_codec.clone(),
                     folder_id: video.folder_id,
-                    file_hash: video.file_hash.clone(),
+                    file_hash: if source_requires_reset { None } else { video.file_hash.clone() },
                 };
-                {
+                let update_result = {
                     let state = app.state::<AppState>();
                     let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                    if let Some(c) = guard.as_mut() {
-                        let _ = db::upsert_video(c, &input);
-                    }
+                    guard.as_mut()
+                        .ok_or_else(|| "数据库未初始化".to_string())
+                        .and_then(|c| db::upsert_video(c, &input).map(|_| ()).map_err(|e| e.to_string()))
+                };
+                if let Err(error) = update_result {
+                    fail(app, video_id, &format!("更新媒体信息失败：{error}"), frames_changed);
+                    return;
                 }
                 (p.duration, p.width, p.height, p.video_codec)
             }
@@ -655,7 +690,11 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
 
     let uses_full_scan =
         !force_seek && sampling::should_use_full_scan(timestamps.len(), width, height);
-    let mut processed: Vec<i64> = video.processed_timestamps.clone();
+    let mut processed: Vec<i64> = if reset_before_run {
+        Vec::new()
+    } else {
+        video.processed_timestamps.clone()
+    };
     let mut start_index = resume_start_index(&processed, &timestamps, uses_full_scan);
     if start_index > 0 {
         let prefix_result = {
@@ -787,6 +826,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             finish_cancelled(app, video_id);
             return;
         }
+        if file_identity(&video.path) != Some(source_identity) {
+            restart_after_source_change(app, video_id);
+            return;
+        }
 
         if frames.len() != batch_ts.len() {
             fail(
@@ -860,6 +903,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     // 缩略图（兜底：失败也标记完成）
     if is_cancelled(&app, video_id) {
         finish_cancelled(app, video_id);
+        return;
+    }
+    if file_identity(&video.path) != Some(source_identity) {
+        restart_after_source_change(app, video_id);
         return;
     }
     let thumb = thumbnail_candidate
@@ -949,18 +996,24 @@ fn set_sampling_override(app: &AppHandle, ids: &[i64], mode: &str) {
     }
 }
 
-fn stat_file(path: &str) -> (i64, i64) {
-    match std::fs::metadata(path) {
-        Ok(m) => (
-            m.len() as i64,
-            m.modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0),
-        ),
-        Err(_) => (0, 0),
+fn file_identity(path: &str) -> Option<(i64, i64)> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
     }
+    let modified = metadata.modified().ok()?
+        .duration_since(std::time::UNIX_EPOCH).ok()?
+        .as_millis() as i64;
+    Some((metadata.len() as i64, modified))
+}
+
+fn is_playlist(path: &str) -> bool {
+    std::path::Path::new(path).extension().and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "m3u" | "m3u8"))
+}
+
+fn stat_file(path: &str) -> (i64, i64) {
+    file_identity(path).unwrap_or((0, 0))
 }
 
 /// 旧哈希只在文件元数据未变时可信：大小或修改时间一变，内容可能已经被替换，
@@ -1496,7 +1549,7 @@ fn log(msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_reuse_file_hash, consider_thumbnail_frame, is_playlist_part, is_video_file, plan_detected_scenes, record_import_failure,
+        can_reuse_file_hash, consider_thumbnail_frame, file_identity, is_playlist, is_playlist_part, is_video_file, plan_detected_scenes, record_import_failure,
         resume_start_index, scan_video_files_with, should_broadcast_stats, thumbnail_reuse_window,
         should_emit_import_progress,
         IndexerState,
@@ -1505,6 +1558,20 @@ mod tests {
     use crate::media::RawFrame;
     use std::fs;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn source_identity_changes_when_an_interrupted_input_is_replaced() {
+        let path = std::env::temp_dir().join(format!("whichvideo-source-{}", crate::db::now_ms()));
+        fs::write(&path, b"old").unwrap();
+        let old = file_identity(&path.to_string_lossy()).unwrap();
+        fs::write(&path, b"replacement").unwrap();
+        let replacement = file_identity(&path.to_string_lossy()).unwrap();
+        assert_ne!(old, replacement);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(file_identity(&path.to_string_lossy()), None);
+        assert!(is_playlist("library/master.M3U8"));
+        assert!(!is_playlist("library/clip.mp4"));
+    }
 
     #[test]
     fn scan_candidates_include_playlists_and_unknown_formats_but_skip_obvious_non_videos() {
