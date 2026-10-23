@@ -126,6 +126,7 @@ fn main() {
             commands::library_refresh_media_tools,
             commands::library_select_media_tools_dir,
             commands::library_clear_media_tools_dir,
+            commands::library_open_ffmpeg_download,
             commands::library_reset,
             commands::folders_list,
             commands::folders_add_path,

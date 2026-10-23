@@ -903,6 +903,11 @@ pub fn library_open_database_folder() -> Result<String, String> {
     Ok(dir_str)
 }
 
+#[tauri::command]
+pub fn library_open_ffmpeg_download() -> Result<(), String> {
+    platform_open::open_url("https://www.ffmpeg.org/download.html")
+}
+
 /// 导出可分享的本地诊断包；只包含脱敏后的运行状态与日志末尾，不含视频或路径清单。
 #[tauri::command]
 pub async fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, String> {

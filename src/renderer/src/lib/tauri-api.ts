@@ -24,6 +24,7 @@ export const tauriApi: WhichVideoApi = {
     refreshMediaTools: () => invokeChecked(IPC.libraryRefreshMediaTools),
     selectMediaToolsDir: () => invokeChecked(IPC.librarySelectMediaToolsDir),
     clearMediaToolsDir: () => invokeChecked(IPC.libraryClearMediaToolsDir),
+    openFfmpegDownload: () => invokeChecked(IPC.libraryOpenFfmpegDownload),
     openDatabaseFolder: () => invokeChecked(IPC.libraryOpenDb),
     exportDiagnostics: () => invokeChecked(IPC.libraryExportDiagnostics),
     reset: () => invokeChecked(IPC.libraryReset),

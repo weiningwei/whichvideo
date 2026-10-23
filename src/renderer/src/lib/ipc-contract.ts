@@ -94,6 +94,7 @@ export const responses = {
   library_refresh_media_tools: mediaTools,
   library_select_media_tools_dir: mediaTools,
   library_clear_media_tools_dir: mediaTools,
+  library_open_ffmpeg_download: empty,
   library_update_settings: settings,
   library_open_database_folder: text,
   library_export_diagnostics: nullable(text),

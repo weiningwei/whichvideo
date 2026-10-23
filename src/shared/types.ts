@@ -388,6 +388,7 @@ export interface WhichVideoApi {
     refreshMediaTools(): Promise<MediaToolsStatus>
     selectMediaToolsDir(): Promise<MediaToolsStatus>
     clearMediaToolsDir(): Promise<MediaToolsStatus>
+    openFfmpegDownload(): Promise<void>
     openDatabaseFolder(): Promise<string>
     /** 导出脱敏诊断 ZIP；用户取消保存时返回 null。 */
     exportDiagnostics(): Promise<string | null>
@@ -456,6 +457,7 @@ export const IPC = {
   libraryRefreshMediaTools: 'library_refresh_media_tools',
   librarySelectMediaToolsDir: 'library_select_media_tools_dir',
   libraryClearMediaToolsDir: 'library_clear_media_tools_dir',
+  libraryOpenFfmpegDownload: 'library_open_ffmpeg_download',
   libraryUpdateSettings: 'library_update_settings',
   libraryOpenDb: 'library_open_database_folder',
   libraryExportDiagnostics: 'library_export_diagnostics',

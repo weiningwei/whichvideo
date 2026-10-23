@@ -33,7 +33,7 @@ check('38 个命令都有返回值校验器', () => {
   const ipcBlock = readFileSync(resolve('src/shared/types.ts'), 'utf8').match(/export const IPC = \{([\s\S]*?)\} as const/)?.[1] ?? ''
   const channels = [...ipcBlock.matchAll(/^\s*\w+: '(\w+)'/gm)]
     .map((match) => match[1]).filter((name) => name !== 'library_event')
-  if (channels.length !== 38 || channels.some((name) => !(name in responses))) throw new Error('命令校验器不齐')
+  if (channels.length !== 39 || channels.some((name) => !(name in responses))) throw new Error('命令校验器不齐')
 })
 check('媒体工具重检返回生效路径与手动目录', () => {
   const status = { ready: true, source: 'environment', directory: 'D:\\tools', configuredDirectory: 'E:\\manual', ffmpeg: 'D:\\tools\\ffmpeg.exe', ffprobe: 'D:\\tools\\ffprobe.exe', message: '环境变量' }

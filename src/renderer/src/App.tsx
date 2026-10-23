@@ -195,7 +195,7 @@ export default function App() {
       })()}
 
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} inLibrary={tab === 'library'} />
-      <MediaToolsSetup status={state.mediaTools} onSelect={() => void actions.selectMediaToolsDir()} />
+      <MediaToolsSetup status={state.mediaTools} onSelect={() => void actions.selectMediaToolsDir()} onRefresh={actions.refreshMediaTools} onOpenDownload={() => window.whichvideo.library.openFfmpegDownload()} />
     </div>
   )
 }
