@@ -625,7 +625,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         .clone()
         .unwrap_or_else(|| settings.sampling_mode.clone());
     set_sampling_override(&app, &[video_id], &effective);
-    let (timestamps, mut force_seek) = if effective == "scene" {
+    let (timestamps, scene_sampling) = if effective == "scene" {
         set_frame_progress(&app, video_id, 0, duration.unwrap_or(0.0).round() as i64, Some("detecting"));
         match media::detect_scenes(&video.path, 0.3, || is_cancelled(&app, video_id)) {
             Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.uniform_interval_seconds as usize),
@@ -642,6 +642,8 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     } else {
         (sampling::plan_timestamps(duration, settings.uniform_interval_seconds as usize), false)
     };
+    // 采样分布与解码路径分开：长视频强制 seek 仍然可能是均匀采样。
+    let mut force_seek = scene_sampling;
     // 长视频按 32 帧一批逐点 seek，可在批次间保存进度并限制原始像素缓冲。
     if duration.is_some_and(|seconds| seconds > 1800.0) || timestamps.len() > 400 {
         force_seek = true;
@@ -733,7 +735,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
     let thumb_time = duration
         .map(|d| d * 0.12)
         .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
-    let thumb_window = thumbnail_reuse_window(duration, timestamps.len(), force_seek);
+    let thumb_window = thumbnail_reuse_window(duration, timestamps.len(), scene_sampling);
     let mut thumbnail_candidate = None;
 
     let mut bi = start_index;
