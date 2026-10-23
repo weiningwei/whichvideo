@@ -13,7 +13,7 @@ const FOCUSABLE = [
  * 为覆盖层提供一致的键盘焦点行为：打开时进入弹窗，Tab 不会穿透背景，
  * 关闭后回到原触发元素。调用方仍自行处理 Escape 和点击遮罩关闭。
  */
-export function useModalFocus<T extends HTMLElement>(active: boolean) {
+export function useModalFocus<T extends HTMLElement>(active: boolean, onClose?: () => void) {
   const dialogRef = useRef<T>(null)
 
   useEffect(() => {
@@ -26,7 +26,12 @@ export function useModalFocus<T extends HTMLElement>(active: boolean) {
       ;(first ?? dialog).focus({ preventScroll: true })
     }
     const frame = requestAnimationFrame(focusFirst)
-    const trapTab = (event: KeyboardEvent) => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && onClose) {
+        event.stopPropagation()
+        onClose()
+        return
+      }
       if (event.key !== 'Tab') return
       const dialog = dialogRef.current
       if (!dialog) return
@@ -46,13 +51,13 @@ export function useModalFocus<T extends HTMLElement>(active: boolean) {
         first.focus({ preventScroll: true })
       }
     }
-    window.addEventListener('keydown', trapTab, true)
+    window.addEventListener('keydown', handleKey, true)
     return () => {
       cancelAnimationFrame(frame)
-      window.removeEventListener('keydown', trapTab, true)
+      window.removeEventListener('keydown', handleKey, true)
       if (previous?.isConnected) previous.focus({ preventScroll: true })
     }
-  }, [active])
+  }, [active, onClose])
 
   return dialogRef
 }

@@ -122,7 +122,7 @@ function FrameCard({
 }
 
 export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
-  const dialogRef = useModalFocus<HTMLDivElement>(video !== null)
+  const dialogRef = useModalFocus<HTMLDivElement>(video !== null, onClose)
   const [manifest, setManifest] = useState<FrameManifestEntry[] | null>(null)
   const [manifestError, setManifestError] = useState(false)
 
@@ -140,19 +140,6 @@ export function FrameGallery({ video, onClose, onOpenFrame }: Props) {
       alive = false
     }
   }, [video?.id])
-
-  useEffect(() => {
-    if (!video) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-        return
-      }
-    }
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
-  }, [video, onClose])
 
   if (!video) return null
 

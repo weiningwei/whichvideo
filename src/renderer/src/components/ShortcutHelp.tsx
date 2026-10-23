@@ -3,7 +3,6 @@
  *
  * 内容从 lib/shortcuts.ts 生成，不另写一份 —— 避免"文档写的和实际能按的不一致"。
  */
-import { useEffect } from 'react'
 import { groupShortcuts, renderKeys } from '../lib/shortcuts'
 import { useModalFocus } from '../hooks/useModalFocus'
 
@@ -15,19 +14,7 @@ interface Props {
 }
 
 export function ShortcutHelp({ open, onClose, inLibrary }: Props) {
-  const dialogRef = useModalFocus<HTMLDivElement>(open)
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-        return
-      }
-    }
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
-  }, [open, onClose])
+  const dialogRef = useModalFocus<HTMLDivElement>(open, onClose)
 
   if (!open) return null
 

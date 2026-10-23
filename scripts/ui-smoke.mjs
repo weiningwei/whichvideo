@@ -140,13 +140,10 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   const gallerySource = readFileSync(join(root, 'src', 'renderer', 'src', 'components', 'FrameGallery.tsx'), 'utf8')
   check('键盘焦点统一使用主题强调色，预览点击不误显焦点环', themeSource.includes("button:focus-visible") && themeSource.includes('outline: 2px solid var(--color-accent)') && gallerySource.includes('focus-visible:ring-2') && !gallerySource.includes(' focus:ring-2'))
   const overlayFiles = ['DuplicatesModal.tsx', 'SidePanel.tsx', 'MediaToolsSetup.tsx', 'FrameGallery.tsx', 'ShortcutHelp.tsx']
-  check('所有覆盖层都可用 Esc 关闭并声明对话框语义', overlayFiles.every((name) => {
-    const source = readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8')
-    return source.includes("event.key !== 'Escape'") || source.includes("e.key === 'Escape'")
-  }) && ['DuplicatesModal.tsx', 'SidePanel.tsx'].every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('aria-modal="true"')))
+  const modalFocusSource = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useModalFocus.ts'), 'utf8')
+  check('所有覆盖层都可用 Esc 关闭并声明对话框语义', modalFocusSource.includes("event.key === 'Escape'") && overlayFiles.every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('aria-modal="true"')))
   check('所有覆盖层统一使用焦点捕获并在关闭时恢复触发元素', overlayFiles.every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('useModalFocus')) && (() => {
-    const focusHook = readFileSync(join(root, 'src', 'renderer', 'src', 'hooks', 'useModalFocus.ts'), 'utf8')
-    return focusHook.includes('const trapTab') && focusHook.includes('previous?.isConnected') && focusHook.includes('requestAnimationFrame(focusFirst)')
+    return modalFocusSource.includes('const handleKey') && modalFocusSource.includes('previous?.isConnected') && modalFocusSource.includes('requestAnimationFrame(focusFirst)')
   })())
 
   console.log('\n=== 搜图页 ===')

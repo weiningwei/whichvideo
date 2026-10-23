@@ -1,5 +1,5 @@
 import { errorMessage } from '../lib/errors'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { MediaToolsStatus } from '@shared/types'
 import { useModalFocus } from '../hooks/useModalFocus'
 
@@ -30,22 +30,12 @@ export function MediaToolsSetup({ status, onSelect, onRefresh, onOpenDownload }:
   const [refreshing, setRefreshing] = useState(false)
   const [openError, setOpenError] = useState('')
   const open = Boolean(status && !status.ready && !dismissed)
-  const dialogRef = useModalFocus<HTMLDivElement>(open)
+  const dismiss = useCallback(() => setDismissed(true), [])
+  const dialogRef = useModalFocus<HTMLDivElement>(open, dismiss)
 
   useEffect(() => {
     if (status?.ready) setDismissed(false)
   }, [status?.ready])
-
-  useEffect(() => {
-    if (!status || status.ready || dismissed) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      setDismissed(true)
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [status, dismissed])
 
   if (!open || !status) return null
 

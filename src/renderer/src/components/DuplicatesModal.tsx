@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { DuplicatePair } from '@shared/types'
 import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { formatBytes, formatDuration, formatPercent } from '../lib/format'
@@ -17,7 +17,7 @@ interface DuplicatesModalProps {
  * 派生，关闭即卸载、重开清空 —— 库内容随时变化，缓存旧结果反而会误导。
  */
 export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }: DuplicatesModalProps) {
-  const dialogRef = useModalFocus<HTMLDivElement>(true)
+  const dialogRef = useModalFocus<HTMLDivElement>(true, onClose)
   // 两两 pair 聚合成相似组（连通分量）：AB、BC 相似 → A/B/C 同组，
   // dupeGuru 式交互 —— 组内挑一个保留、其余移除，不逐对处理。
   const duplicateGroups = useMemo(() => buildDuplicateGroups(duplicates), [duplicates])
@@ -25,16 +25,6 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
   // 移除后对应 id 自动清除。
   const [keptIds, setKeptIds] = useState<Set<number>>(new Set())
   const [removingGroupId, setRemovingGroupId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose])
 
   return (
     <div

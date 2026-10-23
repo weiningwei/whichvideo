@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useModalFocus } from '../hooks/useModalFocus'
 
 interface Props {
@@ -15,17 +15,7 @@ interface Props {
 export function SidePanel({
   mode, onClose, onAddFolder, folders, folderDrop, settings, folderCount
 }: Props) {
-  const dialogRef = useModalFocus<HTMLElement>(mode !== null)
-  useEffect(() => {
-    if (!mode) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [mode, onClose])
+  const dialogRef = useModalFocus<HTMLElement>(mode !== null, onClose)
 
   if (!mode) return null
   const foldersMode = mode === 'folders'
