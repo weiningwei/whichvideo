@@ -32,7 +32,8 @@
     "test:range": "node scripts/test-range-select.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:e2e": "node scripts/e2e/run.mjs",
-    "test:e2e:extended": "node scripts/e2e/run.mjs --dataset=extended",
+    "test:search": "node scripts/search-benchmark/run.mjs",
+    "test:search:extended": "node scripts/search-benchmark/run.mjs --extended",
     "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:ipc && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events",
     "test:events": "node scripts/test-video-events.mjs"
   },

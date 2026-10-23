@@ -1050,7 +1050,7 @@ fn prepare_query_image(img: image::DynamicImage) -> Result<(Vec<u8>, u32, u32), 
 }
 
 /// 由归一化后的 RGB24 缓冲计算查询向量。
-fn build_query_vector(buf: &[u8], w: u32, h: u32) -> search::QueryVector {
+pub(crate) fn build_query_vector(buf: &[u8], w: u32, h: u32) -> search::QueryVector {
     let ild = hash::ImageDataLike {
         width: w,
         height: h,

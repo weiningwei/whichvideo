@@ -2,7 +2,6 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { generateSearchDataset } from './search-dataset.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const runRoot = join(root, 'tmp', 'e2e')
@@ -19,10 +18,6 @@ const videoPath = join(nestedDir, 'sample.mp4')
 const imagePath = join(runDir, 'sample.png')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const pnpmEntry = process.env.npm_execpath
-const datasetProfile = process.argv.includes('--dataset=extended') ? 'extended' : 'ci'
-if (process.argv.some((arg) => arg.startsWith('--dataset=') && arg !== '--dataset=extended' && arg !== '--dataset=ci')) {
-  throw new Error('数据集模式只能是 ci 或 extended')
-}
 
 function executable(name, override) {
   if (override) return override
@@ -51,7 +46,6 @@ try {
   run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', videoPath, '-frames:v', '1', '-y', imagePath])
   run(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1', videoPath])
   if (!existsSync(videoPath) || !existsSync(imagePath)) throw new Error('媒体样本生成失败')
-  const datasetManifest = generateSearchDataset(ffmpeg, runDir, datasetProfile)
   const env = {
     ...process.env,
     CARGO_HOME: cargoHome,
@@ -62,7 +56,6 @@ try {
     WHICHVIDEO_E2E_VIDEO: videoPath,
     WHICHVIDEO_E2E_FOLDER: mediaDir,
     WHICHVIDEO_E2E_IMAGE: imagePath,
-    WHICHVIDEO_E2E_DATASET_MANIFEST: datasetManifest,
     WHICHVIDEO_E2E_RUN_DIR: runDir
   }
   writeFileSync(join(runDir, 'paths.json'), JSON.stringify({ videoPath, imagePath, mediaDir }, null, 2))
