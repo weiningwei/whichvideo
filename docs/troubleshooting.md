@@ -1,6 +1,24 @@
 # 排障手册
 
-> 面向开发者与打包维护者。普通使用问题见 [README](../README.md)。
+> 启动、媒体工具与构建问题。日常操作见 [使用指南](user-guide.md)。
+
+## 开发与构建入口
+
+需要 Node.js ≥ 22、pnpm ≥ 10、Rust stable 和平台对应的 Tauri 系统依赖。
+所有命令从仓库根目录执行：
+
+```bash
+pnpm install
+pnpm dev                 # 开发模式
+pnpm test                # 常规测试门禁
+pnpm build:portable      # Windows 便携目录
+pnpm build:win           # Windows NSIS
+pnpm build:mac           # macOS .app
+pnpm build:linux         # Linux AppImage
+```
+
+正式发行使用原生 CI 构建，见 [发行流程](releasing.md)。
+各项测试与架构要求见 [AGENTS.md](../AGENTS.md)，真实窗口测试见 [桌面测试](real-use-case-tests.md)。
 
 ## 双击 exe 没有窗口
 
@@ -20,7 +38,7 @@
 - 安装目录只读：应用不会回退到用户目录，请把软件安装或移动到当前用户可写的位置。
 - 缺少 WebView2 Runtime：安装微软 WebView2 Runtime 后重试。Windows 10/11 通常已预装。
 - 安全软件拦截未签名程序：检查 Windows 安全中心、企业 WDAC/AppLocker 策略和文件属性中的
-  “解除锁定”。发布前应为安装包和 exe 配置代码签名。
+  “解除锁定”。签名状态见对应版本的发行说明。
 
 若连日志都没有，从 PowerShell 直接运行 exe 以取得退出信息：
 
@@ -39,14 +57,28 @@ $LASTEXITCODE
 - 需要分别指定时，同时设置 `WHICHVIDEO_FFMPEG` 和 `WHICHVIDEO_FFPROBE`，不要混用不同版本。
 - 开发环境可运行 `pnpm fetch:ffmpeg` 放到 `resources/bin`；该目录只在 debug/test 构建中自动探测。
 
-媒体工具缺失不会阻止界面启动，但新增目录后的探测、索引和图片检索会失败。先运行
-`pnpm test:rust` 区分后端逻辑问题与本机媒体工具问题。
+媒体工具缺失不会阻止界面启动，但新增目录后的探测、索引和图片检索会失败。开发者可运行 `pnpm test:rust` 检查后端回归；
+部分媒体测试在缺少 FFmpeg 时会跳过，测试通过不能替代工具可用性检查。
 
 搜图卡片缩略图无法显示、或「查看索引帧」提示读取失败时，先确认原视频仍在原路径，
 再检查 FFmpeg 配置和 `whichvideo.log`。预览失败不应让弹层一直停在「读取中」。
 
 若启动或索引时出现一闪而过的终端窗口，说明新增的控制台子进程没有调用
 `CommandNoWindow::no_window()`；`pnpm test:contract` 会检查所有已登记的启动入口。
+
+## 开发环境下载 FFmpeg 失败
+
+Windows 可运行 `pnpm fetch:ffmpeg` 下载到 `resources/bin`。脚本支持多源回退、超时和缓存；
+也可使用本地工具目录或已下载的 ZIP：
+
+```powershell
+pnpm fetch:ffmpeg --from 'D:\tools\ffmpeg\bin'
+pnpm fetch:ffmpeg --from 'D:\downloads\ffmpeg.zip'
+```
+
+代理下载需设置 `HTTPS_PROXY`；Node 24 使用环境代理时还需设置 `NODE_USE_ENV_PROXY=1`。
+内置下载源仅提供 Windows 工具，macOS/Linux 请通过系统包管理器安装，或指定本机工具目录。
+开发目录中的工具不会打进发行包。
 
 ## `pnpm build` / Cargo 编译失败
 

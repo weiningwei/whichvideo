@@ -1,4 +1,4 @@
-# 真实桌面用例看护
+# 桌面自动测试
 
 从仓库根目录执行 `pnpm test:e2e`。需要桌面会话、Node.js、Rust stable、`ffmpeg` 和 `ffprobe`。工具在 `PATH` 中即可，也可用 `WHICHVIDEO_FFMPEG`、`WHICHVIDEO_FFPROBE` 指定可执行文件。Linux 无图形会话时使用 `xvfb-run -a pnpm test:e2e`，并安装 WebKitGTK 开发库及 `webkit2gtk-driver`。
 
@@ -12,4 +12,4 @@
 
 测试构建通过 Cargo `e2e` feature 和 `tauri.e2e.conf.json` 才加载 WebDriver 插件与权限。正式发行配置只启用 `default` capability，正常 `pnpm build` 不含测试插件。
 
-这套自动用例覆盖真实进程、WebView、IPC、SQLite 和 FFmpeg。Windows 本机已通过；macOS 与 Linux 的 CI 结果需要在推送后确认。桌面文件管理器发起的原生拖放、系统文件选择框、安装与卸载、播放定位，以及各平台实际发行包仍按 [发行验收清单](releasing.md) 手动检查，后续可逐项自动化。
+这套自动用例覆盖真实进程、WebView、IPC、SQLite 和 FFmpeg。是否通过以对应提交的测试记录和 CI 结果为准，不能沿用历史结论。桌面文件管理器发起的原生拖放、系统文件选择框、安装与卸载、播放定位，以及各平台实际发行包仍按 [发行验收清单](releasing.md) 手动检查，后续可逐项自动化。
