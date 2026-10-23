@@ -22,13 +22,7 @@ import {
   type WatchedFolder
 } from '@shared/types'
 import type { ImportProgressEvent } from '../lib/importProgress'
-
-export interface Notice {
-  id: number
-  level: 'info' | 'warn' | 'error'
-  message: string
-  at: number
-}
+import type { Notice } from './useNotices'
 
 /**
  * 文件夹 / 全部视频视图选择。使用新键，避免旧导航窗格的“隐藏”设置

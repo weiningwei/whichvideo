@@ -20,6 +20,8 @@ export const NOTICE_TTL: Record<Notice['level'], number> = {
 }
 
 let noticeSeq = 0
+const MAX_NOTICES = 4
+const NOTICE_DEDUP_MS = 2000
 
 interface NoticeTimer {
   timer: ReturnType<typeof setTimeout> | null
@@ -40,13 +42,15 @@ export interface UseNoticesReturn {
 
 export function useNotices(): UseNoticesReturn {
   const [notices, setNotices] = useState<Notice[]>([])
+  const noticesRef = useRef<Notice[]>([])
   const timers = useRef(new Map<number, NoticeTimer>())
 
   const dismissNotice = useCallback((id: number) => {
     const s = timers.current.get(id)
     if (s?.timer) clearTimeout(s.timer)
     timers.current.delete(id)
-    setNotices((prev) => prev.filter((n) => n.id !== id))
+    noticesRef.current = noticesRef.current.filter((notice) => notice.id !== id)
+    setNotices(noticesRef.current)
   }, [])
 
   const schedule = useCallback(
@@ -66,10 +70,27 @@ export function useNotices(): UseNoticesReturn {
 
   const pushNotice = useCallback(
     (level: Notice['level'], message: string) => {
+      const now = Date.now()
+      const duplicate = noticesRef.current.find((notice) =>
+        notice.level === level && notice.message === message && now - notice.at < NOTICE_DEDUP_MS)
+      if (duplicate) {
+        duplicate.at = now
+        noticesRef.current = [duplicate, ...noticesRef.current.filter((notice) => notice.id !== duplicate.id)]
+        setNotices([...noticesRef.current])
+        schedule(duplicate.id, NOTICE_TTL[level])
+        return
+      }
       // notice 在 updater 外构造：React 严格模式下 updater 可能被双执行，
       // 在里面 ++ 会让 id 跳号、副作用（起定时器）重复触发
-      const next: Notice = { id: ++noticeSeq, level, message, at: Date.now() }
-      setNotices((prev) => [next, ...prev].slice(0, 40))
+      const next: Notice = { id: ++noticeSeq, level, message, at: now }
+      const dropped = noticesRef.current.slice(MAX_NOTICES - 1)
+      for (const notice of dropped) {
+        const timer = timers.current.get(notice.id)?.timer
+        if (timer) clearTimeout(timer)
+        timers.current.delete(notice.id)
+      }
+      noticesRef.current = [next, ...noticesRef.current].slice(0, MAX_NOTICES)
+      setNotices(noticesRef.current)
       schedule(next.id, NOTICE_TTL[level])
     },
     [schedule]

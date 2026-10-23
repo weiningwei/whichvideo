@@ -8,6 +8,7 @@ import { SearchView } from './components/SearchView'
 import { LibraryView } from './components/LibraryView'
 import { SettingsPanel } from './components/SettingsPanel'
 import { MediaToolsSetup } from './components/MediaToolsSetup'
+import { NoticeStack } from './components/NoticeStack'
 
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
@@ -172,34 +173,7 @@ export default function App() {
         importProgress={state.importProgress}
       />
 
-      {(() => {
-        // 最新通知固定贴近状态栏，旧通知依次向上累积，最多显示四条。
-        const floating = state.notices.slice(0, 4)
-        if (floating.length === 0) return null
-        // flex-col-reverse：floating 头部=最新，反转后新通知渲染在底部。
-        return (
-        <div className="pointer-events-auto absolute bottom-12 right-4 flex w-[360px] flex-col-reverse gap-2">
-          {floating.map((notice) => (
-            <button
-              key={notice.id}
-              onClick={() => dismissNotice(notice.id)}
-              onMouseEnter={() => pauseNotice(notice.id)}
-              onMouseLeave={() => resumeNotice(notice.id)}
-              title="悬停暂停自动关闭；点击立即关闭"
-              className={`rounded-xl border px-3 py-2 text-left text-[11.5px] shadow-lg backdrop-blur ${
-                notice.level === 'error'
-                  ? 'border-bad/50 bg-bad/15 text-bad'
-                  : notice.level === 'warn'
-                    ? 'border-warn/50 bg-warn/15 text-warn'
-                    : 'border-line bg-surface-2/95 text-secondary'
-              }`}
-            >
-              {notice.message}
-            </button>
-          ))}
-        </div>
-        )
-      })()}
+      <NoticeStack notices={state.notices} onDismiss={dismissNotice} onPause={pauseNotice} onResume={resumeNotice} />
 
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} inLibrary={tab === 'library'} />
       <MediaToolsSetup status={state.mediaTools} onSelect={() => void actions.selectMediaToolsDir()} onRefresh={actions.refreshMediaTools} onOpenDownload={() => window.whichvideo.library.openFfmpegDownload()} />
