@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path'
 const normalizePath = (path) => process.platform === 'win32' ? path.replaceAll('/', '\\').toLowerCase() : path
 
 describe('真实桌面流程：带标准答案的搜索数据集', () => {
-  it('评估多视频的命中、排序、时间误差和库外查询', async () => {
+  it('评估多视频的命中、排序、时间误差和库外查询', async function () {
+    this.timeout(300000)
     const manifestPath = process.env.WHICHVIDEO_E2E_DATASET_MANIFEST
     assert.ok(manifestPath)
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -33,9 +34,12 @@ describe('真实桌面流程：带标准答案的搜索数据集', () => {
       rows.push({
         id: query.id,
         tier: query.tier,
+        variant: query.variant,
         expectedVideoId: query.expectedVideoId,
+        expectedTimeSeconds: query.expectedTimeSeconds,
         rank,
         top1: rank === 1,
+        hitTimeSeconds: hit?.timeSeconds ?? null,
         timeErrorSeconds: hit && query.expectedTimeSeconds !== null
           ? Math.abs(hit.timeSeconds - query.expectedTimeSeconds) : null,
         elapsedMs: result.elapsedMs,
@@ -50,16 +54,31 @@ describe('真实桌面流程：带标准答案的搜索数据集', () => {
     const positives = rows.filter((row) => row.expectedVideoId !== null)
     const baseline = positives.filter((row) => row.tier === 'baseline')
     const timed = positives.filter((row) => row.timeErrorSeconds !== null)
+    const byVariant = Object.fromEntries([...new Set(rows.map((row) => row.variant))].map((variant) => {
+      const group = positives.filter((row) => row.variant === variant)
+      return [variant, {
+        count: rows.filter((row) => row.variant === variant).length,
+        top1: group.length ? `${group.filter((row) => row.top1).length}/${group.length}` : null,
+        top5: group.length ? `${group.filter((row) => row.rank > 0 && row.rank <= 5).length}/${group.length}` : null
+      }]
+    }))
     const report = {
       manifestPath,
+      datasetVersion: manifest.version,
       summary: {
         baselineTop1: `${baseline.filter((row) => row.top1).length}/${baseline.length}`,
         positiveTop1: `${positives.filter((row) => row.top1).length}/${positives.length}`,
         positiveTop5: `${positives.filter((row) => row.rank > 0 && row.rank <= 5).length}/${positives.length}`,
+        missedPositiveQueries: positives.filter((row) => !row.top1).map((row) => row.id),
         negativeWithMatches: rows.filter((row) => row.tier === 'negative' && row.matches.length > 0).length,
+        labeledWithinHalfSecond: `${timed.filter((row) => row.timeErrorSeconds <= 0.5).length}/${timed.length}`,
+        worstLabeledTimeError: timed.length
+          ? timed.reduce((worst, row) => row.timeErrorSeconds > worst.timeErrorSeconds ? row : worst, timed[0]).id : null,
+        maxLabeledTimeErrorSeconds: timed.length ? Math.max(...timed.map((row) => row.timeErrorSeconds)) : null,
         meanLabeledTimeErrorSeconds: timed.length
           ? timed.reduce((sum, row) => sum + row.timeErrorSeconds, 0) / timed.length : null
       },
+      byVariant,
       rows
     }
     const reportPath = join(dirname(manifestPath), 'report.json')

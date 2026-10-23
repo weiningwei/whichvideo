@@ -76,4 +76,6 @@ jobs:
             tmp/e2e/run-*/data/logs/**
             tmp/e2e/run-*/screenshots/**
             tmp/e2e/run-*/paths.json
+            tmp/e2e/run-*/search-dataset/manifest.json
+            tmp/e2e/run-*/search-dataset/report.json
           if-no-files-found: ignore
