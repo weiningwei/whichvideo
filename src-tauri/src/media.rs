@@ -675,6 +675,15 @@ fn run_media_command_with_input(
     executable: &str, args: &[String], label: &str, timeout: Duration,
     progress: Option<FrameProgressCallback>, input: Option<Vec<u8>>,
 ) -> Result<FfmpegOutput, String> {
+    run_media_command_cancellable(executable, args, label, timeout, progress, input, &|| false)
+}
+
+fn run_media_command_cancellable(
+    executable: &str, args: &[String], label: &str, timeout: Duration,
+    progress: Option<FrameProgressCallback>, input: Option<Vec<u8>>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<FfmpegOutput, String> {
+    if cancelled() { return Err(format!("{label} 已取消")); }
     // 本地媒体（尤其 HLS 清单）可能引用远程资源；探测、抽帧和预览只允许本地协议。
     let safe_args = local_only_media_args(args, label);
     let mut command = Command::new(executable);
@@ -709,6 +718,13 @@ fn run_media_command_with_input(
     });
     let started = Instant::now();
     let status = loop {
+        if cancelled() {
+            terminate_child(&mut child);
+            if let Some(writer) = input_writer { let _ = writer.join(); }
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(format!("{label} 已取消"));
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if started.elapsed() >= timeout => {
@@ -762,6 +778,14 @@ fn run_media_command(
 pub fn run_ffmpeg(args: &[String]) -> Result<FfmpegOutput, String> {
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
     run_media_command(&tools.ffmpeg, args, "ffmpeg", FFMPEG_TIMEOUT)
+}
+
+fn run_ffmpeg_cancellable(
+    args: &[String], progress: Option<FrameProgressCallback>, cancelled: &dyn Fn() -> bool,
+) -> Result<FfmpegOutput, String> {
+    if cancelled() { return Err("ffmpeg 已取消".to_string()); }
+    let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    run_media_command_cancellable(&tools.ffmpeg, args, "ffmpeg", FFMPEG_TIMEOUT, progress, None, cancelled)
 }
 
 fn run_ffmpeg_with_progress(args: &[String], progress: Option<FrameProgressCallback>) -> Result<FfmpegOutput, String> {
@@ -1026,6 +1050,7 @@ fn extract_frames_seek(
     timestamps: &[f64],
     width: u32,
     progress: Option<FrameProgressCallback>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<RawFrame>, String> {
     let count = timestamps.len();
     if count == 0 {
@@ -1073,7 +1098,7 @@ fn extract_frames_seek(
     args.push("-dn".to_string());
     args.push("pipe:1".to_string());
 
-    let mut out = run_ffmpeg_with_progress(&args, progress.clone())?;
+    let mut out = run_ffmpeg_cancellable(&args, progress.clone(), cancelled)?;
     // 旧 ffmpeg 回退：去掉 -fps_mode，concat 后接 setpts 重排成单调帧号网格。
     if !out.success && unsupported_fps_mode(&out.stderr) {
         let mut retry = args[..args.iter().position(|a| a == "-filter_complex").unwrap()].to_vec();
@@ -1096,7 +1121,7 @@ fn extract_frames_seek(
         retry.push("-sn".to_string());
         retry.push("-dn".to_string());
         retry.push("pipe:1".to_string());
-        out = run_ffmpeg_with_progress(&retry, progress)?;
+        out = run_ffmpeg_cancellable(&retry, progress, cancelled)?;
     }
     if !out.success {
         return Err(format!("抽帧失败：{}", out.stderr.trim()));
@@ -1146,6 +1171,7 @@ fn extract_frames_full_scan(
     duration: Option<f64>,
     width: u32,
     progress: Option<FrameProgressCallback>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<RawFrame>, String> {
     let count = timestamps.len();
     if count == 0 {
@@ -1178,7 +1204,7 @@ fn extract_frames_full_scan(
     if progress.is_some() {
         args.splice(4..4, ["-nostats", "-stats_period", "0.5", "-progress", "pipe:2"].map(str::to_string));
     }
-    let out = run_ffmpeg_with_progress(&args, progress)?;
+    let out = run_ffmpeg_cancellable(&args, progress, cancelled)?;
     if !out.success && out.stdout.is_empty() {
         return Err(format!("ffmpeg 抽帧失败：{}", out.stderr.trim()));
     }
@@ -1275,7 +1301,7 @@ pub fn extract_and_hash_frames(
     height: Option<i64>,
     force_seek: bool,
 ) -> Result<Vec<RawFrame>, String> {
-    extract_and_hash_frames_with_progress(file_path, timestamps, duration, width, height, force_seek, None)
+    extract_and_hash_frames_with_progress(file_path, timestamps, duration, width, height, force_seek, None, &|| false)
 }
 
 pub fn extract_and_hash_frames_with_progress(
@@ -1286,11 +1312,12 @@ pub fn extract_and_hash_frames_with_progress(
     height: Option<i64>,
     force_seek: bool,
     progress: Option<FrameProgressCallback>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<RawFrame>, String> {
     if force_seek || !should_use_full_scan(timestamps.len(), width, height) {
-        extract_frames_seek(file_path, timestamps, crate::constants::EXTRACT_WIDTH, progress)
+        extract_frames_seek(file_path, timestamps, crate::constants::EXTRACT_WIDTH, progress, cancelled)
     } else {
-        extract_frames_full_scan(file_path, timestamps, duration, crate::constants::EXTRACT_WIDTH, progress)
+        extract_frames_full_scan(file_path, timestamps, duration, crate::constants::EXTRACT_WIDTH, progress, cancelled)
     }
 }
 
@@ -1479,8 +1506,8 @@ mod tests {
             let generated = super::run_media_command_with_input(&tools.ffmpeg, &args, "ffmpeg",
                 Duration::from_secs(10), None, Some(pixels)).unwrap();
             assert!(generated.success, "{}", generated.stderr);
-            let seek = super::extract_frames_seek(path.to_str().unwrap(), &[0.0], 320, None);
-            let scan = super::extract_frames_full_scan(path.to_str().unwrap(), &[0.0], Some(1.0), 320, None);
+            let seek = super::extract_frames_seek(path.to_str().unwrap(), &[0.0], 320, None, &|| false);
+            let scan = super::extract_frames_full_scan(path.to_str().unwrap(), &[0.0], Some(1.0), 320, None, &|| false);
             let _ = fs::remove_file(path);
             for frames in [seek.unwrap(), scan.unwrap()] {
                 assert_eq!(frames.len(), 1);
@@ -1499,11 +1526,11 @@ mod tests {
             path.to_str().unwrap()].map(str::to_string);
         let generated = super::run_ffmpeg_with_progress(&args, None).unwrap();
         assert!(generated.success, "{}", generated.stderr);
-        let frames = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 0.5], 64, None).unwrap();
+        let frames = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 0.5], 64, None, &|| false).unwrap();
         assert_eq!(frames.len(), 2);
         assert_eq!((frames[0].width, frames[0].height), (64, 36));
         assert_eq!(frames[1].time, 0.5);
-        let missing = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 2.0], 64, None);
+        let missing = super::extract_frames_seek(path.to_str().unwrap(), &[0.1, 2.0], 64, None, &|| false);
         let _ = fs::remove_file(path);
         assert!(missing.is_err());
     }
@@ -1566,6 +1593,32 @@ mod tests {
     #[test]
     fn cancelled_scene_detection_does_not_start_ffmpeg() {
         assert_eq!(detect_scenes("missing.mp4", 0.3, || true).unwrap_err(), "场景检测已取消");
+    }
+
+    #[test]
+    fn cancelled_extraction_does_not_start_ffmpeg() {
+        for force_seek in [true, false] {
+            let result = super::extract_and_hash_frames_with_progress(
+                "missing.mp4", &[0.0], Some(1.0), Some(3840), Some(2160),
+                force_seek, None, &|| true,
+            );
+            assert_eq!(result.err().as_deref(), Some("ffmpeg 已取消"));
+        }
+    }
+
+    #[test]
+    fn running_extraction_can_be_cancelled_with_stdout_open() {
+        let Some(tools) = resolve_tools() else { return; };
+        let args = ["-v", "error", "-nostdin", "-re", "-f", "lavfi", "-i",
+            "testsrc2=size=16x16:rate=30:duration=10", "-f", "rawvideo", "pipe:1"]
+            .map(str::to_string);
+        let started = Instant::now();
+        let result = super::run_media_command_cancellable(
+            &tools.ffmpeg, &args, "ffmpeg", Duration::from_secs(10), None, None,
+            &|| started.elapsed() >= Duration::from_millis(150),
+        );
+        assert_eq!(result.err().as_deref(), Some("ffmpeg 已取消"));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

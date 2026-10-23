@@ -767,6 +767,7 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
             height,
             force_seek,
             Some(on_decoded),
+            &|| is_cancelled(&app, video_id),
         ) {
             Ok(f) => f,
             Err(e) => {
