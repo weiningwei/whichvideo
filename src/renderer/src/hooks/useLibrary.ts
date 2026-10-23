@@ -71,6 +71,7 @@ export interface LibraryState {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
+  loadError: string | null
   /** true = 文件夹视图，false = 全部视频平铺视图 */
   treeVisible: boolean
   selectedVideoIds: Set<number>
@@ -99,8 +100,9 @@ export function useLibrary() {
   }, [videoList])
 
   const refreshAll = useCallback(async () => {
-    await core.refreshAll()
-    await videoList.refreshVideos()
+    const results = await Promise.allSettled([core.refreshAll(), videoList.refreshVideos()])
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failure) throw failure.reason
   }, [core, videoList])
 
   const withBusy = busy.withBusy
@@ -312,6 +314,7 @@ export function useLibrary() {
     queryImage: search.queryImage,
     queryLabel: search.queryLabel,
     hasIndexedFrames: (core.stats?.frames ?? 0) > 0,
+    loadError: core.refreshError ?? videoList.refreshError,
     treeVisible,
     selectedVideoIds: selection.selectedVideoIds,
     expandedFolderIds: selection.expandedFolderIds

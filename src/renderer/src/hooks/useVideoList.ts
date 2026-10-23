@@ -5,6 +5,7 @@ export interface UseVideoListReturn {
   videos: VideoRecord[]
   total: number
   videoQuery: VideoQuery
+  refreshError: string | null
   refreshVideos: (query?: VideoQuery) => Promise<void>
   setVideoQuery: (query: VideoQuery) => void
 }
@@ -147,6 +148,7 @@ export function useVideoList(): UseVideoListReturn {
    */
   const [list, setList] = useState<{ items: VideoRecord[]; total: number }>({ items: [], total: 0 })
   const [videoQuery, setVideoQueryState] = useState<VideoQuery>({ limit: 500, status: 'all', sort: 'added' })
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   /**
    * 当前查询条件（过滤视图与拉取都用）。用 ref 而不是把 videoQuery 放进
@@ -192,6 +194,10 @@ export function useVideoList(): UseVideoListReturn {
         .filter((entry) => entry.revision > startedAtRevision)
         .map((entry) => entry.event)
       setList(reconcileFetchedPage({ items, total: first.total }, events, q))
+      setRefreshError(null)
+    } catch (error) {
+      if (seq === seqRef.current) setRefreshError(`视频列表加载失败：${error instanceof Error ? error.message : String(error)}`)
+      throw error
     } finally {
       activeFetchesRef.current--
       if (activeFetchesRef.current === 0) eventLogRef.current = []
@@ -201,11 +207,11 @@ export function useVideoList(): UseVideoListReturn {
   const setVideoQuery = useCallback((next: VideoQuery) => {
     queryRef.current = next
     setVideoQueryState(next)
-    void refreshVideos(next)
+    void refreshVideos(next).catch(() => { /* 错误由 refreshError 持续展示 */ })
   }, [refreshVideos])
 
   useEffect(() => {
-    void refreshVideos()
+    void refreshVideos().catch(() => { /* 错误由 refreshError 持续展示 */ })
   }, [refreshVideos])
 
   /** 批量合并索引事件，最多约每 150ms 更新一次列表。 */
@@ -268,6 +274,7 @@ export function useVideoList(): UseVideoListReturn {
     videos: list.items,
     total: list.total,
     videoQuery,
+    refreshError,
     refreshVideos,
     setVideoQuery
   }

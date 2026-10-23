@@ -11,7 +11,7 @@ import { MediaToolsSetup } from './components/MediaToolsSetup'
 
 export default function App() {
   const [tab, setTab] = useState<'search' | 'library'>('search')
-  const { state, videoQuery, actions, runSearch, clearSearch, dismissNotice, pauseNotice, resumeNotice } =
+  const { state, videoQuery, actions, runSearch, clearSearch, refreshAll, dismissNotice, pauseNotice, resumeNotice } =
     useLibrary()
   const { hasIndexedFrames, treeVisible, selectedVideoIds } = state
   const { reSearch, toggleTreeVisible, toggleVideoSelection, clearSelection, setSelectionOrder,
@@ -155,6 +155,8 @@ export default function App() {
         busy={state.busy}
         mediaTools={state.mediaTools}
         failedVideos={state.stats.failedVideos}
+        loadError={state.loadError}
+        onRetryLoad={() => void refreshAll().catch(() => { /* 状态栏保留错误与重试入口 */ })}
         onConfigureMediaTools={() => void actions.selectMediaToolsDir()}
         onViewFailedVideos={() => {
           actions.setVideoQuery({ ...videoQuery, keyword: '', folderId: null, status: 'failed', offset: 0 })

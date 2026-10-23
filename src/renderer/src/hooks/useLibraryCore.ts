@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   type AppSettings,
   type DataDirInfo,
@@ -30,6 +30,7 @@ export interface UseLibraryCoreReturn {
   mediaTools: MediaToolsStatus | null
   /** 正在进行的批量导入进度；空闲时为 null */
   importProgress: ImportProgressEvent | null
+  refreshError: string | null
   refreshAll: () => Promise<void>
   refreshFolders: () => Promise<void>
   setSettings: (settings: AppSettings) => void
@@ -50,30 +51,40 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
   const [dataDir, setDataDir] = useState<DataDirInfo | null>(null)
   const [mediaTools, setMediaTools] = useState<MediaToolsStatus | null>(null)
   const [importProgress, setImportProgress] = useState<ImportProgressEvent | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const refreshId = useRef(0)
 
   const refreshFolders = useCallback(async () => {
     setFolders(await window.whichvideo.folders.list())
   }, [])
 
   const refreshAll = useCallback(async () => {
-    const [s, st, f, cfg, dirInfo, tools] = await Promise.all([
-      window.whichvideo.library.stats(),
-      window.whichvideo.library.status(),
-      window.whichvideo.folders.list(),
-      window.whichvideo.library.settings(),
-      window.whichvideo.library.dataDir(),
-      window.whichvideo.library.mediaTools()
-    ])
-    setStats(s)
-    setStatus(st)
-    setFolders(f)
-    setSettings(cfg)
-    setDataDir(dirInfo)
-    setMediaTools(tools)
+    const currentRefresh = ++refreshId.current
+    try {
+      const [s, st, f, cfg, dirInfo, tools] = await Promise.all([
+        window.whichvideo.library.stats(),
+        window.whichvideo.library.status(),
+        window.whichvideo.folders.list(),
+        window.whichvideo.library.settings(),
+        window.whichvideo.library.dataDir(),
+        window.whichvideo.library.mediaTools()
+      ])
+      if (currentRefresh !== refreshId.current) return
+      setStats(s)
+      setStatus(st)
+      setFolders(f)
+      setSettings(cfg)
+      setDataDir(dirInfo)
+      setMediaTools(tools)
+      setRefreshError(null)
+    } catch (error) {
+      if (currentRefresh === refreshId.current) setRefreshError(`资料库状态加载失败：${error instanceof Error ? error.message : String(error)}`)
+      throw error
+    }
   }, [])
 
   useEffect(() => {
-    void refreshAll()
+    void refreshAll().catch(() => { /* 错误由 refreshError 持续展示 */ })
   }, [refreshAll])
 
   useEffect(() => {
@@ -135,6 +146,7 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
     dataDir,
     mediaTools,
     importProgress,
+    refreshError,
     refreshAll,
     refreshFolders,
     setSettings: updateSettings,
