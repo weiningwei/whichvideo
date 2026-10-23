@@ -50,11 +50,15 @@ function transpile() {
   // 我们只调它的纯函数导出，hook 不执行，shim 无需任何真实行为。
   const target = join(js, 'renderer', 'src', 'hooks', 'useVideoList.js')
   const shim = join(js, 'shims', 'react.js')
+  const requestGateShim = join(js, 'shims', 'request-gate.js')
   mkdirSync(join(js, 'shims'), { recursive: true })
   writeFileSync(shim, 'export const useCallback = () => {}\nexport const useEffect = () => {}\nexport const useRef = () => {}\nexport const useState = () => []\n')
+  writeFileSync(requestGateShim, 'export const useRequestGate = () => {}\n')
   const url = pathToFileURL(shim).href
+  const requestGateUrl = pathToFileURL(requestGateShim).href
   const source = readFileSync(target, 'utf8')
     .replace(/(["'])react\1/g, `$1${url}$1`)
+    .replace(/(["'])\.\/useRequestGate\1/g, `$1${requestGateUrl}$1`)
     .replace(/(["'])(\.\.\/lib\/[\w-]+)\1/g, '$1$2.js$1')
   writeFileSync(target, source)
   return target
