@@ -13,6 +13,8 @@ interface Props {
   queryLabel: string | null
   hasIndexedFrames: boolean
   libraryVideoCount: number
+  libraryIndexedVideoCount: number
+  libraryFailedVideoCount: number
   onOpenLibrary: () => void
   onPickImageFile: () => Promise<string[]>
   onSearchPath: (path: string) => void
@@ -37,6 +39,8 @@ export function SearchView(props: Props) {
     queryLabel,
     hasIndexedFrames,
     libraryVideoCount,
+    libraryIndexedVideoCount,
+    libraryFailedVideoCount,
     onOpenLibrary,
     onPickImageFile,
     onSearchPath,
@@ -140,6 +144,11 @@ export function SearchView(props: Props) {
 
   const matches = search?.matches ?? []
   const top = matches[0]
+  const chooseImage = async () => {
+    const paths = await onPickImageFile()
+    if (paths.length) onSearchPath(paths[0])
+  }
+  const partiallyIndexed = libraryVideoCount > libraryIndexedVideoCount
 
   return (
     <div
@@ -185,10 +194,7 @@ export function SearchView(props: Props) {
               <button
                 className="btn hover:bg-ink-700/70"
                 disabled={searching}
-                onClick={async () => {
-                  const paths = await onPickImageFile()
-                  if (paths.length) onSearchPath(paths[0])
-                }}
+                onClick={() => void chooseImage()}
               >
                 选择图片
               </button>
@@ -243,6 +249,14 @@ export function SearchView(props: Props) {
 
         </div>
 
+        {hasIndexedFrames && partiallyIndexed && (
+          <div className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[12px] text-warn">
+            当前已索引 {libraryIndexedVideoCount}/{libraryVideoCount} 个视频。搜索只能覆盖已索引的视频。
+            {libraryFailedVideoCount > 0 ? `另有 ${libraryFailedVideoCount} 个索引失败，请到视频库重试。` : '其余视频完成索引后，可重新搜索。'}
+            <button className="ml-2 underline" onClick={onOpenLibrary}>查看索引状态</button>
+          </div>
+        )}
+
         {!hasIndexedFrames && !searching && (
           <div className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-[12.5px] text-secondary">
             <div className="font-semibold text-primary">{libraryVideoCount === 0 ? '先添加视频' : '等待视频索引完成'}</div>
@@ -276,7 +290,11 @@ export function SearchView(props: Props) {
 
         {search && search.matchCount === 0 && search.comparedFrames > 0 && (
           <div className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] text-warn">
-            没有找到相似画面
+            <div>没有找到相似画面{partiallyIndexed ? '；还有视频尚未完成索引，当前结果不覆盖整个视频库。' : '。'}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button className="btn" disabled={searching} onClick={() => void chooseImage()}>换图重试</button>
+              <button className="btn" onClick={onOpenLibrary}>查看索引状态</button>
+            </div>
           </div>
         )}
       </div>
