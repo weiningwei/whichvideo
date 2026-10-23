@@ -146,8 +146,12 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   })())
 
   console.log('\n=== 搜图页 ===')
-  const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }
+  const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, libraryVideoCount: 1, onOpenLibrary: noop, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }
   const emptySearch = render(jsx(SearchView, { ...searchBase, search: null }))
+  const emptyLibrarySearch = render(jsx(SearchView, { ...searchBase, search: null, hasIndexedFrames: false, libraryVideoCount: 0 }))
+  check('空库首屏有添加入口', emptyLibrarySearch.includes('先添加视频') && emptyLibrarySearch.includes('前往视频库添加'))
+  const indexingSearch = render(jsx(SearchView, { ...searchBase, search: null, hasIndexedFrames: false }))
+  check('已有视频但尚未索引时说明等待', indexingSearch.includes('等待视频索引完成') && indexingSearch.includes('查看视频库'))
   check('首屏只有一个清晰主任务', emptySearch.includes('用一张图，找到视频') && emptySearch.includes('选择图片') && emptySearch.includes('粘贴截图'))
   check('支持拖放、链接和本地隐私提示', emptySearch.includes('拖放图片') && emptySearch.includes('粘贴图片或网页链接') && emptySearch.includes('所有比对都在本机完成'))
   check('空链接时搜索按钮禁用', /<button[^>]*disabled=""[^>]*>搜索<\/button>/.test(emptySearch))

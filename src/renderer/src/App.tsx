@@ -82,6 +82,8 @@ export default function App() {
             queryImage={state.queryImage}
             queryLabel={state.queryLabel}
             hasIndexedFrames={hasIndexedFrames}
+            libraryVideoCount={state.stats.videos}
+            onOpenLibrary={() => setTab('library')}
             onReSearch={reSearch}
             onPickImageFile={() => window.whichvideo.videos.importImages()}
             onSearchPath={(path) => void runSearch({ path })}

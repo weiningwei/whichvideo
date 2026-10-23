@@ -10,6 +10,8 @@ interface Props {
   queryImage: string | null
   queryLabel: string | null
   hasIndexedFrames: boolean
+  libraryVideoCount: number
+  onOpenLibrary: () => void
   onPickImageFile: () => Promise<string[]>
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
@@ -32,6 +34,8 @@ export function SearchView(props: Props) {
     queryImage,
     queryLabel,
     hasIndexedFrames,
+    libraryVideoCount,
+    onOpenLibrary,
     onPickImageFile,
     onSearchPath,
     onSearchDataUrl,
@@ -236,14 +240,17 @@ export function SearchView(props: Props) {
                 搜索
               </button>
             </div>
-            {search && search.comparedFrames === 0 && (
-              <div className="mt-2 text-[11.5px] text-warn">
-                索引库还没有任何帧指纹：请先在「视频库与监听」里导入视频或文件夹。
-              </div>
-            )}
           </div>
 
         </div>
+
+        {!hasIndexedFrames && !searching && (
+          <div className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-[12.5px] text-secondary">
+            <div className="font-semibold text-primary">{libraryVideoCount === 0 ? '先添加视频' : '等待视频索引完成'}</div>
+            <div className="mt-1">{libraryVideoCount === 0 ? '视频库还是空的。添加视频或文件夹后，就能用图片搜索画面。' : '视频已加入库中，索引完成后就能搜索画面。'}</div>
+            <button className="btn mt-3" onClick={onOpenLibrary}>{libraryVideoCount === 0 ? '前往视频库添加' : '查看视频库'}</button>
+          </div>
+        )}
 
         {(error || dropError) && (
           <div className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-2.5 text-[12.5px] text-bad">
