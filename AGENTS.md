@@ -43,6 +43,9 @@ src-tauri/src/watcher.rs      目录监听与变更同步
 src-tauri/src/logger.rs       文件日志与 panic 记录
 src-tauri/src/frames_store.rs 索引帧落盘、读取与清理
 src/renderer/src              React 渲染端
+src/renderer/src/hooks/useLibraryImports.ts 视频导入与目录监听操作
+src/renderer/src/hooks/useLibraryColumns.tsx 视频表格列宽与调整交互
+src/renderer/src/components/FolderCard.tsx 文件夹状态、卡片与图标
 src/renderer/src/lib/ipc-contract.ts IPC 返回值与事件运行时校验
 src/shared                    前端共享类型、指纹和 IPC 频道名
 ```
