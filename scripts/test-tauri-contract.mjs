@@ -121,11 +121,12 @@ check(
     dbSource.includes("return normalized[..3].to_string()")
 )
 check(
-  'FFmpeg 支持环境变量、手动目录与 PATH 探测',
+  'FFmpeg 支持环境变量、手动目录与 PATH 成对探测',
   mediaSource.includes('WHICHVIDEO_FFMPEG') &&
     mediaSource.includes('WHICHVIDEO_BIN_DIR') &&
     mediaSource.includes('configured_dir') &&
-    mediaSource.includes('which(names.0)')
+    mediaSource.includes('tools_in_path(&path, tools_are_usable)') &&
+    mediaSource.includes('filter_map(|dir| paths_in_dir(&dir))')
 )
 check('FFmpeg 手动目录持久化到 settings', dbSource.includes("key = 'ffmpegDir'") && dbSource.includes('set_ffmpeg_dir'))
 check(

@@ -138,6 +138,13 @@ fn paths_in_dir(dir: &std::path::Path) -> Option<ToolPaths> {
     }
 }
 
+/// PATH 按目录顺序逐个检查，只有同一目录中的完整工具对才会入选。
+fn tools_in_path(path_env: &std::ffi::OsStr, usable: impl Fn(&ToolPaths) -> bool) -> Option<ToolPaths> {
+    std::env::split_paths(path_env)
+        .filter_map(|dir| paths_in_dir(&dir))
+        .find(|tools| usable(tools))
+}
+
 fn tools_are_usable(tools: &ToolPaths) -> bool {
     let args = ["-version".to_string()];
     [&tools.ffmpeg, &tools.ffprobe].into_iter().all(|path| {
@@ -204,12 +211,8 @@ fn detect_tools(configured_dir: Option<&std::path::Path>) -> (Option<ToolPaths>,
         });
     }
 
-    let names = tool_names();
-    if let (Some(ffmpeg), Some(ffprobe)) = (which(names.0), which(names.1)) {
-        let tools = ToolPaths { ffmpeg, ffprobe };
-        if tools_are_usable(&tools) {
-            return status_for(tools, "path", "使用系统 PATH 中的 FFmpeg");
-        }
+    if let Some(tools) = std::env::var_os("PATH").and_then(|path| tools_in_path(&path, tools_are_usable)) {
+        return status_for(tools, "path", "使用系统 PATH 中的 FFmpeg");
     }
 
     // Finder 启动的 macOS GUI 应用通常不继承 shell 的 Homebrew PATH。
@@ -1349,6 +1352,36 @@ pub fn sha256_of_file(file_path: &str) -> Result<String, String> {
 mod tests {
     use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
     use std::sync::Arc;
+
+    #[test]
+    fn path_lookup_uses_a_usable_pair_from_one_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "whichvideo-tools-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let first = root.join("ffmpeg-only");
+        let second = root.join("ffprobe-only");
+        let broken = root.join("broken-pair");
+        let valid = root.join("valid-pair");
+        for dir in [&first, &second, &broken, &valid] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let (ffmpeg, ffprobe) = super::tool_names();
+        fs::write(first.join(ffmpeg), []).unwrap();
+        fs::write(second.join(ffprobe), []).unwrap();
+        for dir in [&broken, &valid] {
+            fs::write(dir.join(ffmpeg), []).unwrap();
+            fs::write(dir.join(ffprobe), []).unwrap();
+        }
+        let path = std::env::join_paths([&first, &second, &broken, &valid]).unwrap();
+        let selected = super::tools_in_path(&path, |tools| tools.ffmpeg != broken.join(ffmpeg).to_string_lossy()).unwrap();
+        assert_eq!(selected.ffmpeg, valid.join(ffmpeg).to_string_lossy());
+        assert_eq!(selected.ffprobe, valid.join(ffprobe).to_string_lossy());
+        let split_only = std::env::join_paths([&first, &second]).unwrap();
+        assert!(super::tools_in_path(&split_only, |_| true).is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     /// FFmpeg 生成的可复现边界媒体；由 pnpm test:media:edge 显式运行。
     #[test]
