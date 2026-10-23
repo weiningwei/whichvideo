@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { SearchMatch, SearchResponse, VideoRecord } from '@shared/types'
+import type { SearchOutcome } from '../hooks/useSearch'
 import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel } from '../lib/format'
 
 interface Props {
@@ -16,7 +17,7 @@ interface Props {
   onSearchPath: (path: string) => void
   onSearchDataUrl: (dataUrl: string, label: string) => void
   onSearchClipboard: () => void
-  onSearchUrl: (url: string) => void
+  onSearchUrl: (url: string) => Promise<SearchOutcome>
   onReSearch: () => void
   onClear: () => void
   onOpen: (videoId: number, atSeconds?: number) => void
@@ -49,20 +50,16 @@ export function SearchView(props: Props) {
   const dragDepth = useRef(0)
   const nativeDropAt = useRef(0)
   const [urlInput, setUrlInput] = useState('')
-  useEffect(() => { if (searching) setDropError(null) }, [searching])
+  const [urlError, setUrlError] = useState<string | null>(null)
+  useEffect(() => { if (searching) { setDropError(null); setUrlError(null) } }, [searching])
 
-  /**
-   * 提交链接检索。
-   *
-   * 清空输入框而不是保留：URL 又长又占地方，检索完用户关心的是结果卡片；
-   * 需要重搜同一张图时结果卡片与顶部"重新搜索"按钮已经够用。
-   * 真要再搜同一个链接，重新粘贴更省事。
-   */
-  const submitUrl = () => {
+  const submitUrl = async () => {
     const url = urlInput.trim()
     if (!url || searching) return
-    setUrlInput('')
-    props.onSearchUrl(url)
+    setUrlError(null)
+    const outcome = await props.onSearchUrl(url)
+    if (outcome.ok) setUrlInput((current) => current.trim() === url ? '' : current)
+    else if (outcome.error) setUrlError(outcome.error)
   }
 
   // Ctrl+K 聚焦链接输入框。放在本组件而不是 App：只有搜索页有这个框，
@@ -208,7 +205,7 @@ export function SearchView(props: Props) {
                 </button>
               )}
               {(search || error) && (
-                <button className="btn hover:bg-ink-700/70" onClick={onClear}>
+                <button className="btn hover:bg-ink-700/70" onClick={() => { setUrlError(null); onClear() }}>
                   清除
                 </button>
               )}
@@ -219,11 +216,11 @@ export function SearchView(props: Props) {
               <input
                 ref={urlInputRef}
                 value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
+                onChange={(e) => { setUrlInput(e.target.value); setUrlError(null) }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    submitUrl()
+                    void submitUrl()
                   }
                 }}
                 placeholder="粘贴图片或网页链接"
@@ -234,12 +231,13 @@ export function SearchView(props: Props) {
               <button
                 className="btn shrink-0 px-2.5 py-1.5 text-[12px] hover:bg-ink-700/70"
                 disabled={searching || !urlInput.trim()}
-                onClick={submitUrl}
+                onClick={() => void submitUrl()}
                 title="从链接取图并检索（支持 og:image、网页首图）"
               >
                 搜索
               </button>
             </div>
+            {urlError && <div role="alert" className="mt-1.5 text-[11.5px] text-bad">{urlError}。请检查链接后重试。</div>}
           </div>
 
         </div>
@@ -252,7 +250,7 @@ export function SearchView(props: Props) {
           </div>
         )}
 
-        {(error || dropError) && (
+        {(dropError || (error && error !== urlError)) && (
           <div className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-2.5 text-[12.5px] text-bad">
             {dropError ?? error}
           </div>

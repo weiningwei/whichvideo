@@ -7,9 +7,14 @@ export interface UseSearchReturn {
   searchError: string | null
   queryImage: string | null
   queryLabel: string | null
-  runSearch: (input: SearchInput) => Promise<void>
+  runSearch: (input: SearchInput) => Promise<SearchOutcome>
   reSearch: () => Promise<void>
   clearSearch: () => void
+}
+
+export interface SearchOutcome {
+  ok: boolean
+  error: string | null
 }
 
 export interface SearchInput {
@@ -29,7 +34,7 @@ export function useSearch(): UseSearchReturn {
   const lastSearchInput = useRef<SearchInput | null>(null)
   const requestId = useRef(0)
 
-  const runSearch = useCallback(async (input: SearchInput) => {
+  const runSearch = useCallback(async (input: SearchInput): Promise<SearchOutcome> => {
     const currentRequest = ++requestId.current
     lastSearchInput.current = input
     setSearching(true)
@@ -47,37 +52,44 @@ export function useSearch(): UseSearchReturn {
     try {
       if (input.path) {
         const response = await window.whichvideo.search.byPath(input.path)
-        if (currentRequest !== requestId.current) return
+        if (currentRequest !== requestId.current) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(`file://${input.path}`)
         setQueryLabel(input.label ?? input.path)
+        return { ok: !response.error, error: response.error ?? null }
       } else if (input.dataUrl) {
         const response = await window.whichvideo.search.byDataUrl(input.dataUrl)
-        if (currentRequest !== requestId.current) return
+        if (currentRequest !== requestId.current) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(input.dataUrlPreview ?? input.dataUrl)
         setQueryLabel(input.label ?? '图片')
+        return { ok: !response.error, error: response.error ?? null }
       } else if (input.url) {
         const response = await window.whichvideo.search.byUrl(input.url)
-        if (currentRequest !== requestId.current) return
+        if (currentRequest !== requestId.current) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(null)
         setQueryLabel(response.queryImageUrl ?? input.label ?? input.url)
+        return { ok: !response.error, error: response.error ?? null }
       } else {
         const clipboard = await window.whichvideo.search.byClipboard()
-        if (currentRequest !== requestId.current) return
+        if (currentRequest !== requestId.current) return { ok: false, error: null }
         if (!clipboard) {
           setSearchError('剪贴板里没有图片，请先复制一张图片再点这个按钮')
-          return
+          return { ok: false, error: '剪贴板里没有图片，请先复制一张图片再点这个按钮' }
         }
         // 剪贴板解码失败同样由 response.error 返回；沿用其它输入路径的
         // 统一处理，避免界面把真实错误误显示成“没有匹配”。
         applyResponse(clipboard.response)
         setQueryImage(clipboard.dataUrl)
         setQueryLabel(input.label ?? '剪贴板图片')
+        return { ok: !clipboard.response.error, error: clipboard.response.error ?? null }
       }
     } catch (err) {
-      if (currentRequest === requestId.current) setSearchError(err instanceof Error ? err.message : String(err))
+      if (currentRequest !== requestId.current) return { ok: false, error: null }
+      const message = err instanceof Error ? err.message : String(err)
+      setSearchError(message)
+      return { ok: false, error: message }
     } finally {
       if (currentRequest === requestId.current) setSearching(false)
     }

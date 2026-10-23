@@ -91,7 +91,7 @@ export default function App() {
               void runSearch({ dataUrl, label, dataUrlPreview: dataUrl })
             }
             onSearchClipboard={() => void runSearch({})}
-            onSearchUrl={(url) => void runSearch({ url })}
+            onSearchUrl={(url) => runSearch({ url })}
             onClear={clearSearch}
             onOpen={(id, atSeconds) => void actions.openVideo(id, atSeconds)}
             onReveal={(id) => void actions.revealVideo(id)}
