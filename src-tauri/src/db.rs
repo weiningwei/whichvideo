@@ -482,7 +482,7 @@ pub struct AppSettings {
 /// Rust 侧镜像 src/shared/types.ts 的 DEFAULT_SETTINGS（含 String 字段，故用函数而非 const）。
 pub fn default_settings() -> AppSettings {
     AppSettings {
-        uniform_interval_seconds: 15,
+        uniform_interval_seconds: 5,
         concurrency: 2,
         min_hash_score: 0.6,
         max_results: 40,

@@ -309,7 +309,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  uniformIntervalSeconds: 15,
+  uniformIntervalSeconds: 5,
   concurrency: 2,
   minHashScore: 0.6,
   maxResults: 40,

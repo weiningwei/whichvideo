@@ -88,7 +88,7 @@ export function SettingsPanel({
       <SectionTitle>索引质量</SectionTitle>
       <Field
         label="采样间隔（秒）"
-        hint="均匀模式按间隔采样；场景模式每个镜头至少取一帧，并在长镜头内按间隔补帧。间隔越短，索引时间和占用越大。修改后需重建已有索引。"
+        hint="默认 5 秒，更容易覆盖短镜头。均匀模式按间隔采样；场景模式每个镜头至少取一帧。间隔越短，索引越慢、占用越大；大批量长视频可调大。修改后需重建已有索引。"
         value={value.uniformIntervalSeconds}
         min={1}
         max={3600}
