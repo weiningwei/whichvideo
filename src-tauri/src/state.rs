@@ -1,4 +1,5 @@
 use crate::db;
+use crate::frames_store;
 use crate::indexer::IndexerState;
 use crate::logger;
 use crate::media;
@@ -34,9 +35,9 @@ impl AppState {
         let tools = media::tools_status();
         logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
         // 抽帧并发上限只在启动和设置变更时读一次库，pump 用缓存值。
-        let concurrency = db::get_settings(&conn)
-            .map(|settings| settings.concurrency.clamp(1, 8) as usize)
-            .unwrap_or(2);
+        let settings = db::get_settings(&conn).unwrap_or_else(|_| db::default_settings());
+        let concurrency = settings.concurrency.clamp(1, 8) as usize;
+        frames_store::configure_enabled(settings.keep_frame_images);
         Ok(AppState {
             db: Mutex::new(Some(conn)),
             indexer: Mutex::new(IndexerState {

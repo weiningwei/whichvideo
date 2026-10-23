@@ -776,6 +776,9 @@ fn process_video(app: AppHandle, video_id: i64, mut reset_before_run: bool) {
         .unwrap_or_else(|| timestamps.first().copied().unwrap_or(0.0));
     let thumb_window = thumbnail_reuse_window(duration, timestamps.len(), scene_sampling);
     let mut thumbnail_candidate = None;
+    let frame_writer = settings.keep_frame_images
+        .then(|| frames_store::begin_video_write(video_id))
+        .flatten();
 
     let mut bi = start_index;
     while bi < timestamps.len() {
@@ -879,9 +882,9 @@ fn process_video(app: AppHandle, video_id: i64, mut reset_before_run: bool) {
             }
             frames_changed = true;
             current_processed = next_processed;
-            if settings.keep_frame_images {
+            if let Some(writer) = frame_writer {
                 for fr in &frames {
-                    frames_store::save(video_id, (fr.time * 1000.0).round() as i64, &fr.rgb, fr.width, fr.height);
+                    frames_store::save(writer, (fr.time * 1000.0).round() as i64, &fr.rgb, fr.width, fr.height);
                 }
             }
             if is_cancelled(&app, video_id) {

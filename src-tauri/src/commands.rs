@@ -861,6 +861,8 @@ fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db:
         .lock()
         .map_err(|e| e.to_string())?
         .concurrency = updated.concurrency.clamp(1, 8) as usize;
+    // 先撤销后台任务的旧写入代次，再清理目录；之后旧任务无法重新创建帧图。
+    frames_store::configure_enabled(updated.keep_frame_images);
     if patch.keep_frame_images == Some(false) && previous.keep_frame_images && frames_store::remove_all() {
         let _ = app.emit(
             constants::EVENT_CHANNEL,
