@@ -125,6 +125,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('顶栏保留主题和快捷键入口', header.includes('切换主题') && header.includes('键盘快捷键'))
   const statusHtml = render(jsx(StatusBar, { status, busy: null }))
   check('状态栏空闲时只显示简短状态', statusHtml.includes('就绪') && !statusHtml.includes('拖入图片'))
+  const unavailableHtml = render(jsx(StatusBar, { status, busy: null, mediaTools: { ready: false, message: '未找到 FFmpeg' }, failedVideos: 2, onConfigureMediaTools: noop, onViewFailedVideos: noop }))
+  check('状态栏持续提示不可用功能与失败视频', unavailableHtml.includes('需要处理') && unavailableHtml.includes('FFmpeg 未配置 · 设置目录') && unavailableHtml.includes('2 个视频索引失败 · 查看') && !unavailableHtml.includes('就绪'))
   const scanning = { type: 'import-progress', id: 1, processed: 120, total: 480, added: 3, skipped: 0, failed: 0, finished: false }
   const scanningHtml = render(jsx(StatusBar, { status, busy: '正在扫描文件夹…', importProgress: scanning }))
   check('状态栏展示导入进度与新增数', scanningHtml.includes('120/480') && scanningHtml.includes('新增 3'))

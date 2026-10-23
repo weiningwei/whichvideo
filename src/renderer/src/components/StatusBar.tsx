@@ -1,27 +1,44 @@
-import type { IndexerStatus } from '@shared/types'
+import type { IndexerStatus, MediaToolsStatus } from '@shared/types'
 import type { ImportProgressEvent } from '../lib/importProgress'
 
 interface Props {
   status: IndexerStatus | null
   busy: string | null
+  mediaTools?: MediaToolsStatus | null
+  failedVideos?: number
+  onConfigureMediaTools?: () => void
+  onViewFailedVideos?: () => void
   /** 批量导入进度：扫描阶段 total 为 0，显示已发现文件数 */
   importProgress?: ImportProgressEvent | null
 }
 
-export function StatusBar({ status, busy, importProgress }: Props) {
+export function StatusBar({ status, busy, mediaTools, failedVideos = 0, onConfigureMediaTools, onViewFailedVideos, importProgress }: Props) {
   const running = status?.running ?? false
+  const toolsMissing = mediaTools?.ready === false
   const total = status?.total ?? 0
   const done = (status?.done ?? 0) + (status?.failed ?? 0)
   const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
 
   return (
     <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-line bg-surface-1 px-4 text-[10.5px] text-tertiary">
-      <span className={`flex items-center gap-1.5 ${running ? 'text-accent' : 'text-tertiary'}`}>
+      <span className={`flex items-center gap-1.5 ${toolsMissing || failedVideos > 0 ? 'text-warn' : running ? 'text-accent' : 'text-tertiary'}`}>
         <span
-          className={`h-1.5 w-1.5 rounded-full ${running ? 'animate-pulse bg-accent' : 'bg-disabled'}`}
+          className={`h-1.5 w-1.5 rounded-full ${toolsMissing || failedVideos > 0 ? 'bg-warn' : running ? 'animate-pulse bg-accent' : 'bg-disabled'}`}
         />
-        {running ? '正在索引' : '就绪'}
+        {running ? '正在索引' : toolsMissing || failedVideos > 0 ? '需要处理' : '就绪'}
       </span>
+
+      {toolsMissing && (
+        <button className="shrink-0 text-warn underline hover:text-primary" onClick={onConfigureMediaTools} title={mediaTools?.message}>
+          FFmpeg 未配置 · 设置目录
+        </button>
+      )}
+
+      {failedVideos > 0 && (
+        <button className="shrink-0 text-bad underline hover:text-primary" onClick={onViewFailedVideos}>
+          {failedVideos} 个视频索引失败 · 查看
+        </button>
+      )}
 
       {running && (
         <>
@@ -43,7 +60,7 @@ export function StatusBar({ status, busy, importProgress }: Props) {
 
       {status?.lastError && (
         <span className="max-w-[32ch] truncate text-bad" title={status.lastError}>
-          {status.lastError}
+          最近错误：{status.lastError}
         </span>
       )}
 

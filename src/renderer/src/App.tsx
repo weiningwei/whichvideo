@@ -149,8 +149,19 @@ export default function App() {
         )}
       </main>
 
-      {/* 状态栏只展示持续任务状态；所有一次性反馈固定在通知浮层，绝不换位置。 */}
-      <StatusBar status={state.status} busy={state.busy} importProgress={state.importProgress} />
+      {/* 状态栏展示持续任务和需要处理的问题；一次性反馈仍放在通知浮层。 */}
+      <StatusBar
+        status={state.status}
+        busy={state.busy}
+        mediaTools={state.mediaTools}
+        failedVideos={state.stats.failedVideos}
+        onConfigureMediaTools={() => void actions.selectMediaToolsDir()}
+        onViewFailedVideos={() => {
+          actions.setVideoQuery({ ...videoQuery, keyword: '', folderId: null, status: 'failed', offset: 0 })
+          setTab('library')
+        }}
+        importProgress={state.importProgress}
+      />
 
       {(() => {
         // 最新通知固定贴近状态栏，旧通知依次向上累积，最多显示四条。
