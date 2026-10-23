@@ -968,10 +968,13 @@ fn run_ffmpeg_null_output_cancellable(
         return Err("场景检测已取消".to_string());
     }
     let tools = resolve_tools().ok_or_else(|| "未找到 ffmpeg".to_string())?;
+    // 场景检测和普通探测、抽帧遵循相同的离线边界。本地播放列表即使后来
+    // 被改为引用远程片段，也不能借场景检测隐式联网。
+    let safe_args = local_only_media_args(args, "ffmpeg");
     let mut command = Command::new(&tools.ffmpeg);
     command
         .no_window()
-        .args(args)
+        .args(&safe_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
@@ -1609,6 +1612,9 @@ mod tests {
         let decode = ["-ss", "1", "-i", "C:\\Videos\\clip.m3u8", "-f", "null", "-"].map(str::to_string);
         assert_eq!(local_only_media_args(&decode, "ffmpeg"),
             ["-ss", "1", "-protocol_whitelist", "file,crypto,data,pipe,concat", "-i", "C:\\Videos\\clip.m3u8", "-f", "null", "-"].map(str::to_string));
+        let scene = ["-hwaccel", "auto", "-i", "C:\\Videos\\clip.m3u8", "-vf", "select='gt(scene,0.3)'", "-f", "null", "-"].map(str::to_string);
+        assert_eq!(local_only_media_args(&scene, "ffmpeg"),
+            ["-hwaccel", "auto", "-protocol_whitelist", "file,crypto,data,pipe,concat", "-i", "C:\\Videos\\clip.m3u8", "-vf", "select='gt(scene,0.3)'", "-f", "null", "-"].map(str::to_string));
     }
     use std::fs;
     use std::time::{Duration, Instant};
