@@ -29,39 +29,50 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// 只读命令也走阻塞线程：Tauri 的同步命令在窗口主线程上执行，导入/索引正在
 /// 写库时这条查询要等锁，等多久整窗就卡多久。
 #[tauri::command]
-pub async fn library_stats(app: AppHandle) -> Result<db::LibraryStats, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
-        db::stats(conn).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn library_stats(app: AppHandle) -> Result<db::LibraryStats, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<AppState>();
+            let guard = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = guard
+                .as_ref()
+                .ok_or_else(|| "数据库未初始化".to_string())?;
+            db::stats(conn).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_stats", result)
 }
 
 /// 索引器实时状态（取自共享受保护的状态）。
 #[tauri::command]
-pub fn library_status(state: State<AppState>) -> Result<db::IndexerStatus, String> {
-    let idx = state.indexer.lock().map_err(|e| e.to_string())?;
-    Ok(idx.status())
+pub fn library_status(state: State<AppState>) -> Result<db::IndexerStatus, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let idx = state.indexer.lock().map_err(|e| e.to_string())?;
+        Ok(idx.status())
+    })();
+    crate::error::command_result("library_status", result)
 }
 
 /// 监听文件夹列表（与统计/列表一样走阻塞线程，别占主线程等数据库锁）。
 #[tauri::command]
-pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
-        db::list_folders(conn).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<AppState>();
+            let guard = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = guard
+                .as_ref()
+                .ok_or_else(|| "数据库未初始化".to_string())?;
+            db::list_folders(conn).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("folders_list", result)
 }
 
 /// 登记一个被监听的文件夹，并立即扫描其中已有的视频。
@@ -69,10 +80,14 @@ pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, Stri
 pub async fn folders_add_path(
     app: AppHandle,
     dir_path: String,
-) -> Result<db::WatchedFolder, String> {
-    tauri::async_runtime::spawn_blocking(move || add_folder_path_sync(&app, dir_path))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<db::WatchedFolder, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || add_folder_path_sync(&app, dir_path))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("folders_add_path", result)
 }
 
 /// 扫描目录并逐个探测、哈希文件，耗时可达分钟级，只能跑在阻塞线程。
@@ -91,10 +106,14 @@ fn add_folder_path_sync(app: &AppHandle, dir_path: String) -> Result<db::Watched
 
 /// 通过系统文件夹选择对话框登记监听目录（多选退化为逐个）。
 #[tauri::command]
-pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
-    tauri::async_runtime::spawn_blocking(move || add_folders_from_dialog_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || add_folders_from_dialog_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("folders_add_dialog", result)
 }
 
 fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
@@ -121,10 +140,14 @@ fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder
 
 /// 从索引库移除文件夹及其关联视频；磁盘文件不受影响。
 #[tauri::command]
-pub async fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || remove_folder_sync(&app, folder_id))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || remove_folder_sync(&app, folder_id))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("folders_remove", result)
 }
 
 /// 删掉一个含几千个视频的文件夹要做几千次删除和帧目录清理，只能跑在阻塞线程。
@@ -174,10 +197,14 @@ fn remove_folder_sync(app: &AppHandle, folder_id: i64) -> Result<(), String> {
 pub async fn folders_rescan(
     app: AppHandle,
     folder_id: Option<i64>,
-) -> Result<events::ImportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || rescan_folders_sync(&app, folder_id))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<events::ImportResult, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || rescan_folders_sync(&app, folder_id))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("folders_rescan", result)
 }
 
 fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events::ImportResult, String> {
@@ -229,60 +256,69 @@ pub fn folders_set_enabled(
     app: AppHandle,
     folder_id: i64,
     enabled: bool,
-) -> Result<db::WatchedFolder, String> {
-    let state = app.state::<AppState>();
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::set_folder_enabled(conn, folder_id, enabled).map_err(|e| e.to_string())?;
-    let folder = db::get_folder(conn, folder_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "文件夹不存在".to_string())?;
-    drop(guard);
-    watcher::sync_all(&app)?;
-    Ok(folder)
-}
-
-/// 单个视频记录。
-#[tauri::command]
-pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::VideoRecord>, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::get_video(conn, video_id).map_err(|e| e.to_string())
-}
-
-/// 删除视频记录（帧级联删除）。
-#[tauri::command]
-pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
-    indexer::cancel(&app, video_id);
-    let state = app.state::<AppState>();
-    let removed = {
+) -> Result<db::WatchedFolder, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let state = app.state::<AppState>();
         let guard = state.db.lock().map_err(|e| e.to_string())?;
         let conn = guard
             .as_ref()
             .ok_or_else(|| "数据库未初始化".to_string())?;
-        db::remove_video(conn, video_id).map_err(|e| e.to_string())?
-    };
-    frames_store::remove_video(video_id);
-    // 只摘掉这个视频的帧，不值得为一条删除重建整个常驻索引。
-    state
-        .search_index
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove_video(video_id);
-    if let Some(video) = removed {
-        let _ = app.emit(
-            constants::EVENT_CHANNEL,
-            events::LibraryEvent::VideoRemoved {
-                video_id: video.id,
-                path: video.path,
-            },
-        );
-    }
-    Ok(())
+        db::set_folder_enabled(conn, folder_id, enabled).map_err(|e| e.to_string())?;
+        let folder = db::get_folder(conn, folder_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "文件夹不存在".to_string())?;
+        drop(guard);
+        watcher::sync_all(&app)?;
+        Ok(folder)
+    })();
+    crate::error::command_result("folders_set_enabled", result)
+}
+
+/// 单个视频记录。
+#[tauri::command]
+pub fn videos_get(state: State<AppState>, video_id: i64) -> Result<Option<db::VideoRecord>, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_video(conn, video_id).map_err(|e| e.to_string())
+    })();
+    crate::error::command_result("videos_get", result)
+}
+
+/// 删除视频记录（帧级联删除）。
+#[tauri::command]
+pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        indexer::cancel(&app, video_id);
+        let state = app.state::<AppState>();
+        let removed = {
+            let guard = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = guard
+                .as_ref()
+                .ok_or_else(|| "数据库未初始化".to_string())?;
+            db::remove_video(conn, video_id).map_err(|e| e.to_string())?
+        };
+        frames_store::remove_video(video_id);
+        // 只摘掉这个视频的帧，不值得为一条删除重建整个常驻索引。
+        state
+            .search_index
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove_video(video_id);
+        if let Some(video) = removed {
+            let _ = app.emit(
+                constants::EVENT_CHANNEL,
+                events::LibraryEvent::VideoRemoved {
+                    video_id: video.id,
+                    path: video.path,
+                },
+            );
+        }
+        Ok(())
+    })();
+    crate::error::command_result("videos_remove", result)
 }
 
 /// 批量移除视频（不删除磁盘文件）。
@@ -290,10 +326,14 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), String> {
 /// 逐条调用 `videos_remove` 时每个 id 都是一次 IPC + 一次帧目录删除 + 一条事件，
 /// 几百个就会把窗口拖住；这里一次删完、一次摘除索引，前端在命令返回后整体刷新。
 #[tauri::command]
-pub async fn videos_remove_many(app: AppHandle, video_ids: Vec<i64>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || remove_videos_sync(&app, video_ids))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn videos_remove_many(app: AppHandle, video_ids: Vec<i64>) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || remove_videos_sync(&app, video_ids))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_remove_many", result)
 }
 
 fn remove_videos_sync(app: &AppHandle, video_ids: Vec<i64>) -> Result<(), String> {
@@ -322,15 +362,18 @@ fn remove_videos_sync(app: &AppHandle, video_ids: Vec<i64>) -> Result<(), String
 
 /// 在资源管理器中定位文件。
 #[tauri::command]
-pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let video = db::get_video(conn, video_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "视频不存在".to_string())?;
-    platform_open::reveal(std::path::Path::new(&video.path))
+pub fn videos_reveal(state: State<AppState>, video_id: i64) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let video = db::get_video(conn, video_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "视频不存在".to_string())?;
+        platform_open::reveal(std::path::Path::new(&video.path))
+    })();
+    crate::error::command_result("videos_reveal", result)
 }
 
 /// 打开视频文件；带时间戳时优先用支持定位起播的播放器（mpv/PotPlayer/VLC）。
@@ -339,24 +382,27 @@ pub fn videos_open(
     state: State<AppState>,
     video_id: i64,
     at_seconds: Option<f64>,
-) -> Result<(), String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    let video = db::get_video(conn, video_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "视频不存在".to_string())?;
-    if let Some(t) = at_seconds {
-        if t > 0.0 {
-            if let Some(player) = media::find_seekable_player(&video.path) {
-                let args = (player.args)(&video.path, t);
-                return Command::new(&player.exe).no_window().args(&args).spawn()
-                    .map(|_| ()).map_err(|e| e.to_string());
+) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        let video = db::get_video(conn, video_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "视频不存在".to_string())?;
+        if let Some(t) = at_seconds {
+            if t > 0.0 {
+                if let Some(player) = media::find_seekable_player(&video.path) {
+                    let args = (player.args)(&video.path, t);
+                    return Command::new(&player.exe).no_window().args(&args).spawn()
+                        .map(|_| ()).map_err(|e| e.to_string());
+                }
             }
         }
-    }
-    platform_open::open(std::path::Path::new(&video.path))
+        platform_open::open(std::path::Path::new(&video.path))
+    })();
+    crate::error::command_result("videos_open", result)
 }
 
 #[derive(Serialize)]
@@ -566,10 +612,14 @@ fn find_duplicates_sync(app: &AppHandle, min_score: Option<f64>) -> Result<Vec<D
 pub async fn videos_find_duplicates(
     app: AppHandle,
     min_score: Option<f64>,
-) -> Result<Vec<DuplicatePair>, String> {
-    tauri::async_runtime::spawn_blocking(move || find_duplicates_sync(&app, min_score))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<Vec<DuplicatePair>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || find_duplicates_sync(&app, min_score))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_find_duplicates", result)
 }
 
 /// 命中时间点预览：现场解码一帧 JPEG dataUrl。失败返回 null（调用方回退缩略图）。
@@ -581,10 +631,14 @@ pub async fn videos_match_frame(
     app: AppHandle,
     video_id: i64,
     time_ms: i64,
-) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || match_frame_sync(&app, video_id, time_ms))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<Option<String>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || match_frame_sync(&app, video_id, time_ms))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_match_frame", result)
 }
 
 fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Option<String>, String> {
@@ -607,17 +661,21 @@ fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Opti
 
 /// 视频分页列表（支持 keyword/folderId/status 过滤、排序、分页）。
 #[tauri::command]
-pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::VideoPage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let guard = state.db.lock().map_err(|e| e.to_string())?;
-        let conn = guard
-            .as_ref()
-            .ok_or_else(|| "数据库未初始化".to_string())?;
-        db::list_videos(conn, &query).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::VideoPage, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<AppState>();
+            let guard = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = guard
+                .as_ref()
+                .ok_or_else(|| "数据库未初始化".to_string())?;
+            db::list_videos(conn, &query).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_list", result)
 }
 
 /// 视频缩略图（data:image/jpeg;base64,...），无则 null。
@@ -625,12 +683,15 @@ pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::Vi
 pub fn videos_thumbnail(
     state: State<AppState>,
     video_id: i64,
-) -> Result<Option<String>, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::get_thumbnail(conn, video_id).map_err(|e| e.to_string())
+) -> Result<Option<String>, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_thumbnail(conn, video_id).map_err(|e| e.to_string())
+    })();
+    crate::error::command_result("videos_thumbnail", result)
 }
 
 /// 视频全部索引帧清单（按帧序号升序）。
@@ -638,12 +699,15 @@ pub fn videos_thumbnail(
 pub fn videos_frame_manifest(
     state: State<AppState>,
     video_id: i64,
-) -> Result<Vec<db::FrameManifestEntry>, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::list_frame_manifest(conn, video_id).map_err(|e| e.to_string())
+) -> Result<Vec<db::FrameManifestEntry>, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::list_frame_manifest(conn, video_id).map_err(|e| e.to_string())
+    })();
+    crate::error::command_result("videos_frame_manifest", result)
 }
 
 /// 单视频帧级进度（抽帧进行中实时回报）。
@@ -651,16 +715,23 @@ pub fn videos_frame_manifest(
 pub fn videos_frame_progress(
     app: AppHandle,
     video_id: i64,
-) -> Result<Option<events::FrameProgress>, String> {
-    Ok(indexer::get_frame_progress(&app, video_id))
+) -> Result<Option<events::FrameProgress>, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        Ok(indexer::get_frame_progress(&app, video_id))
+    })();
+    crate::error::command_result("videos_frame_progress", result)
 }
 
 /// 通过系统文件选择对话框导入视频文件，返回聚合结果。
 #[tauri::command]
-pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || import_videos_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || import_videos_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_import", result)
 }
 
 /// 拖放的真实本地路径可混合文件与目录；目录默认只扫描一次，管理抽屉可明确选择持续监视。
@@ -669,10 +740,14 @@ pub async fn videos_import_paths(
     app: AppHandle,
     paths: Vec<String>,
     watch_folders: bool,
-) -> Result<events::ImportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || import_paths_sync(&app, paths, watch_folders))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<events::ImportResult, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || import_paths_sync(&app, paths, watch_folders))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_import_paths", result)
 }
 
 fn import_paths_sync(app: &AppHandle, paths: Vec<String>, watch_folders: bool) -> Result<events::ImportResult, String> {
@@ -753,10 +828,14 @@ fn import_videos_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
 
 /// 递归导入一个文件夹，但不把它登记为监听目录。
 #[tauri::command]
-pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || import_folder_once_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || import_folder_once_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_import_folder_once", result)
 }
 
 fn import_folder_once_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
@@ -778,10 +857,14 @@ fn import_folder_once_sync(app: &AppHandle) -> Result<events::ImportResult, Stri
 
 /// 通过系统文件选择对话框选择要搜索的图片，返回归一化路径列表（不入库）。
 #[tauri::command]
-pub async fn videos_import_images(app: AppHandle) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || pick_search_images_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn videos_import_images(app: AppHandle) -> Result<Vec<String>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || pick_search_images_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("videos_import_images", result)
 }
 
 fn pick_search_images_sync(app: &AppHandle) -> Result<Vec<String>, String> {
@@ -803,28 +886,38 @@ pub async fn videos_reindex(
     app: AppHandle,
     video_ids: Option<Vec<i64>>,
     mode: Option<String>,
-) -> Result<events::ReindexResult, String> {
-    // 整库重建要读一遍视频表再批量入队，别占着窗口主线程。
-    let count = tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(events::ReindexResult { count })
+) -> Result<events::ReindexResult, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        // 整库重建要读一遍视频表再批量入队，别占着窗口主线程。
+        let count = tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(events::ReindexResult { count })
+    }
+    .await;
+    crate::error::command_result("videos_reindex", result)
 }
 
 /// 同步文件夹监听（启动/停止各目录的磁盘监听以匹配启用状态）。
 #[tauri::command]
-pub fn watcher_sync(app: AppHandle) -> Result<(), String> {
-    watcher::sync_all(&app)
+pub fn watcher_sync(app: AppHandle) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        watcher::sync_all(&app)
+    })();
+    crate::error::command_result("watcher_sync", result)
 }
 
 /// 用户设置（合并默认值）。
 #[tauri::command]
-pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| "数据库未初始化".to_string())?;
-    db::get_settings(conn).map_err(|e| e.to_string())
+pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "数据库未初始化".to_string())?;
+        db::get_settings(conn).map_err(|e| e.to_string())
+    })();
+    crate::error::command_result("library_settings", result)
 }
 
 /// 更新用户设置，返回合并后的完整设置。
@@ -832,10 +925,14 @@ pub fn library_settings(state: State<AppState>) -> Result<db::AppSettings, Strin
 pub async fn library_update_settings(
     app: AppHandle,
     patch: db::SettingsPatch,
-) -> Result<db::AppSettings, String> {
-    tauri::async_runtime::spawn_blocking(move || update_settings_sync(&app, patch))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<db::AppSettings, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || update_settings_sync(&app, patch))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_update_settings", result)
 }
 
 /// 关掉「保存索引帧图片」要递归删除整个 frames 目录（可能上百万个小文件），
@@ -882,10 +979,14 @@ fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db:
 
 /// 重置索引库（清空视频/帧/文件夹，保留设置）。
 #[tauri::command]
-pub async fn library_reset(app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || reset_library_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn library_reset(app: AppHandle) -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || reset_library_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_reset", result)
 }
 
 /// 清库要删掉 frames 下的全部目录，跑在阻塞线程；界面只显示一句「正在重置」。
@@ -909,24 +1010,34 @@ fn reset_library_sync(app: &AppHandle) -> Result<(), String> {
 
 /// 打开数据目录（db、logs、frames、session 都在这下面）。
 #[tauri::command]
-pub fn library_open_database_folder() -> Result<String, String> {
-    let dir = paths::data_dir();
-    let dir_str = dir.to_string_lossy().to_string();
-    platform_open::open(&dir)?;
-    Ok(dir_str)
+pub fn library_open_database_folder() -> Result<String, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let dir = paths::data_dir();
+        let dir_str = dir.to_string_lossy().to_string();
+        platform_open::open(&dir)?;
+        Ok(dir_str)
+    })();
+    crate::error::command_result("library_open_database_folder", result)
 }
 
 #[tauri::command]
-pub fn library_open_ffmpeg_download() -> Result<(), String> {
-    platform_open::open_url("https://www.ffmpeg.org/download.html")
+pub fn library_open_ffmpeg_download() -> Result<(), crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        platform_open::open_url("https://www.ffmpeg.org/download.html")
+    })();
+    crate::error::command_result("library_open_ffmpeg_download", result)
 }
 
 /// 导出可分享的本地诊断包；只包含脱敏后的运行状态与日志末尾，不含视频或路径清单。
 #[tauri::command]
-pub async fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || export_diagnostics_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || export_diagnostics_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_export_diagnostics", result)
 }
 
 fn export_diagnostics_sync(app: &AppHandle) -> Result<Option<String>, String> {
@@ -942,37 +1053,51 @@ fn export_diagnostics_sync(app: &AppHandle) -> Result<Option<String>, String> {
 
 /// 运行时数据目录信息（toolsReady 由媒体探测结果决定）。
 #[tauri::command]
-pub fn library_data_dir() -> Result<paths::DataDirInfo, String> {
-    Ok(paths::data_dir_info(media::tools_ready()))
+pub fn library_data_dir() -> Result<paths::DataDirInfo, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        Ok(paths::data_dir_info(media::tools_ready()))
+    })();
+    crate::error::command_result("library_data_dir", result)
 }
 
 /// FFmpeg/ffprobe 当前探测结果与来源。
 #[tauri::command]
-pub fn library_media_tools() -> Result<media::MediaToolsStatus, String> {
-    Ok(media::tools_status())
+pub fn library_media_tools() -> Result<media::MediaToolsStatus, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        Ok(media::tools_status())
+    })();
+    crate::error::command_result("library_media_tools", result)
 }
 
 /// 重查当前环境中的 FFmpeg，并恢复此前因工具缺失而等待的索引任务。
 #[tauri::command]
-pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let was_ready = media::tools_ready();
-        let status = media::refresh_tools();
-        if !was_ready && status.ready {
-            indexer::resume_pending(app);
-        }
-        Ok(status)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaToolsStatus, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || {
+            let was_ready = media::tools_ready();
+            let status = media::refresh_tools();
+            if !was_ready && status.ready {
+                indexer::resume_pending(app);
+            }
+            Ok(status)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_refresh_media_tools", result)
 }
 
 /// 选择同时包含 ffmpeg 与 ffprobe 的目录，验证后持久化。
 #[tauri::command]
-pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || select_media_tools_dir_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || select_media_tools_dir_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("library_select_media_tools_dir", result)
 }
 
 fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatus, String> {
@@ -998,13 +1123,16 @@ fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatu
 
 /// 清除手动目录并重新按环境变量 / PATH 自动检测。
 #[tauri::command]
-pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::MediaToolsStatus, String> {
-    let guard = state.db.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
-    db::set_ffmpeg_dir(conn, None).map_err(|e| e.to_string())?;
-    let status = media::configure_dir(None)?;
-    logger::log(&format!("FFmpeg 手动目录已清除（source={}）", status.source));
-    Ok(status)
+pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::MediaToolsStatus, crate::error::AppError> {
+    let result: Result<_, String> = (|| {
+        let guard = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
+        db::set_ffmpeg_dir(conn, None).map_err(|e| e.to_string())?;
+        let status = media::configure_dir(None)?;
+        logger::log(&format!("FFmpeg 手动目录已清除（source={}）", status.source));
+        Ok(status)
+    })();
+    crate::error::command_result("library_clear_media_tools_dir", result)
 }
 
 /* ================================================================== */
@@ -1013,10 +1141,14 @@ pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::Me
 
 /// 从文件检索。
 #[tauri::command]
-pub async fn search_path(app: AppHandle, file_path: String) -> Result<SearchResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || search_path_sync(&app, file_path))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn search_path(app: AppHandle, file_path: String) -> Result<SearchResponse, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || search_path_sync(&app, file_path))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("search_path", result)
 }
 
 fn search_path_sync(app: &AppHandle, file_path: String) -> Result<SearchResponse, String> {
@@ -1049,10 +1181,14 @@ fn search_path_sync(app: &AppHandle, file_path: String) -> Result<SearchResponse
 
 /// 从 data URL 检索（拖入/粘贴的 base64 图片）。
 #[tauri::command]
-pub async fn search_data_url(app: AppHandle, data_url: String) -> Result<SearchResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || search_data_url_sync(&app, data_url))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn search_data_url(app: AppHandle, data_url: String) -> Result<SearchResponse, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || search_data_url_sync(&app, data_url))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("search_data_url", result)
 }
 
 fn search_data_url_sync(app: &AppHandle, data_url: String) -> Result<SearchResponse, String> {
@@ -1089,10 +1225,14 @@ fn search_data_url_sync(app: &AppHandle, data_url: String) -> Result<SearchRespo
 
 /// 从系统剪贴板检索。剪贴板无图片时返回 null（调用方据此显示空态）。
 #[tauri::command]
-pub async fn search_clipboard(app: AppHandle) -> Result<Option<ClipboardSearchResult>, String> {
-    tauri::async_runtime::spawn_blocking(move || search_clipboard_sync(&app))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn search_clipboard(app: AppHandle) -> Result<Option<ClipboardSearchResult>, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || search_clipboard_sync(&app))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("search_clipboard", result)
 }
 
 fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult>, String> {
@@ -1143,10 +1283,14 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
 
 /// 从 http(s) 链接检索（图片直链或普通网页里解析出的主图）。失败时 error 字段说明原因。
 #[tauri::command]
-pub async fn search_url(app: AppHandle, url: String) -> Result<SearchResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || search_url_sync(&app, url))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn search_url(app: AppHandle, url: String) -> Result<SearchResponse, crate::error::AppError> {
+    let result: Result<_, String> = async {
+        tauri::async_runtime::spawn_blocking(move || search_url_sync(&app, url))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    .await;
+    crate::error::command_result("search_url", result)
 }
 
 fn search_url_sync(app: &AppHandle, url: String) -> Result<SearchResponse, String> {

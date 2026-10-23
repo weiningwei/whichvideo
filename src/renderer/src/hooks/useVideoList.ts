@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type VideoQuery, type VideoRecord, type VideoPage, type LibraryEvent } from '@shared/types'
 import { loadVideoPages } from '../lib/libraryRefresh'
@@ -190,7 +191,7 @@ export function useVideoList(): UseVideoListReturn {
       setList(reconcileFetchedPage(page, events, q))
       setRefreshError(null)
     } catch (error) {
-      if (seq === seqRef.current) setRefreshError(`视频列表加载失败：${error instanceof Error ? error.message : String(error)}`)
+      if (seq === seqRef.current) setRefreshError(`视频列表加载失败：${errorMessage(error)}`)
       throw error
     } finally {
       activeFetchesRef.current--

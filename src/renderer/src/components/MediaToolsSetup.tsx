@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useEffect, useState } from 'react'
 import type { MediaToolsStatus } from '@shared/types'
 import { useModalFocus } from '../hooks/useModalFocus'
@@ -64,7 +65,7 @@ export function MediaToolsSetup({ status, onSelect, onRefresh, onOpenDownload }:
           ))}
         </div>
         <p className="mt-2 text-[12px] leading-5 text-secondary">{instructions[platform]}</p>
-        <button className="mt-2 text-[12px] text-accent hover:underline" onClick={() => void onOpenDownload().catch((error: unknown) => setOpenError(String(error)))}>打开 FFmpeg 官方下载页 ↗</button>
+        <button className="mt-2 text-[12px] text-accent hover:underline" onClick={() => void onOpenDownload().catch((error: unknown) => setOpenError(errorMessage(error)))}>打开 FFmpeg 官方下载页 ↗</button>
         {openError && <p role="alert" className="mt-1 text-[11px] text-warn">无法打开下载页：{openError}</p>}
         <div className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[11px] leading-5 text-secondary">
           {status.message}

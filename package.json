@@ -25,6 +25,7 @@
     "test:release": "node scripts/check-release.mjs",
     "test:rust": "node scripts/test-rust.mjs",
     "test:contract": "node scripts/test-tauri-contract.mjs",
+    "test:errors": "node scripts/test-errors.mjs",
     "test:ipc": "node scripts/test-ipc-contract.mjs",
     "test:path": "node scripts/test-path-format.mjs",
     "test:theme": "node scripts/test-theme.mjs",
@@ -35,7 +36,7 @@
     "test:search": "node scripts/search-benchmark/run.mjs",
     "test:search:extended": "node scripts/search-benchmark/run.mjs --extended",
     "test:media:edge": "node scripts/media-edge/run.mjs",
-    "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:ipc && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events && npm run test:async",
+    "test": "npm run icon && npm run typecheck && npm run test:release && npm run test:rust && npm run test:contract && npm run test:ipc && npm run test:errors && npm run test:portable && npm run test:theme && npm run test:cursor && npm run test:range && npm run test:path && npm run test:ui && npm run test:events && npm run test:async",
     "test:events": "node scripts/test-video-events.mjs",
     "test:async": "node scripts/test-async-interactions.mjs"
   },

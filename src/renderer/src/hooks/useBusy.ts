@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useState } from 'react'
 
 export interface UseBusyReturn {
@@ -14,7 +15,7 @@ export function useBusy(pushNotice: (level: 'info' | 'warn' | 'error', message: 
       try {
         return await fn()
       } catch (err) {
-        pushNotice('error', err instanceof Error ? err.message : String(err))
+        pushNotice('error', errorMessage(err))
         return null
       } finally {
         setBusy(null)

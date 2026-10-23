@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   type AppSettings,
@@ -72,7 +73,7 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
       setMediaTools(snapshot.mediaTools)
       setRefreshError(null)
     } catch (error) {
-      if (currentRefresh === refreshId.current) setRefreshError(`资料库状态加载失败：${error instanceof Error ? error.message : String(error)}`)
+      if (currentRefresh === refreshId.current) setRefreshError(`资料库状态加载失败：${errorMessage(error)}`)
       throw error
     }
   }, [])

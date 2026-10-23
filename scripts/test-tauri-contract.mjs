@@ -109,7 +109,8 @@ check('渲染入口安装 Tauri API', rendererMain.includes('window.whichvideo =
 check('Tauri 桥接无未实现占位', !bridge.includes('notImpl') && !bridge.includes('尚未实现'))
 check(
   '全部 IPC 返回值统一经过运行时校验',
-  bridge.includes('decodeResponse(command, await invoke<unknown>(command, args))') &&
+  bridge.includes('value = await invoke<unknown>(command, args)') &&
+    bridge.includes('decodeResponse(command, value)') &&
     commands.every(({ value }) => ipcContractSource.includes(`${value}:`)) &&
     ipcContractSource.includes('satisfies Record<Exclude<(typeof IPC)[keyof typeof IPC]')
 )
@@ -168,7 +169,7 @@ check(
 )
 check(
   '重新索引返回值与前端 count 契约一致',
-  commandsSource.includes('Result<events::ReindexResult, String>') &&
+  commandsSource.includes('Result<events::ReindexResult, crate::error::AppError>') &&
     commandsSource.includes('Ok(events::ReindexResult { count })') &&
     /pub struct ReindexResult\s*\{\s*pub count: i64,\s*\}/.test(eventsSource) &&
     /reindex\([^)]*\): Promise<\{ count: number \}>/.test(shared) &&

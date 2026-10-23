@@ -55,7 +55,7 @@ function transpile() {
   const url = pathToFileURL(shim).href
   const source = readFileSync(target, 'utf8')
     .replace(/(["'])react\1/g, `$1${url}$1`)
-    .replace(/(["'])\.\.\/lib\/libraryRefresh\1/g, '$1../lib/libraryRefresh.js$1')
+    .replace(/(["'])(\.\.\/lib\/[\w-]+)\1/g, '$1$2.js$1')
   writeFileSync(target, source)
   return target
 }

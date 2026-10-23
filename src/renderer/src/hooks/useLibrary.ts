@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLibraryCore } from './useLibraryCore'
 import { useVideoList } from './useVideoList'
@@ -163,11 +164,11 @@ export function useLibrary() {
       },
       async openVideo(videoId: number, atSeconds?: number): Promise<void> {
         try { await window.whichvideo.videos.openFile(videoId, atSeconds) }
-        catch (error) { notices.pushNotice('error', `无法打开视频：${String(error)}`) }
+        catch (error) { notices.pushNotice('error', `无法打开视频：${errorMessage(error)}`) }
       },
       async revealVideo(videoId: number): Promise<void> {
         try { await window.whichvideo.videos.revealFile(videoId) }
-        catch (error) { notices.pushNotice('error', `无法定位文件：${String(error)}`) }
+        catch (error) { notices.pushNotice('error', `无法定位文件：${errorMessage(error)}`) }
       },
       async updateSettings(patch: Partial<AppSettings>): Promise<void> {
         const prev = core.settings

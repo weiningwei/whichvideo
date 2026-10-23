@@ -56,6 +56,18 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 新增 IPC 命令时也要在 `ipc-contract.ts` 登记返回值校验；组件与 hook 不直接使用 `invoke<T>`。
 `pnpm test:ipc` 验证字段缺失或类型错误时在桥接层失败，不把 `undefined` 带进 UI。
 
+## 错误处理
+
+- IPC 命令失败统一返回 `error::AppError`（`code`、`message`、`operation`），通过
+  `error::command_result` 在命令边界记录一次日志。内部模块可保留原生 `Result`，不要重复记录同一次传播的错误。
+- 未分类的旧字符串错误使用 `internal`，不根据中文文案猜测错误码。
+- 前端桥接将调用异常规范化为 `lib/errors.ts` 的 `AppError`；返回值校验失败使用
+  `invalid-response`。界面通过 `errorMessage` 提取可读文案，不直接 `String(error)`。
+- 基础错误层不弹通知、不自动重试。普通操作用 `useBusy`，搜索和刷新保留页面内错误与重试，
+  预览保留局部回退，避免重复提示。搜索响应中的 `error/errorCode`、批量操作的部分失败与
+  后台任务状态属于业务结果，保留各自契约，不当作整个 IPC 调用失败。
+- `pnpm test:errors` 验证错误规范化与桥接失败行为，并纳入完整 `pnpm test`。
+
 ## 后端关键约束
 
 - 所有版本默认把数据库、日志、索引帧、设置和 WebView 缓存写到程序同级 `data`（macOS `.app` 和 Linux AppImage 取包文件同级），

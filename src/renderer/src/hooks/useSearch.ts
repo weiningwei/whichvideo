@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useRef, useState } from 'react'
 import { type SearchResponse } from '@shared/types'
 
@@ -87,7 +88,7 @@ export function useSearch(): UseSearchReturn {
       }
     } catch (err) {
       if (currentRequest !== requestId.current) return { ok: false, error: null }
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       setSearchError(message)
       return { ok: false, error: message }
     } finally {

@@ -3,9 +3,22 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { IPC } from '@shared/types'
 import type { WhichVideoApi } from '@shared/types'
 import { decodeEvent, decodeResponse, responses } from './ipc-contract'
+import { AppError, normalizeError } from './errors'
 
 async function invokeChecked<K extends keyof typeof responses>(command: K, args?: Record<string, unknown>) {
-  return decodeResponse(command, await invoke<unknown>(command, args))
+  let value: unknown
+  try {
+    value = await invoke<unknown>(command, args)
+  } catch (error) {
+    throw normalizeError(error, command)
+  }
+  try {
+    return decodeResponse(command, value)
+  } catch (error) {
+    const failure = new AppError(normalizeError(error).message, 'invalid-response', command, error)
+    console.error(failure)
+    throw failure
+  }
 }
 
 /**
@@ -69,10 +82,11 @@ export const tauriApi: WhichVideoApi = {
       let closed = false
       let reportedInvalidEvent = false
       listen<unknown>(IPC.eventChannel, (event) => {
+        if (closed) return
         let decoded
         try { decoded = decodeEvent(event.payload) }
         catch (error) {
-          console.error(error)
+          console.error(normalizeError(error, IPC.eventChannel))
           if (!reportedInvalidEvent) {
             reportedInvalidEvent = true
             listener({ type: 'notice', level: 'error', message: '收到格式不正确的后台事件，请查看日志' })
@@ -85,7 +99,12 @@ export const tauriApi: WhichVideoApi = {
           if (closed) fn()
           else unlisten = fn
         })
-        .catch((error) => console.error('无法订阅资料库事件', error))
+        .catch((error) => {
+          if (closed) return
+          const failure = normalizeError(error, IPC.eventChannel)
+          console.error(failure)
+          listener({ type: 'notice', level: 'error', message: `无法订阅资料库事件：${failure.message}` })
+        })
       return () => {
         closed = true
         if (unlisten) unlisten()
