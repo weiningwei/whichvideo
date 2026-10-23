@@ -87,8 +87,16 @@ export function SettingsPanel({
 
       <SectionTitle>索引质量</SectionTitle>
       <Field
-        label="抽帧上限"
-        hint="实际帧数按时长自动分档，这里是封顶值。超过约 48 帧后会自动改用更快的抽帧方式，调大不会明显变慢。"
+        label="均匀采样间隔（秒）"
+        hint="每隔指定时间取一帧；间隔越短，长视频的索引时间和占用越大。修改后需重建已有索引。"
+        value={value.uniformIntervalSeconds}
+        min={1}
+        max={3600}
+        onChange={(v) => onChange({ uniformIntervalSeconds: v })}
+      />
+      <Field
+        label="场景采样帧数上限"
+        hint="仅用于场景检测模式，限制每个视频最多保留的场景代表帧。"
         value={value.framesPerVideo}
         min={8}
         max={400}

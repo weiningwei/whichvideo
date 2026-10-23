@@ -278,17 +278,10 @@ export interface VideoProbeInfo {
 }
 
 export interface AppSettings {
-  /**
-   * 每个视频抽取的关键帧数量**上限**。
-   * 实际帧数按时长策略决定（见 src-tauri/src/sampling.rs）：
-   * 短视频少抽、长视频多抽，再与本值取小。填 16 会把 15 分钟以上的视频压到 16 帧。
-   *
-   * 注意两点：
-   * 1. 调大本值并不总能增加帧数——分档表 1 小时折点已封顶 240 帧。
-   * 2. 帧数越过约 48 帧后，抽帧会自动从"逐点 seek"切到"单次全片解码"
-   *    （成本与帧数无关），所以提高上限不会线性拖慢索引。
-   */
+  /** 场景检测模式的抽帧预算；均匀采样不受此限制。 */
   framesPerVideo: number
+  /** 均匀采样的时间间隔（秒），每个时间段取中点。 */
+  uniformIntervalSeconds: number
   /** 抽帧并发数 */
   concurrency: number
   /** 单帧比对阈值：哈希相似度低于该值直接丢弃 */
@@ -301,9 +294,7 @@ export interface AppSettings {
   pruneOnDelete: boolean
   /**
    * 抽帧采样模式：
-   * - 'uniform'：均匀采样（默认）—— 每 gap=时长/帧数 拍一张，抽帧快
-   *   （长视频走单次全片解码），但镜头时长不均匀时短镜头可能整段漏采
-   *   （1 小时 240 帧的单镜头命中率约 33%）。
+   * - 'uniform'：按固定时间间隔采样，短镜头仍可能漏采。
    * - 'scene'：场景检测采样 —— ffmpeg 场景切换点 + 长镜头内部补充，
    *   每个镜头至少一帧，召回显著更高；代价是额外一次场景检测解码 +
    *   逐点 seek 抽帧，索引更慢。更改后需重建索引才对已索引视频生效。
@@ -314,18 +305,14 @@ export interface AppSettings {
   /**
    * 建索引时把每个索引帧的图像（320 宽 JPEG）存到数据目录 frames\<videoId>\ 下，
    * 供「查看索引帧」弹层浏览。默认关闭。关闭时自动清空已存帧文件。
-   * 只对之后新建/重建的索引生效；开关期间磁盘占用约 4MB/视频（240 帧）。
+   * 只对之后新建/重建的索引生效；磁盘占用随实际采样帧数增加。
    */
   keepFrameImages: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  // 默认值 128 → 240：帧数越过成本交叉点后（media.ts::SEEK_VS_FULLSCAN_CROSSOVER），
-  // 抽帧自动改走"单次全片解码"，成本与帧数无关，只随时长。于是每加一帧只多付指纹
-  // 计算（实测 2.5 ms/帧）：1 小时 240 帧约 0.6 秒指纹 + 1.1 秒解码，与 96 帧同量级，
-  // 帧数却翻 2.5 倍。一集剧约 720 个镜头，96 帧时单个镜头命中率仅 13%，
-  // 240 帧（间隔 15 秒）提高到约 33%——"明明有却搜不到"多半是这个原因。
   framesPerVideo: 240,
+  uniformIntervalSeconds: 15,
   concurrency: 2,
   minHashScore: 0.6,
   maxResults: 40,

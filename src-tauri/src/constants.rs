@@ -11,29 +11,17 @@ pub const EXTRACT_WIDTH: u32 = 320;
 #[allow(dead_code)]
 pub const PROBE_MAX_WIDTH: u32 = 320;
 
-/// 帧数封顶的兜底上限（用户设置 framesPerVideo 也是封顶，与策略值取小）。
+/// 场景模式未指定预算时的兜底帧数；均匀模式由时间间隔控制。
 pub const DEFAULT_FRAME_BUDGET: usize = 240;
 
 /**
- * 两条抽帧路径的成本交叉点（帧数）：逐点 seek 约 25 ms/帧线性增长，全片解码
- * 成本与帧数无关只随时长；实测 600 秒视频 40 帧时两者都是 1.1 秒，取 48 略保守。
+ * 两条抽帧路径的历史成本交叉点（帧数）；长视频或高采样密度由索引器优先分批 seek，
+ * 避免单次全片解码的内存和超时风险。
  */
 pub const SEEK_VS_FULLSCAN_CROSSOVER: usize = 48;
 
 /// 场景采样：镜头长度达到该值（秒）才补中点帧 —— 过短镜头的中点贴近场景点，无意义。
 pub const SCENE_MIDPOINT_MIN_GAP: f64 = 2.0;
-
-/// 每视频抽帧数：按时长插值的分档表（时长秒 → 帧数），之间线性插值再取整到偶数。
-pub const FRAME_COUNT_TABLE: &[(f64, usize)] = &[
-    (0.0, 8),
-    (30.0, 10),
-    (60.0, 12),
-    (300.0, 24),
-    (900.0, 48),
-    (1800.0, 96),
-    (3600.0, 240),
-    (7200.0, 240),
-];
 
 /// 递归扫描最大深度。
 pub const MAX_SCAN_DEPTH: usize = 24;

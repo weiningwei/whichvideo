@@ -1137,7 +1137,7 @@ fn validate_seek_output(bytes: usize, stderr: &str, count: usize, width: u32) ->
 }
 
 /**
- * 抽帧路径 B：单次全片解码 + `fps=N/时长` 均匀采样，成本与帧数无关。
+ * 抽帧路径 B：单次全片解码 + `fps=N/时长` 均匀采样；原始像素缓冲随帧数增加。
  * 镜像 media.ts::extractFrames：用 showinfo 拿真实输出帧的 w/h 与 pts_time。
  */
 fn extract_frames_full_scan(

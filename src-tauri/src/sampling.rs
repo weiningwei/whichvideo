@@ -5,56 +5,25 @@
 
 use crate::constants::*;
 
-/// 两条抽帧路径的成本交叉：4K 视频强制走全片解码；帧数越过交叉点也走全片解码。
+/// 短视频的抽帧路径启发式；索引器可为长视频或高采样密度强制分批 seek。
 pub fn should_use_full_scan(frame_count: usize, width: Option<i64>, height: Option<i64>) -> bool {
     let is4k = width.unwrap_or(0) >= 3840 || height.unwrap_or(0) >= 2160;
     is4k || frame_count > SEEK_VS_FULLSCAN_CROSSOVER
 }
 
-/// 按视频时长得出的建议抽帧数（未与用户设置取小）。
-pub fn frames_for_duration(duration_seconds: Option<f64>) -> usize {
-    let d = duration_seconds.unwrap_or(0.0);
-    if !matches!(d.partial_cmp(&0.0), Some(std::cmp::Ordering::Greater)) {
-        return FRAME_COUNT_TABLE[0].1;
-    }
-    let table = FRAME_COUNT_TABLE;
-    let last = table[table.len() - 1];
-    if d >= last.0 {
-        return last.1;
-    }
-    for i in 1..table.len() {
-        let (t1, f1) = table[i];
-        if d > t1 {
-            continue;
-        }
-        let (t0, f0) = table[i - 1];
-        let ratio = if t1 == t0 { 0.0 } else { (d - t0) / (t1 - t0) };
-        let value = f0 as f64 + (f1 as f64 - f0 as f64) * ratio;
-        return (value / 2.0).round().max(2.0) as usize * 2;
-    }
-    last.1
-}
-
-/// 计划抽帧用的帧数：策略值与用户设置（作为上限）取小。
-pub fn planned_frame_count(duration_seconds: Option<f64>, budget: usize) -> usize {
-    let policy = frames_for_duration(duration_seconds);
-    let cap = if budget > 0 { budget } else { DEFAULT_FRAME_BUDGET };
-    (1).max(policy.min(cap))
-}
-
-/// 根据时长与帧数决定抽帧时间点（秒），取每段中点以避开片头片尾黑场。
-pub fn plan_timestamps(duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
+/// 固定时间间隔取样；每段取中点，最后不足一个间隔的尾段也取一帧。
+pub fn plan_timestamps(duration: Option<f64>, interval_seconds: usize) -> Vec<f64> {
     let d = duration.unwrap_or(0.0);
     if !matches!(d.partial_cmp(&0.5), Some(std::cmp::Ordering::Greater)) {
         return vec![0.0];
     }
-    let count = planned_frame_count(Some(d), frame_budget);
-    if count <= 1 {
-        return vec![d / 2.0];
-    }
+    let interval = interval_seconds.max(1) as f64;
+    let count = (d / interval).ceil() as usize;
     let mut list = Vec::with_capacity(count);
     for i in 0..count {
-        let t = d * ((i as f64 + 0.5) / count as f64);
+        let start = i as f64 * interval;
+        let end = (start + interval).min(d);
+        let t = (start + end) / 2.0;
         list.push((t.max(0.05)).min((d - 0.05).max(0.05)));
     }
     list
@@ -64,11 +33,11 @@ pub fn plan_timestamps(duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
  * 场景采样计划：场景切换点优先 + 每镜头中点帧 + 长镜头内部均匀补充，总数不超过 frameBudget。
  * 生成场景感知的时间点计划。
  */
-pub fn plan_scene_timestamps(scene_times: &[f64], duration: Option<f64>, frame_budget: usize) -> Vec<f64> {
+pub fn plan_scene_timestamps(scene_times: &[f64], duration: Option<f64>, frame_budget: usize, interval_seconds: usize) -> Vec<f64> {
     let mut ordered: Vec<f64> = scene_times.iter().copied().filter(|t| t.is_finite()).collect();
     ordered.sort_by(|a, b| a.total_cmp(b));
     if ordered.is_empty() {
-        return plan_timestamps(duration, frame_budget);
+        return plan_timestamps(duration, interval_seconds);
     }
     let budget = if frame_budget == 0 { DEFAULT_FRAME_BUDGET } else { frame_budget };
     let d = match duration {
@@ -151,7 +120,7 @@ mod tests {
     #[test]
     fn dense_scenes_stay_within_budget_and_cover_ends() {
         let scenes: Vec<f64> = (1..=1000).map(|i| i as f64).collect();
-        let plan = plan_scene_timestamps(&scenes, Some(1001.0), 48);
+        let plan = plan_scene_timestamps(&scenes, Some(1001.0), 48, 15);
         assert_eq!(plan.len(), 48);
         assert_eq!(plan.first(), Some(&1.0));
         assert_eq!(plan.last(), Some(&1000.0));
@@ -160,14 +129,24 @@ mod tests {
 
     #[test]
     fn sparse_scenes_keep_cuts_and_fill_remaining_budget() {
-        let plan = plan_scene_timestamps(&[90.0, 10.0, 50.0], Some(100.0), 12);
+        let plan = plan_scene_timestamps(&[90.0, 10.0, 50.0], Some(100.0), 12, 15);
         assert!(plan.len() <= 12);
         assert!(plan.contains(&10.0) && plan.contains(&50.0) && plan.contains(&90.0));
     }
 
     #[test]
     fn non_finite_scene_times_do_not_break_planning() {
-        let plan = plan_scene_timestamps(&[f64::NAN, 2.0, f64::INFINITY], Some(10.0), 1);
+        let plan = plan_scene_timestamps(&[f64::NAN, 2.0, f64::INFINITY], Some(10.0), 1, 15);
         assert_eq!(plan, vec![2.0]);
+    }
+
+    #[test]
+    fn uniform_sampling_keeps_the_interval_on_long_videos() {
+        let plan = plan_timestamps(Some(7200.0), 15);
+        assert_eq!(plan.len(), 480);
+        assert_eq!(plan[0], 7.5);
+        assert_eq!(plan[1], 22.5);
+        assert_eq!(plan[479], 7192.5);
+        assert_eq!(plan_timestamps(Some(32.0), 15), vec![7.5, 22.5, 31.0]);
     }
 }

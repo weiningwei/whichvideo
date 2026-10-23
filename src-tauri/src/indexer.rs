@@ -625,10 +625,10 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
         .clone()
         .unwrap_or_else(|| settings.sampling_mode.clone());
     set_sampling_override(&app, &[video_id], &effective);
-    let (timestamps, force_seek) = if effective == "scene" {
+    let (timestamps, mut force_seek) = if effective == "scene" {
         set_frame_progress(&app, video_id, 0, duration.unwrap_or(0.0).round() as i64, Some("detecting"));
         match media::detect_scenes(&video.path, 0.3, || is_cancelled(&app, video_id)) {
-            Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.frames_per_video as usize),
+            Ok(scenes) => plan_detected_scenes(&scenes, duration, settings.frames_per_video as usize, settings.uniform_interval_seconds as usize),
             Err(e) => {
                 if is_cancelled(&app, video_id) {
                     finish_cancelled(app, video_id);
@@ -636,12 +636,16 @@ fn process_video(app: AppHandle, video_id: i64, reset_before_run: bool) {
                 }
                 log(&format!("场景检测失败，退回均匀采样：{e}"));
                 set_sampling_override(&app, &[video_id], "uniform");
-                (sampling::plan_timestamps(duration, settings.frames_per_video as usize), false)
+                (sampling::plan_timestamps(duration, settings.uniform_interval_seconds as usize), false)
             }
         }
     } else {
-        (sampling::plan_timestamps(duration, settings.frames_per_video as usize), false)
+        (sampling::plan_timestamps(duration, settings.uniform_interval_seconds as usize), false)
     };
+    // 长视频按 32 帧一批逐点 seek，可在批次间保存进度并限制原始像素缓冲。
+    if duration.is_some_and(|seconds| seconds > 1800.0) || timestamps.len() > 400 {
+        force_seek = true;
+    }
     if is_cancelled(&app, video_id) {
         finish_cancelled(app, video_id);
         return;
@@ -893,11 +897,11 @@ fn resume_start_index(processed: &[i64], timestamps: &[f64], uses_full_scan: boo
     }
 }
 
-fn plan_detected_scenes(scenes: &[f64], duration: Option<f64>, budget: usize) -> (Vec<f64>, bool) {
+fn plan_detected_scenes(scenes: &[f64], duration: Option<f64>, budget: usize, interval_seconds: usize) -> (Vec<f64>, bool) {
     if scenes.is_empty() {
-        (sampling::plan_timestamps(duration, budget), false)
+        (sampling::plan_timestamps(duration, interval_seconds), false)
     } else {
-        (sampling::plan_scene_timestamps(scenes, duration, budget), true)
+        (sampling::plan_scene_timestamps(scenes, duration, budget, interval_seconds), true)
     }
 }
 
@@ -1618,10 +1622,10 @@ mod tests {
 
     #[test]
     fn scene_detection_without_cuts_uses_uniform_extraction_path() {
-        let (timestamps, force_seek) = plan_detected_scenes(&[], Some(3600.0), 240);
+        let (timestamps, force_seek) = plan_detected_scenes(&[], Some(3600.0), 240, 15);
         assert_eq!(timestamps.len(), 240);
         assert!(!force_seek);
-        let (_, force_seek_with_cuts) = plan_detected_scenes(&[120.0], Some(3600.0), 240);
+        let (_, force_seek_with_cuts) = plan_detected_scenes(&[120.0], Some(3600.0), 240, 15);
         assert!(force_seek_with_cuts);
     }
 
