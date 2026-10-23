@@ -1,4 +1,5 @@
 import type { WatchedFolder } from '@shared/types'
+import { useConfirm } from './ConfirmDialog'
 
 export const FOLDER_STATE_STYLE: Record<string, { text: string; cls: string }> = {
   watching: { text: '监听中', cls: 'border-ok/40 bg-ok/10 text-ok' },
@@ -40,6 +41,7 @@ export function FolderCard({
   onToggle: (id: number, enabled: boolean) => void
   scanning: boolean
 }) {
+  const confirm = useConfirm()
   const style = FOLDER_STATE_STYLE[folder.watchState] ?? FOLDER_STATE_STYLE.idle
   return (
     <div className="rounded-xl border border-line bg-surface-1 p-3">
@@ -77,8 +79,8 @@ export function FolderCard({
         </button>
         <button
           className="ml-auto rounded-lg px-2 py-1 text-[11px] text-bad hover:bg-bad/10"
-          onClick={() => {
-            if (window.confirm(`从视频库移除「${folder.name}」？仅移除未被其他导入目录覆盖的视频，不会删除磁盘文件。`)) onRemove(folder.id)
+          onClick={async () => {
+            if (await confirm({ title: '移除文件夹', message: `从视频库移除「${folder.name}」？\n仅移除未被其他导入目录覆盖的视频，不会删除磁盘文件。`, confirmLabel: '从库中移除', danger: true })) onRemove(folder.id)
           }}
           title="从索引库移除目录及未被其他导入目录覆盖的视频，不删除磁盘文件"
         >

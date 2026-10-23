@@ -145,6 +145,8 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('所有覆盖层统一使用焦点捕获并在关闭时恢复触发元素', overlayFiles.every((name) => readFileSync(join(root, 'src', 'renderer', 'src', 'components', name), 'utf8').includes('useModalFocus')) && (() => {
     return modalFocusSource.includes('const handleKey') && modalFocusSource.includes('previous?.isConnected') && modalFocusSource.includes('requestAnimationFrame(focusFirst)')
   })())
+  const rendererSources = ['components', 'hooks'].flatMap((dir) => readdirSync(join(root, 'src', 'renderer', 'src', dir)).filter((name) => /\.(ts|tsx)$/.test(name)).map((name) => readFileSync(join(root, 'src', 'renderer', 'src', dir, name), 'utf8'))).join('\n')
+  check('危险操作统一使用应用内确认框', !rendererSources.includes('window.confirm') && rendererSources.includes('ConfirmProvider') && rendererSources.includes('useConfirm'))
 
   console.log('\n=== 搜图页 ===')
   const searchBase = { searching: false, error: null, queryImage: null, queryLabel: null, hasIndexedFrames: true, libraryVideoCount: 1, onOpenLibrary: noop, onPickImageFile: async () => [], onSearchPath: noop, onSearchDataUrl: noop, onSearchClipboard: noop, onSearchUrl: noop, onReSearch: noop, onClear: noop, onOpen: noop, onReveal: noop, onReindex: noop }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DuplicatePair, IndexerStatus, SamplingMode, VideoQuery, VideoRecord } from '@shared/types'
 import type { ImportProgressEvent } from '../lib/importProgress'
 import { reverseVideoSort, sortVideoQuery } from '../lib/videoSort'
+import { useConfirm } from './ConfirmDialog'
 
 interface ToolbarProps {
   busy: string | null
@@ -30,6 +31,7 @@ interface ToolbarProps {
 }
 
 export function Toolbar(props: ToolbarProps) {
+  const confirm = useConfirm()
   const {
     busy, importProgress, indexStatus,
     query, onSetQuery, videos, total, selectedVideoIds, onSelectAll, treeVisible, onToggleTree,
@@ -178,7 +180,7 @@ export function Toolbar(props: ToolbarProps) {
                 <button className="btn py-1.5 text-[11.5px]" disabled={processing || indexing} onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
                 <button className="btn btn-danger py-1.5 text-[11.5px]" disabled={removingVideos} onClick={async () => {
                   const ids = [...selectedVideoIds]
-                  if (!window.confirm(`从索引库移除选中的 ${ids.length} 个视频？\n（不会删除磁盘文件）`)) return
+                  if (!await confirm({ title: '移除所选视频', message: `从索引库移除选中的 ${ids.length} 个视频？\n不会删除磁盘文件。`, confirmLabel: `移除 ${ids.length} 个`, danger: true })) return
                   setRemovingVideos(true)
                   try {
                     const removedIds = await onRemoveVideos(ids)

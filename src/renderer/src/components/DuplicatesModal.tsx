@@ -3,6 +3,7 @@ import type { DuplicatePair } from '@shared/types'
 import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { formatBytes, formatDuration, formatPercent } from '../lib/format'
 import { useModalFocus } from '../hooks/useModalFocus'
+import { useConfirm } from './ConfirmDialog'
 
 interface DuplicatesModalProps {
   duplicates: DuplicatePair[]
@@ -17,6 +18,7 @@ interface DuplicatesModalProps {
  * 派生，关闭即卸载、重开清空 —— 库内容随时变化，缓存旧结果反而会误导。
  */
 export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }: DuplicatesModalProps) {
+  const confirm = useConfirm()
   const dialogRef = useModalFocus<HTMLDivElement>(true, onClose)
   // 两两 pair 聚合成相似组（连通分量）：AB、BC 相似 → A/B/C 同组，
   // dupeGuru 式交互 —— 组内挑一个保留、其余移除，不逐对处理。
@@ -124,9 +126,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                       onClick={async () => {
                         const ids = toRemove.map((m) => m.id)
                         if (
-                          !window.confirm(
-                            `从索引库移除这 ${ids.length} 个视频？\n保留：${keep.path}\n不会删除磁盘文件。`
-                          )
+                          !await confirm({ title: '移除重复视频', message: `从索引库移除这 ${ids.length} 个视频？\n保留：${keep.path}\n不会删除磁盘文件。`, confirmLabel: `移除 ${ids.length} 个`, danger: true })
                         ) {
                           return
                         }

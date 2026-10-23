@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
+import { useConfirm } from './ConfirmDialog'
 
 export function VideoRow({
   video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
@@ -30,6 +31,7 @@ export function VideoRow({
   onCloseMenu: () => void
   onNavigateKey: (event: ReactKeyboardEvent<HTMLElement>) => void
 }) {
+  const confirm = useConfirm()
   const [thumb, setThumb] = useState<string | null>(null)
   const [frameProgress, setFrameProgress] = useState<FrameProgress | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -157,9 +159,9 @@ export function VideoRow({
               <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
               <RowMenu label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
               <div className="my-1 border-t border-line" />
-              <RowMenu label="从视频库移除" danger onClick={() => {
+              <RowMenu label="从视频库移除" danger onClick={async () => {
                 onCloseMenu()
-                if (window.confirm(`从视频库移除「${video.name}」？\n不会删除磁盘文件。`)) onRemove(video.id)
+                if (await confirm({ title: '移除视频', message: `从视频库移除「${video.name}」？\n不会删除磁盘文件。`, confirmLabel: '从库中移除', danger: true })) onRemove(video.id)
               }} />
             </div>
           })(), document.body)}
@@ -169,6 +171,6 @@ export function VideoRow({
   )
 }
 
-function RowMenu({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
+function RowMenu({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void | Promise<void> }) {
   return <button className={`w-full rounded-lg px-2.5 py-1.5 text-left text-[11.5px] hover:bg-surface-3 ${danger ? 'text-bad' : 'text-secondary'}`} onClick={onClick}>{label}</button>
 }

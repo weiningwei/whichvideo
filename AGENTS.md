@@ -156,6 +156,7 @@ Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，�
   不要在各 hook 内重复维护请求序号。
 - 对话框、抽屉等覆盖层统一通过 `useModalFocus` 处理初始焦点、Tab 捕获、Escape 关闭和焦点恢复，
   组件不得各自注册重复的 Escape 监听。
+- 危险操作统一使用 `ConfirmProvider/useConfirm` 展示应用内确认框，不直接调用 `window.confirm`。
 - 选中行使用左侧 2px 强调条、`bg-row-selected` 和文件名 `text-accent`。
 - 操作列的 sticky 单元格必须沿用不透明的 `row-*` 行底 token。
 - Shift/Ctrl 点击只阻止修饰键触发的原生文本选择，不要给整行加 `select-none`。

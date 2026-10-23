@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { SamplingMode, VideoRecord } from '@shared/types'
 import { PAGE_JUMP } from '../constants'
 import type { NavigableItem } from './useVideoCursor'
+import { useConfirm } from '../components/ConfirmDialog'
 
 export interface LibraryShortcutsArgs {
   videos: VideoRecord[]
@@ -38,6 +39,7 @@ export interface LibraryShortcutsArgs {
  * 这里只处理「落在哪一行后做什么」（打开/选中/揭示/删除等），与导航职责分离。
  */
 export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
+  const confirm = useConfirm()
   const {
     videos, navigableItems, focusedIndex, focusedVideoId, selectedVideoIds,
     moveCursor, jumpCursor, toggleFocusedSelection,
@@ -169,18 +171,17 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
           const count = getTargetCount()
           if (count === 0) return
           // 一次删多个时先确认，避免误按丢掉一大片索引记录
-          if (count > 1 && !window.confirm(`从索引库移除选中的 ${count} 个视频？\n（不会删除磁盘文件，可随时重新导入）`)) {
-            return
-          }
-          if (selectedVideoIds.size > 0) {
-            const ids = [...selectedVideoIds]
-            void onRemoveVideos(ids).then((removedIds) => {
+          void (async () => {
+            if (count > 1 && !await confirm({ title: '移除所选视频', message: `从索引库移除选中的 ${count} 个视频？\n不会删除磁盘文件，可随时重新导入。`, confirmLabel: `移除 ${count} 个`, danger: true })) return
+            if (selectedVideoIds.size > 0) {
+              const ids = [...selectedVideoIds]
+              const removedIds = await onRemoveVideos(ids)
               if (removedIds.length === ids.length) clearSelection()
-            })
-          } else {
-            const target = getTargetVideo()
-            if (target) onRemoveVideo(target.id)
-          }
+            } else {
+              const target = getTargetVideo()
+              if (target) onRemoveVideo(target.id)
+            }
+          })()
           break
         }
         case '/':
@@ -200,6 +201,6 @@ export function useLibraryShortcuts(args: LibraryShortcutsArgs): void {
     moveCursor, jumpCursor, toggleFocusedSelection,
     selectAll, clearSelection, onToggleTree,
     onOpen, onReveal, onReindex, onImportFolder, onImportFiles, onRescan,
-    onRemoveVideo, onRemoveVideos, filterInputRef
+    onRemoveVideo, onRemoveVideos, filterInputRef, confirm
   ])
 }

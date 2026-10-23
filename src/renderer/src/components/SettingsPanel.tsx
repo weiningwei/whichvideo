@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import type { AppSettings, DataDirInfo, MediaToolsStatus } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { useConfirm } from './ConfirmDialog'
 
 interface Props {
   settings: AppSettings | null
@@ -27,8 +27,7 @@ export function SettingsPanel({
   onOpenDatabaseFolder,
   onExportDiagnostics
 }: Props) {
-  const [confirmReset, setConfirmReset] = useState(false)
-  const [confirmDiagnostics, setConfirmDiagnostics] = useState(false)
+  const confirm = useConfirm()
   const value = settings ?? DEFAULT_SETTINGS
 
   return (
@@ -186,56 +185,13 @@ export function SettingsPanel({
         <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={onOpenDatabaseFolder}>
           打开索引库位置
         </button>
-        {confirmDiagnostics ? (
-          <>
-            <button
-              className="btn text-[11.5px] hover:bg-ink-700/70"
-              onClick={() => {
-                setConfirmDiagnostics(false)
-                onExportDiagnostics()
-              }}
-            >
-              选择保存位置
-            </button>
-            <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={() => setConfirmDiagnostics(false)}>
-              取消
-            </button>
-          </>
-        ) : (
-          <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={() => setConfirmDiagnostics(true)}>
-            导出诊断包
-          </button>
-        )}
-        {confirmReset ? (
-          <>
-            <button
-              className="btn btn-danger text-[11.5px] hover:bg-bad/10"
-              onClick={() => {
-                setConfirmReset(false)
-                onReset()
-              }}
-            >
-              确认清空
-            </button>
-            <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={() => setConfirmReset(false)}>
-              取消
-            </button>
-          </>
-        ) : (
-          <button
-            className="btn btn-danger text-[11.5px] hover:bg-bad/10"
-            onClick={() => setConfirmReset(true)}
-          >
-            清空索引库
-          </button>
-        )}
+        <button className="btn text-[11.5px] hover:bg-ink-700/70" onClick={async () => {
+          if (await confirm({ title: '导出诊断包', message: '将导出版本、系统、FFmpeg 状态、资料库汇总、索引状态和索引设置。\n不会导出日志、视频、缩略图、数据库、文件名、文件夹路径或 FFmpeg 实际位置；完成后会打开保存目录。', confirmLabel: '选择保存位置' })) onExportDiagnostics()
+        }}>导出诊断包</button>
+        <button className="btn btn-danger text-[11.5px] hover:bg-bad/10" onClick={async () => {
+          if (await confirm({ title: '清空索引库', message: '清空全部视频、索引帧和导入文件夹记录？\n不会删除磁盘上的视频文件。', confirmLabel: '确认清空', danger: true })) onReset()
+        }}>清空索引库</button>
       </div>
-      {confirmDiagnostics && (
-        <p className="rounded-lg border border-line/70 bg-surface-1 px-2.5 py-2 text-[10.5px] leading-relaxed text-secondary">
-          将导出版本、系统、FFmpeg 状态、资料库汇总、索引状态和索引设置。不会导出日志、视频、
-          缩略图、数据库、文件名、文件夹路径或 FFmpeg 实际位置；完成后会打开保存目录。
-        </p>
-      )}
       <p className="text-[10.5px] text-tertiary">清空索引库不会删除视频文件。</p>
     </div>
   )
