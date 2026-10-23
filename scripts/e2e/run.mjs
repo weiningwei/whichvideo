@@ -2,10 +2,15 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { generateSearchDataset } from './search-dataset.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const runRoot = join(root, 'tmp', 'e2e')
 mkdirSync(runRoot, { recursive: true })
+// Tauri's plugin build scripts generate permissions inside Cargo's source cache.
+// Keep the e2e cache writable and separate from a protected shared Cargo home.
+const cargoHome = join(runRoot, 'cargo-home')
+mkdirSync(cargoHome, { recursive: true })
 const runDir = mkdtempSync(join(runRoot, 'run-'))
 const mediaDir = join(runDir, 'media')
 const nestedDir = join(mediaDir, 'nested')
@@ -42,14 +47,18 @@ try {
   run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', videoPath, '-frames:v', '1', '-y', imagePath])
   run(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1', videoPath])
   if (!existsSync(videoPath) || !existsSync(imagePath)) throw new Error('媒体样本生成失败')
+  const datasetManifest = generateSearchDataset(ffmpeg, runDir)
   const env = {
     ...process.env,
+    CARGO_HOME: cargoHome,
+    ...(process.platform === 'win32' && !process.env.CARGO_PROFILE_DEV_DEBUG ? { CARGO_PROFILE_DEV_DEBUG: '0' } : {}),
     WHICHVIDEO_DATA_DIR: join(runDir, 'data'),
     WHICHVIDEO_FFMPEG: ffmpeg,
     WHICHVIDEO_FFPROBE: ffprobe,
     WHICHVIDEO_E2E_VIDEO: videoPath,
     WHICHVIDEO_E2E_FOLDER: mediaDir,
     WHICHVIDEO_E2E_IMAGE: imagePath,
+    WHICHVIDEO_E2E_DATASET_MANIFEST: datasetManifest,
     WHICHVIDEO_E2E_RUN_DIR: runDir
   }
   writeFileSync(join(runDir, 'paths.json'), JSON.stringify({ videoPath, imagePath, mediaDir }, null, 2))
