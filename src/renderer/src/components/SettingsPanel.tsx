@@ -151,7 +151,7 @@ export function SettingsPanel({
       <label className="flex flex-col gap-1 text-secondary">
         <span className="text-[11.5px]">抽帧采样模式</span>
         <select
-          className="rounded-lg border border-line bg-ink-900/60 px-2 py-1.5 text-[12px] text-primary"
+          className="field-control px-2 py-1.5 text-[12px]"
           value={value.samplingMode}
           onChange={(e) => onChange({ samplingMode: e.target.value as 'uniform' | 'scene' })}
         >

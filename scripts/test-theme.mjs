@@ -140,6 +140,7 @@ function main() {
   check('滚动条用 var(--color-scroll-thumb)', css.includes('var(--color-scroll-thumb)'))
   check('btn 用 var(--color-btn-border) 而非字面量', /border:\s*1px solid var\(--color-btn-border\)/.test(css))
   check('btn 背景用 var(--color-btn-bg)', css.includes('var(--color-btn-bg)'))
+  check('表单控件统一使用语义色和焦点色', css.includes('@utility field-control') && css.includes('.field-control:focus') && css.includes('var(--color-surface-2)'))
   check(
     '浅色下 body 径向渐变单独提亮',
     css.includes("[data-theme='light'] body") && /\[data-theme='light'\][\s\S]{0,200}radial-gradient/.test(css),

@@ -233,7 +233,7 @@ export function SearchView(props: Props) {
                 placeholder="粘贴图片或网页链接"
                 spellCheck={false}
                 disabled={searching}
-                className="min-w-0 flex-1 rounded-lg border border-line bg-ink-900/70 px-2.5 py-1.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-tertiary focus:border-accent/60 disabled:opacity-50"
+                className="field-control min-w-0 flex-1 px-2.5 py-1.5 font-mono text-[12px] placeholder:font-sans"
               />
               <button
                 className="btn shrink-0 px-2.5 py-1.5 text-[12px] hover:bg-ink-700/70"

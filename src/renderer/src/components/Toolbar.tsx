@@ -125,13 +125,13 @@ export function Toolbar(props: ToolbarProps) {
                 onChange={(e) => onSetQuery({ ...query, keyword: e.target.value, offset: 0 })}
                 placeholder="搜索视频"
                 aria-label="搜索视频"
-                className="w-full rounded-lg border border-line bg-surface-2 py-1.5 pl-8 pr-3 text-[12.5px] outline-none placeholder:text-tertiary focus:border-accent/60"
+                className="field-control w-full py-1.5 pl-8 pr-3 text-[12.5px]"
               />
             </div>
             <select
               value={query.status ?? 'all'}
               onChange={(e) => onSetQuery({ ...query, status: e.target.value as VideoQuery['status'], offset: 0 })}
-              className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] outline-none"
+              className="field-control px-2.5 py-1.5 text-[12px]"
               aria-label="筛选索引状态"
             >
               <option value="all">全部状态</option><option value="ready">已索引</option><option value="pending">待索引</option>
@@ -140,7 +140,7 @@ export function Toolbar(props: ToolbarProps) {
             <select
               value={query.sort ?? 'added'}
               onChange={(e) => onSetQuery(sortVideoQuery(query, e.target.value as NonNullable<VideoQuery['sort']>))}
-              className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] outline-none"
+              className="field-control px-2.5 py-1.5 text-[12px]"
               aria-label="排序视频"
             >
               <option value="added">最近添加</option><option value="name">名称</option>
