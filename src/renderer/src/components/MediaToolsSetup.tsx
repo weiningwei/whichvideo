@@ -36,8 +36,8 @@ export function MediaToolsSetup({ status, onSelect }: Props) {
         <h2 id="ffmpeg-title" className="text-[18px] font-semibold text-primary">设置 FFmpeg</h2>
         <p className="mt-2 text-[12px] leading-6 text-secondary">
           WhichVideo 不再内置 FFmpeg。请先安装 FFmpeg，再选择同时包含
-          <span className="mx-1 font-mono text-primary">ffmpeg.exe</span>和
-          <span className="mx-1 font-mono text-primary">ffprobe.exe</span>的 bin 目录。
+          <span className="mx-1 font-mono text-primary">ffmpeg</span>和
+          <span className="mx-1 font-mono text-primary">ffprobe</span>的目录（Windows 文件名以 .exe 结尾）。
         </p>
         <div className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[11px] leading-5 text-secondary">
           {status.message}

@@ -299,6 +299,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
     onSelect: noop
   }))
   check('首次缺少 FFmpeg 时给出设置引导', missingTools.includes('设置 FFmpeg') && missingTools.includes('选择 bin 目录') && missingTools.includes('稍后设置'))
+  check('FFmpeg 文件名提示适用于所有平台', missingTools.includes('>ffmpeg</span>') && missingTools.includes('>ffprobe</span>') && missingTools.includes('Windows 文件名以 .exe 结尾'))
   check('formatDuration 处理时分秒', format.formatDuration(3725) === '1:02:05')
   check('formatBytes 处理 MB', format.formatBytes(734003200) === '700 MB')
   check('shortPath 相对监听目录', format.shortPath(video.path, [folder.path]) === 'Blue.Intro.1080p.mp4')
