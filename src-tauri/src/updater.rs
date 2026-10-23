@@ -62,17 +62,16 @@ fn notify(app: &AppHandle, info: &UpdateInfo, current: &str) {
 fn check_once(app: &AppHandle) {
     let current = env!("CARGO_PKG_VERSION");
     let Some(info) = fetch_latest() else {
-        logger::log("版本检查：未获取到最新版本（网络不可用或限流），静默跳过");
         return;
     };
     if !is_newer_version(&info.tag_name, current) {
-        logger::log(&format!("版本检查：已是最新（{current}）"));
         return;
     }
-    logger::log(&format!(
-        "发现新版本：{}（当前 {current}）",
-        info.tag_name
-    ));
+    logger::info(
+        logger::Module::Update,
+        "new_version",
+        &format!("current={current} latest={}", info.tag_name),
+    );
     notify(app, &info, current);
 }
 

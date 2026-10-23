@@ -118,10 +118,8 @@ pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>
 
 fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder>, String> {
     let Some(picked) = native_folder_dialog(app, "选择要加入资料库并持续监视的文件夹") else {
-        logger::log("[import] 监视文件夹选择已取消");
         return Ok(Vec::new());
     };
-    logger::log(&format!("[import] 已选择 {} 个监视文件夹", picked.len()));
     let mut folders = Vec::new();
     for dir in picked {
         let (_, id) = indexer::import_folder(app.clone(), dir, true, true)?;
@@ -134,7 +132,7 @@ fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder
         folders.push(folder);
     }
     watcher::sync_all(&app)?;
-    logger::log(&format!("[import] 已登记 {} 个监视文件夹", folders.len()));
+    logger::info(logger::Module::Import, "watched_folders_added", &format!("count={}", folders.len()));
     Ok(folders)
 }
 
@@ -814,15 +812,14 @@ fn import_videos_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
         constants::VIDEO_EXTENSIONS,
     );
     if files.is_empty() {
-        logger::log("[import] 视频文件选择已取消");
         return Ok(events::ImportResult::default());
     }
-    logger::log(&format!("[import] 已选择 {} 个视频文件", files.len()));
     let result = indexer::import_files(app.clone(), files, None);
-    logger::log(&format!(
-        "[import] 视频文件导入完成：新增 {}，已存在 {}，跳过 {}",
-        result.added, result.duplicates, result.skipped
-    ));
+    logger::info(
+        logger::Module::Import,
+        "files_completed",
+        &format!("added={} duplicates={} skipped={} failed={}", result.added, result.duplicates, result.skipped, result.failed),
+    );
     Ok(result)
 }
 
@@ -840,18 +837,17 @@ pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportR
 
 fn import_folder_once_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
     let Some(mut dirs) = native_folder_dialog(app, "选择要一次性导入的文件夹（不会持续监视）") else {
-        logger::log("[import] 一次性文件夹选择已取消");
         return Ok(events::ImportResult::default());
     };
     let Some(dir) = dirs.pop() else {
         return Ok(events::ImportResult::default());
     };
-    logger::log(&format!("[import] 一次性导入文件夹：{dir}"));
     let result = indexer::import_folder_once(app.clone(), dir, true)?;
-    logger::log(&format!(
-        "[import] 文件夹导入完成：扫描 {}，新增 {}，已存在 {}，跳过 {}",
-        result.scanned, result.added, result.duplicates, result.skipped
-    ));
+    logger::info(
+        logger::Module::Import,
+        "folder_completed",
+        &format!("scanned={} added={} duplicates={} skipped={} failed={}", result.scanned, result.added, result.duplicates, result.skipped, result.failed),
+    );
     Ok(result)
 }
 
@@ -1117,7 +1113,7 @@ fn select_media_tools_dir_sync(app: &AppHandle) -> Result<media::MediaToolsStatu
     if !was_ready && status.ready {
         indexer::resume_pending(app.clone());
     }
-    logger::log(&format!("FFmpeg 目录已设置：{dir}（source={}）", status.source));
+    logger::info(logger::Module::Media, "tools_directory_set", &format!("dir={dir} source={}", status.source));
     Ok(status)
 }
 
@@ -1129,7 +1125,7 @@ pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::Me
         let conn = guard.as_ref().ok_or_else(|| "数据库未初始化".to_string())?;
         db::set_ffmpeg_dir(conn, None).map_err(|e| e.to_string())?;
         let status = media::configure_dir(None)?;
-        logger::log(&format!("FFmpeg 手动目录已清除（source={}）", status.source));
+        logger::info(logger::Module::Media, "tools_directory_cleared", &format!("source={}", status.source));
         Ok(status)
     })();
     crate::error::command_result("library_clear_media_tools_dir", result)

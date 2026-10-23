@@ -422,20 +422,20 @@ fn finish_cancelled(app: AppHandle, video_id: i64) {
 /// 解码期间源文件被替换时，丢弃本轮结果并安排一次强制重建。当前任务仍在
 /// active_ids 中，enqueue 会把同一视频延后到本线程收尾之后，避免并发写入。
 fn restart_after_source_change(app: AppHandle, video_id: i64) {
-    log(&format!("视频 {video_id} 在索引期间发生变化，重新开始索引"));
+    logger::info(logger::Module::Indexer, "source_changed", &format!("video_id={video_id} action=restart"));
     clear_frame_progress(&app, video_id);
     enqueue(app.clone(), video_id, true);
     finish(app, video_id, None);
 }
 
 fn fail(app: AppHandle, video_id: i64, error: &str, frames_changed: bool) {
-    log(&format!("视频 {video_id} 索引失败：{error}"));
+    logger::error(logger::Module::Indexer, "video_failed", &format!("video_id={video_id} error={error}"));
     {
         let state = app.state::<AppState>();
         let mut guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(c) = guard.as_mut() {
             if let Err(write_error) = db::set_video_status(c, video_id, "failed", Some(error)) {
-                log(&format!("视频 {video_id} 失败状态落库失败：{write_error}"));
+                logger::error(logger::Module::Indexer, "failure_state_write_failed", &format!("video_id={video_id} error={write_error}"));
             }
         }
     }
@@ -669,7 +669,7 @@ fn process_video(app: AppHandle, video_id: i64, mut reset_before_run: bool) {
                     finish_cancelled(app, video_id);
                     return;
                 }
-                log(&format!("场景检测失败，退回均匀采样：{e}"));
+                logger::warn(logger::Module::Indexer, "scene_detection_fallback", &format!("video_id={video_id} fallback=uniform error={e}"));
                 set_sampling_override(&app, &[video_id], "uniform");
                 (sampling::plan_timestamps(duration, settings.uniform_interval_seconds as usize), false)
             }
@@ -707,7 +707,7 @@ fn process_video(app: AppHandle, video_id: i64, mut reset_before_run: bool) {
         match prefix_result {
             Ok(true) => {}
             Ok(false) => {
-                log(&format!("视频 {video_id} 的续传帧不完整，从头重建"));
+                logger::warn(logger::Module::Indexer, "resume_prefix_invalid", &format!("video_id={video_id} action=rebuild"));
                 start_index = 0;
             }
             Err(error) => {
@@ -961,7 +961,7 @@ fn detect_scenes_cached(app: &AppHandle, video_id: i64, path: &str) -> Result<Ve
             match db::cached_scene_times(conn, video_id, key) {
                 Ok(Some(times)) => return Ok(times),
                 Ok(None) => {}
-                Err(error) => log(&format!("读取场景缓存失败，重新检测：{error}")),
+                Err(error) => logger::warn(logger::Module::Indexer, "scene_cache_read_failed", &format!("video_id={video_id} action=redetect error={error}")),
             }
         }
     }
@@ -972,7 +972,7 @@ fn detect_scenes_cached(app: &AppHandle, video_id: i64, path: &str) -> Result<Ve
         let guard = state.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(conn) = guard.as_ref() {
             if let Err(error) = db::cache_scene_times(conn, video_id, key.as_deref().unwrap(), &times) {
-                log(&format!("保存场景缓存失败：{error}"));
+                logger::warn(logger::Module::Indexer, "scene_cache_write_failed", &format!("video_id={video_id} error={error}"));
             }
         }
     }
@@ -1252,7 +1252,7 @@ fn record_import_failure(result: &mut ImportResult, path: &str, step: &str, erro
     } else { format!("{step}失败：{error}") };
     if result.first_error.is_none() { result.first_error = Some(reason.clone()); }
     result.failures.push(crate::events::ImportFailure { path: path.to_string(), reason, folder_id });
-    log(&format!("导入失败（{step}）：{path}：{error}"));
+    logger::error(logger::Module::Import, "file_failed", &format!("step={step} path={path} error={error}"));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1513,7 +1513,7 @@ pub fn reindex(app: AppHandle, video_ids: Option<Vec<i64>>, mode: Option<String>
     if targets.is_empty() {
         return 0;
     }
-    log(&format!("重建索引入队：{} 个视频", targets.len()));
+    logger::info(logger::Module::Indexer, "reindex_enqueued", &format!("count={}", targets.len()));
     enqueue_many(app, &targets, true);
     targets.len() as i64
 }
@@ -1539,14 +1539,10 @@ pub fn resume_pending(app: AppHandle) {
     if pending.is_empty() {
         return;
     }
-    log(&format!("恢复索引队列：{} 个待处理视频", pending.len()));
+    logger::info(logger::Module::Indexer, "pending_resumed", &format!("count={}", pending.len()));
     // 一次入队；保留已提交批次，续传前会核验帧前缀是否完整。
     // 不为每个待处理视频各广播一条事件（启动瞬间的卡顿来源之一）。
     enqueue_many(app, &pending, false);
-}
-
-fn log(msg: &str) {
-    logger::log(&format!("[indexer] {msg}"));
 }
 
 #[cfg(test)]

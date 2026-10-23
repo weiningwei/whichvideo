@@ -32,7 +32,7 @@ use tauri::Manager;
 /// 否则数据目录不可写时用户只会看到「双击没反应」。
 fn show_startup_error(app: &tauri::AppHandle, message: &str) {
     use tauri_plugin_dialog::DialogExt;
-    eprintln!("[FATAL] {message}");
+    logger::error(logger::Module::App, "startup_failed", &format!("error={message}"));
     let _ = app
         .dialog()
         .message(message)
@@ -71,12 +71,17 @@ fn main() {
             };
             let log_path = logger::init();
             logger::install_panic_hook();
-            logger::log(&format!(
-                "数据目录：{}（source={}）",
-                resolution.dir.display(),
-                resolution.source
-            ));
-            logger::log(&format!("日志文件：{}", log_path.display()));
+            logger::info(
+                logger::Module::App,
+                "startup",
+                &format!(
+                    "version={} data_dir={} data_source={} log_file={}",
+                    env!("CARGO_PKG_VERSION"),
+                    resolution.dir.display(),
+                    resolution.source,
+                    log_path.display()
+                ),
+            );
             let window_config = app
                 .config()
                 .app
@@ -101,7 +106,7 @@ fn main() {
             };
             app.manage(state);
             if let Err(error) = watcher::sync_all(app.handle()) {
-                logger::log(&format!("[WARN] 恢复文件夹监听失败：{error}"));
+                logger::warn(logger::Module::Watcher, "restore_failed", &format!("error={error}"));
             }
             // 常驻索引在后台构建：百万帧的库在主线程里同步读会让窗口白屏数秒。
             // 构建完成后才恢复未完成的索引任务（pump 在就绪前不动队列）。
@@ -112,7 +117,7 @@ fn main() {
                 indexer::pump(handle);
             });
             updater::start_if_enabled(app.handle());
-            logger::log("启动生命周期初始化完成");
+            logger::info(logger::Module::App, "ready", "");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,7 +167,6 @@ fn main() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 let _ = watcher::stop_all(app);
-                logger::log("应用退出，文件夹监听已停止");
             }
         });
 }

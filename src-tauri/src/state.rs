@@ -33,7 +33,11 @@ impl AppState {
         let ffmpeg_dir = db::get_ffmpeg_dir(&conn).unwrap_or(None);
         media::initialize(ffmpeg_dir);
         let tools = media::tools_status();
-        logger::log(&format!("FFmpeg 检测：{}（source={}）", tools.message, tools.source));
+        logger::info(
+            logger::Module::Media,
+            "tools_detected",
+            &format!("ready={} source={} message={}", tools.ready, tools.source, tools.message),
+        );
         // 抽帧并发上限只在启动和设置变更时读一次库，pump 用缓存值。
         let settings = db::get_settings(&conn).unwrap_or_else(|_| db::default_settings());
         let concurrency = settings.concurrency.clamp(1, 8) as usize;

@@ -75,7 +75,12 @@ pub fn save(token: FrameWriteToken, time_ms: i64, rgb: &[u8], width: u32, height
     let bytes = match encode_jpeg(rgb, width, height) {
         Ok(bytes) => bytes,
         Err(error) => {
-            logger::log(&format!("[WARN] 保存帧图失败：video={} timeMs={time_ms}：{error}", token.video_id));
+            logger::warn_keyed(
+                logger::Module::Frames,
+                "save_failed",
+                &token.video_id.to_string(),
+                &format!("video_id={} time_ms={time_ms} error={error}", token.video_id),
+            );
             return false;
         }
     };
@@ -91,9 +96,12 @@ pub fn save(token: FrameWriteToken, time_ms: i64, rgb: &[u8], width: u32, height
         Ok(())
     })();
     if let Err(error) = result {
-        logger::log(&format!(
-            "[WARN] 保存帧图失败：video={} timeMs={time_ms}：{error}", token.video_id
-        ));
+        logger::warn_keyed(
+            logger::Module::Frames,
+            "save_failed",
+            &token.video_id.to_string(),
+            &format!("video_id={} time_ms={time_ms} error={error}", token.video_id),
+        );
         return false;
     }
     true
@@ -105,7 +113,7 @@ pub fn remove_video(video_id: i64) {
     let dir = video_dir(video_id);
     if dir.exists() {
         if let Err(error) = fs::remove_dir_all(&dir) {
-            logger::log(&format!("[WARN] 删除帧图目录失败：{}：{error}", dir.display()));
+            logger::warn(logger::Module::Frames, "remove_video_failed", &format!("video_id={video_id} dir={} error={error}", dir.display()));
         }
     }
 }
@@ -120,7 +128,7 @@ pub fn remove_all() -> bool {
     match fs::remove_dir_all(&dir) {
         Ok(()) => true,
         Err(error) => {
-            logger::log(&format!("[WARN] 清空帧图目录失败：{}：{error}", dir.display()));
+            logger::warn(logger::Module::Frames, "remove_all_failed", &format!("dir={} error={error}", dir.display()));
             false
         }
     }
