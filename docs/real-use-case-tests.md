@@ -12,6 +12,8 @@
 
 GitHub Actions 中的 `Extended search benchmark` 可手动触发，在 Windows、macOS Apple Silicon、macOS Intel 和 Linux 分别运行 `pnpm test:search:extended`。每个平台完成后都会上传本次 `manifest.json` 和 `report.json`；如果在报告生成前失败，则在作业日志中查看错误。该工作流只运行直接搜索评测，不需要桌面图形会话。
 
+`pnpm test:media:edge` 用 FFmpeg 生成零字节、截断、可变帧率、旋转元数据、长时长稀疏帧和中文特殊字符路径的视频，直接测试探测与抽帧。样本保留在 `tmp/media-edge/run-*`，CI 失败时上传。它需要 FFmpeg 和 Rust，但不启动桌面；不要求真实长时间解码或占用大量磁盘空间。
+
 这项评测针对单帧指纹与内存检索，不覆盖视频采样、SQLite、重排及时间精修。合成画面能稳定比较算法版本，仍不能代表真实视频内容；真实截图、字幕和编码差异需要另建获授权的真实样本集。
 
 Rust 回归测试还模拟索引批次写入后关闭数据库、重新打开并完成剩余批次，验证续传进度、帧前缀和最终状态。启动恢复保留已提交批次；全片解码或帧前缀不完整时从头重建。

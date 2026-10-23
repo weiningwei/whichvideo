@@ -63,6 +63,8 @@ jobs:
           ffmpeg -version | head -n 1
       - name: Exercise direct search benchmark
         run: pnpm test:search
+      - name: Exercise generated media edge cases
+        run: pnpm test:media:edge
       - name: Exercise real desktop use cases
         if: runner.os != 'Linux'
         run: pnpm test:e2e
@@ -80,4 +82,5 @@ jobs:
             tmp/e2e/run-*/paths.json
             tmp/search-benchmark/run-*/dataset/manifest.json
             tmp/search-benchmark/run-*/dataset/report.json
+            tmp/media-edge/run-*/**
           if-no-files-found: ignore

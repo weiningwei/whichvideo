@@ -1339,6 +1339,87 @@ mod tests {
     use super::{detect_scenes, local_only_media_args, parse_scene_times, parse_showinfo, parse_video_probe, read_stderr_with_progress, resolve_tools, run_ffmpeg_null_output_cancellable, run_media_command, sha256_of_file, FrameProgressCallback};
     use std::sync::Arc;
 
+    /// FFmpeg 生成的可复现边界媒体；由 pnpm test:media:edge 显式运行。
+    #[test]
+    #[ignore]
+    fn media_edge_cases() {
+        let root = std::path::PathBuf::from(std::env::var("WHICHVIDEO_MEDIA_EDGE_DIR").expect("缺少边界媒体目录"));
+        fs::create_dir_all(&root).unwrap();
+        let tools = resolve_tools().expect("需要 FFmpeg 和 ffprobe");
+        let generate = |name: &str, args: &[&str]| {
+            let path = root.join(name);
+            let mut command: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+            command.extend(["-y".to_string(), path.to_string_lossy().into_owned()]);
+            let output = run_media_command(&tools.ffmpeg, &command, "ffmpeg", Duration::from_secs(30)).unwrap();
+            assert!(output.success, "生成 {name} 失败：{}", output.stderr);
+            path
+        };
+        let base = generate("base.mp4", &[
+            "-hide_banner", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=10:duration=2",
+            "-c:v", "mpeg4",
+        ]);
+        let base_name = base.to_string_lossy().into_owned();
+        let help = run_media_command(&tools.ffmpeg, &["-hide_banner", "-h", "full"].map(str::to_string), "ffmpeg", Duration::from_secs(10)).unwrap();
+        let rotated = if String::from_utf8_lossy(&help.stdout).contains("-display_rotation") {
+            generate("rotated.mp4", &["-hide_banner", "-v", "error", "-display_rotation", "90", "-i", &base_name, "-c", "copy"])
+        } else {
+            generate("rotated.mp4", &["-hide_banner", "-v", "error", "-i", &base_name, "-c", "copy", "-metadata:s:v:0", "rotate=90"])
+        };
+        let vfr = generate("variable-rate.mkv", &[
+            "-hide_banner", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=5:duration=1",
+            "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=12:duration=1",
+            "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]",
+            "-vsync", "vfr", "-enc_time_base", "1:1000", "-c:v", "mpeg4",
+        ]);
+        let long = generate("sparse-long.mp4", &[
+            "-hide_banner", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:size=64x36:rate=1/600",
+            "-frames:v", "7", "-c:v", "mpeg4",
+        ]);
+        let unicode = root.join("中文 空格 [测试].mp4");
+        fs::copy(&base, &unicode).unwrap();
+        let empty = root.join("empty.mp4");
+        fs::write(&empty, []).unwrap();
+        let damaged = root.join("truncated.mp4");
+        let original = fs::read(&base).unwrap();
+        fs::write(&damaged, &original[..original.len() / 2]).unwrap();
+
+        for path in [&empty, &damaged] {
+            assert!(super::probe_video(&path.to_string_lossy()).is_err(), "{} should be rejected", path.display());
+        }
+        for path in [&base, &rotated, &vfr, &unicode] {
+            let path = path.to_string_lossy();
+            let probe = super::probe_video(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+            let duration = probe.duration.unwrap();
+            assert!(duration >= 1.0, "{path}: {duration}");
+            let frames = super::extract_and_hash_frames(&path, &[0.2, 0.8], probe.duration, probe.width, probe.height, true).unwrap();
+            assert_eq!(frames.len(), 2, "{path}");
+            assert!(frames.iter().all(|frame| !frame.rgb.is_empty()));
+            if path == rotated.to_string_lossy() {
+                assert!(frames[0].height > frames[0].width, "rotation was not applied to extracted pixels");
+            }
+        }
+        let long_name = long.to_string_lossy();
+        let probe = super::probe_video(&long_name).unwrap();
+        assert!(probe.duration.unwrap() >= 3600.0, "long sample duration: {:?}", probe.duration);
+        assert!(fs::metadata(&long).unwrap().len() < 100_000, "long sample should stay sparse");
+        let frames = super::extract_and_hash_frames(&long_name, &[600.0, 3000.0], probe.duration, probe.width, probe.height, true).unwrap();
+        assert_eq!(frames.len(), 2);
+
+        let pts_args = ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", vfr.to_str().unwrap()].map(str::to_string);
+        let pts = run_media_command(&tools.ffprobe, &pts_args, "ffprobe", Duration::from_secs(10)).unwrap();
+        assert!(pts.success);
+        let timestamps: Vec<f64> = String::from_utf8_lossy(&pts.stdout).lines().filter_map(|line| line.trim().parse().ok()).collect();
+        assert!(timestamps.windows(2).any(|pair| pair[1] - pair[0] > 0.15));
+        assert!(timestamps.windows(2).any(|pair| pair[1] - pair[0] < 0.1));
+
+        let rotation_args = ["-v", "error", "-print_format", "json", "-show_streams", rotated.to_str().unwrap()].map(str::to_string);
+        let rotation = run_media_command(&tools.ffprobe, &rotation_args, "ffprobe", Duration::from_secs(10)).unwrap();
+        assert!(rotation.success);
+        let metadata: serde_json::Value = serde_json::from_slice(&rotation.stdout).unwrap();
+        assert!(metadata.to_string().contains("rotation") && metadata.to_string().contains("90"), "rotation metadata missing: {metadata}");
+    }
+
     #[test]
     fn query_seek_and_full_scan_produce_identical_pixels() {
         if resolve_tools().is_none() { return; }
