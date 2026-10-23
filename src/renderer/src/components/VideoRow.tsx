@@ -4,6 +4,7 @@ import type { VideoRecord, FrameProgress } from '@shared/types'
 import { formatBytes, formatDuration, shortDir } from '../lib/format'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useConfirm } from './ConfirmDialog'
+import { PopoverItem, PopoverMenu } from './PopoverMenu'
 
 export function VideoRow({
   video, roots, focused, depth = 0, showLocation = true, onOpen, onReveal, onRemove, onViewFrames, globalSampling,
@@ -153,17 +154,17 @@ export function VideoRow({
             const left = menuPoint
               ? Math.max(8, Math.min(menuPoint.x, window.innerWidth - 184))
               : rect ? Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)) : 0
-            return <div data-video-menu={video.id} className="popover fixed z-50 w-44 p-1.5 text-left" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
-              <RowMenu label="查看索引帧" onClick={() => { onCloseMenu(); onViewFrames(video.id) }} />
-              <RowMenu label="在资源管理器中显示" onClick={() => { onCloseMenu(); onReveal(video.id) }} />
-              <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
-              <RowMenu label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
+            return <PopoverMenu data-video-menu={video.id} className="fixed z-50 w-44 text-left" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
+              <PopoverItem label="查看索引帧" onClick={() => { onCloseMenu(); onViewFrames(video.id) }} />
+              <PopoverItem label="在资源管理器中显示" onClick={() => { onCloseMenu(); onReveal(video.id) }} />
+              <PopoverItem label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
+              <PopoverItem label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
               <div className="my-1 border-t border-line" />
-              <RowMenu label="从视频库移除" danger onClick={async () => {
+              <PopoverItem label="从视频库移除" danger onClick={async () => {
                 onCloseMenu()
                 if (await confirm({ title: '移除视频', message: `从视频库移除「${video.name}」？\n不会删除磁盘文件。`, confirmLabel: '从库中移除', danger: true })) onRemove(video.id)
               }} />
-            </div>
+            </PopoverMenu>
           })(), document.body)}
         </div>
       </td>
@@ -171,6 +172,3 @@ export function VideoRow({
   )
 }
 
-function RowMenu({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void | Promise<void> }) {
-  return <button className={`w-full rounded-lg px-2.5 py-1.5 text-left text-[11.5px] hover:bg-surface-3 ${danger ? 'text-bad' : 'text-secondary'}`} onClick={onClick}>{label}</button>
-}

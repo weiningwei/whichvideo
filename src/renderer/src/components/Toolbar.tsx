@@ -3,6 +3,7 @@ import type { DuplicatePair, IndexerStatus, SamplingMode, VideoQuery, VideoRecor
 import type { ImportProgressEvent } from '../lib/importProgress'
 import { reverseVideoSort, sortVideoQuery } from '../lib/videoSort'
 import { useConfirm } from './ConfirmDialog'
+import { PopoverItem, PopoverMenu, usePopoverDismiss } from './PopoverMenu'
 
 interface ToolbarProps {
   busy: string | null
@@ -52,28 +53,8 @@ export function Toolbar(props: ToolbarProps) {
       : `正在遍历文件 · 已发现 ${importProgress.processed}`
     : busy ?? (indexing ? `索引 ${indexStatus?.done ?? 0}/${indexStatus?.total ?? 0}` : null)
   useEffect(() => { setAddOpen(false); setMoreOpen(false) }, [selectedVideoIds])
-  useEffect(() => {
-    if (!addOpen && !moreOpen) return
-    const dismiss = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest('[data-toolbar-menu]')) {
-        setAddOpen(false)
-        setMoreOpen(false)
-      }
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopImmediatePropagation()
-        setAddOpen(false)
-        setMoreOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', escape, true)
-    }
-  }, [addOpen, moreOpen])
+  const closeMenus = () => { setAddOpen(false); setMoreOpen(false) }
+  usePopoverDismiss(addOpen || moreOpen, '[data-toolbar-menu]', closeMenus)
 
   const runDuplicateScan = () => {
     if (scanningDuplicates) return
@@ -104,11 +85,11 @@ export function Toolbar(props: ToolbarProps) {
               {importing ? '添加中…' : '＋ 添加'}
             </button>
             {addOpen && (
-              <Menu align="right">
-                <MenuItem label="视频文件" hint="可切换所有文件，由 FFmpeg 验证" onClick={() => { setAddOpen(false); onImportFiles() }} />
-                <MenuItem label="导入文件夹" hint="扫描一次，不持续监视" onClick={() => { setAddOpen(false); onImportFolder() }} />
-                <MenuItem label="监视文件夹" hint="自动同步之后的变化" onClick={() => { setAddOpen(false); onWatchFolder() }} />
-              </Menu>
+              <PopoverMenu className="absolute right-0 top-full z-40 mt-2 w-56">
+                <PopoverItem label="视频文件" hint="可切换所有文件，由 FFmpeg 验证" onClick={() => { setAddOpen(false); onImportFiles() }} />
+                <PopoverItem label="导入文件夹" hint="扫描一次，不持续监视" onClick={() => { setAddOpen(false); onImportFolder() }} />
+                <PopoverItem label="监视文件夹" hint="自动同步之后的变化" onClick={() => { setAddOpen(false); onWatchFolder() }} />
+              </PopoverMenu>
             )}
           </div>
           <button className="btn px-3" onClick={onManageFolders}>管理文件夹</button>
@@ -123,11 +104,11 @@ export function Toolbar(props: ToolbarProps) {
               ···
             </button>
             {moreOpen && (
-              <Menu align="right">
-                <MenuItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} disabled={scanningDuplicates || processing} onClick={runDuplicateScan} />
-                <MenuItem label="重新扫描所有文件夹" disabled={processing} onClick={() => { setMoreOpen(false); onRescan() }} />
-                <MenuItem label="重建全部索引" disabled={processing || indexing} onClick={() => { setMoreOpen(false); onReindex() }} />
-              </Menu>
+              <PopoverMenu className="absolute right-0 top-full z-40 mt-2 w-56">
+                <PopoverItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} disabled={scanningDuplicates || processing} onClick={runDuplicateScan} />
+                <PopoverItem label="重新扫描所有文件夹" disabled={processing} onClick={() => { setMoreOpen(false); onRescan() }} />
+                <PopoverItem label="重建全部索引" disabled={processing || indexing} onClick={() => { setMoreOpen(false); onReindex() }} />
+              </PopoverMenu>
             )}
           </div>
         </div>
@@ -197,15 +178,3 @@ export function Toolbar(props: ToolbarProps) {
   )
 }
 
-function Menu({ children, align }: { children: React.ReactNode; align: 'right' }) {
-  return <div className={`popover absolute top-full z-40 mt-2 w-56 p-1.5 ${align === 'right' ? 'right-0' : 'left-0'}`}>{children}</div>
-}
-
-function MenuItem({ label, hint, disabled, onClick }: { label: string; hint?: string; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-surface-3 disabled:opacity-50" disabled={disabled} onClick={onClick}>
-      <span className="text-[12.5px] text-primary">{label}</span>
-      {hint && <span className="mt-0.5 text-[10.5px] text-tertiary">{hint}</span>}
-    </button>
-  )
-}

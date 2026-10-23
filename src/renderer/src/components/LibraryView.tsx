@@ -5,6 +5,7 @@ import type { ImportProgressEvent } from '../lib/importProgress'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
 import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
+import { usePopoverDismiss } from './PopoverMenu'
 import { useLibraryColumns, COLUMN_LABELS, ACTION_COLUMN_WIDTH } from '../hooks/useLibraryColumns'
 import { buildExplorerTree, explorerPathKey, visibleExplorerRows } from '../lib/libraryExplorer'
 import { ROW_CHUNK, growLimit, limitForFocus } from '../lib/tableWindow'
@@ -163,24 +164,7 @@ export function LibraryView(props: Props) {
       unlisten?.()
     }
   }, [drawer, props.onDropPaths])
-  useEffect(() => {
-    if (openMenuId === null) return
-    const dismiss = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest(`[data-video-menu="${openMenuId}"]`)) setOpenMenuId(null)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.stopImmediatePropagation(); setOpenMenuId(null) }
-    }
-    const scroll = () => setOpenMenuId(null)
-    document.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', escape, true)
-    window.addEventListener('scroll', scroll, true)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', escape, true)
-      window.removeEventListener('scroll', scroll, true)
-    }
-  }, [openMenuId])
+  usePopoverDismiss(openMenuId !== null, `[data-video-menu="${openMenuId}"]`, () => setOpenMenuId(null), true)
 
   // 全选仅作用于当前可见的视频，不包含收起文件夹中的视频。
   const visibleIds = useMemo(() => shownVideos.map((v) => v.id), [shownVideos])
