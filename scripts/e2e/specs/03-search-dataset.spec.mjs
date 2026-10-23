@@ -6,10 +6,10 @@ const normalizePath = (path) => process.platform === 'win32' ? path.replaceAll('
 
 describe('真实桌面流程：带标准答案的搜索数据集', () => {
   it('评估多视频的命中、排序、时间误差和库外查询', async function () {
-    this.timeout(300000)
     const manifestPath = process.env.WHICHVIDEO_E2E_DATASET_MANIFEST
     assert.ok(manifestPath)
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    this.timeout(manifest.profile === 'extended' ? 900000 : 300000)
     const videoPaths = new Map(manifest.videos.map((video) => [video.id, video.path]))
 
     await browser.$('body').waitForExist()
@@ -65,6 +65,7 @@ describe('真实桌面流程：带标准答案的搜索数据集', () => {
     const report = {
       manifestPath,
       datasetVersion: manifest.version,
+      profile: manifest.profile,
       summary: {
         baselineTop1: `${baseline.filter((row) => row.top1).length}/${baseline.length}`,
         positiveTop1: `${positives.filter((row) => row.top1).length}/${positives.length}`,

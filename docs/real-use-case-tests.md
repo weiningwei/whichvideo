@@ -1,6 +1,6 @@
 # 桌面自动测试
 
-从仓库根目录执行 `pnpm test:e2e`。需要桌面会话、Node.js、Rust stable、`ffmpeg` 和 `ffprobe`。工具在 `PATH` 中即可，也可用 `WHICHVIDEO_FFMPEG`、`WHICHVIDEO_FFPROBE` 指定可执行文件。Linux 无图形会话时使用 `xvfb-run -a pnpm test:e2e`，并安装 WebKitGTK 开发库及 `webkit2gtk-driver`。
+从仓库根目录执行 `pnpm test:e2e`；需要更完整的鲁棒性评测时执行 `pnpm test:e2e:extended`。两种模式都需要桌面会话、Node.js、Rust stable、`ffmpeg` 和 `ffprobe`。工具在 `PATH` 中即可，也可用 `WHICHVIDEO_FFMPEG`、`WHICHVIDEO_FFPROBE` 指定可执行文件。Linux 无图形会话时使用 `xvfb-run -a pnpm test:e2e`，并安装 WebKitGTK 开发库及 `webkit2gtk-driver`。
 
 脚本会生成四秒视频和对应截图，在 `tmp/e2e/run-*` 下创建独立数据目录，编译测试专用 Tauri 程序并用 WebdriverIO 驱动真实窗口。当前检查：
 
@@ -10,6 +10,8 @@
 4. 生成八段视频与 63 张带标准答案的查询图，在真实索引和搜索后检查八张原图的首位结果，并按变换类型评估其他查询。
 
 样本包含相似色条、静态图案和运动画面；每段视频均生成 JPEG 压缩、缩放、裁剪、黑边、灰度和模糊查询，另有不同时间点及三张库外图片（纯色与图案）。每次运行的 `tmp/e2e/run-*/search-dataset/manifest.json` 记录视频、查询图、预期视频和可标注的时间点；同目录的 `report.json` 记录每条查询的排名、前五条结果、耗时和时间误差，按变换类型统计 Top-1/Top-5，并列出未命中首位的查询。静态画面没有唯一正确时间点，不纳入时间误差。八张原图必须全部排在首位；变换图与库外图片目前记录指标，积累跨平台基线后再确定回归阈值。合成样本适合发现算法回退；实际截图的裁剪、字幕和编码差异仍需另建获授权的真实样本集评估。
+
+扩展模式生成 223 张查询图，在同一批视频上增加重度 JPEG、极小缩略图、宽高比变化、强裁剪、亮度/对比度/饱和度/色相变化、强模糊、锐化、局部遮挡、模拟字幕条、旋转、镜像以及多种变换叠加；另用固定种子生成不同参数的组合查询。生成参数和随机种子保存在 manifest 中，同一模式可复现。扩展模式比日常 CI 慢，适合手动运行和比较算法版本；两种模式都只把原图命中作为硬性门槛，其他结果用于定位不足。
 
 失败时保留 `tmp/e2e/run-*` 中的样本、`data/logs` 和截图；Windows、macOS、Linux CI 都会上传失败证据。测试只使用临时数据目录，不会读取或修改用户现有的视频库。测试不会访问远程图片，版本检查的联网结果不参与判定。
 

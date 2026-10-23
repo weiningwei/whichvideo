@@ -19,6 +19,10 @@ const videoPath = join(nestedDir, 'sample.mp4')
 const imagePath = join(runDir, 'sample.png')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const pnpmEntry = process.env.npm_execpath
+const datasetProfile = process.argv.includes('--dataset=extended') ? 'extended' : 'ci'
+if (process.argv.some((arg) => arg.startsWith('--dataset=') && arg !== '--dataset=extended' && arg !== '--dataset=ci')) {
+  throw new Error('数据集模式只能是 ci 或 extended')
+}
 
 function executable(name, override) {
   if (override) return override
@@ -47,7 +51,7 @@ try {
   run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', videoPath, '-frames:v', '1', '-y', imagePath])
   run(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1', videoPath])
   if (!existsSync(videoPath) || !existsSync(imagePath)) throw new Error('媒体样本生成失败')
-  const datasetManifest = generateSearchDataset(ffmpeg, runDir)
+  const datasetManifest = generateSearchDataset(ffmpeg, runDir, datasetProfile)
   const env = {
     ...process.env,
     CARGO_HOME: cargoHome,

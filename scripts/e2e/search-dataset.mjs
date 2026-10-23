@@ -9,8 +9,17 @@ function ffmpegRun(ffmpeg, args) {
   }
 }
 
+function seededRandom(seed) {
+  let state = seed >>> 0
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
 // 固定源、编码、时间点和变换参数；标签来自生成过程，不依赖搜索结果。
-export function generateSearchDataset(ffmpeg, runDir) {
+export function generateSearchDataset(ffmpeg, runDir, profile = 'ci') {
+  if (profile !== 'ci' && profile !== 'extended') throw new Error(`未知搜索数据集模式：${profile}`)
   const datasetDir = join(runDir, 'search-dataset')
   const videoDir = join(datasetDir, 'videos')
   const queryDir = join(datasetDir, 'queries')
@@ -34,8 +43,10 @@ export function generateSearchDataset(ffmpeg, runDir) {
   })
 
   const queries = []
-  function addQuery(id, imagePath, expectedVideoId, expectedTimeSeconds, variant, tier = 'stress') {
-    queries.push({ id, imagePath, expectedVideoId, expectedTimeSeconds, variant, tier })
+  const seed = 20261023
+  const random = seededRandom(seed)
+  function addQuery(id, imagePath, expectedVideoId, expectedTimeSeconds, variant, tier = 'stress', recipe = null) {
+    queries.push({ id, imagePath, expectedVideoId, expectedTimeSeconds, variant, tier, ...(recipe ? { recipe } : {}) })
   }
   function extract(id, videoId, timeSeconds) {
     const imagePath = join(queryDir, `${id}.png`)
@@ -75,6 +86,44 @@ export function generateSearchDataset(ffmpeg, runDir) {
       const id = `${videoId}-${kind}`
       addQuery(id, transform(id, base, filter, extension, extra), videoId, expectedTime, kind)
     }
+
+    if (profile === 'extended') {
+      const extended = [
+        { kind: 'jpeg-heavy', filter: 'null', extension: 'jpg', extra: ['-q:v', '30'] },
+        { kind: 'thumbnail', filter: 'scale=80:45' },
+        { kind: 'aspect-change', filter: 'scale=256:256' },
+        { kind: 'crop-tight', filter: 'crop=160:90:80:45' },
+        { kind: 'crop-corner', filter: 'crop=224:126:0:0' },
+        { kind: 'low-contrast', filter: 'eq=contrast=0.65:brightness=0.04' },
+        { kind: 'high-contrast', filter: 'eq=contrast=1.4:brightness=-0.04' },
+        { kind: 'desaturated', filter: 'eq=saturation=0.35' },
+        { kind: 'hue-shift', filter: 'hue=h=25' },
+        { kind: 'strong-blur', filter: 'gblur=sigma=3' },
+        { kind: 'sharpen', filter: 'unsharp=5:5:1.0' },
+        { kind: 'occluded', filter: 'drawbox=x=40:y=35:w=80:h=50:color=white:t=fill' },
+        { kind: 'caption-band', filter: 'drawbox=x=0:y=ih-36:w=iw:h=36:color=black:t=fill,drawbox=x=35:y=ih-23:w=150:h=7:color=white:t=fill' },
+        { kind: 'rotate', filter: 'rotate=3*PI/180:fillcolor=black' },
+        { kind: 'flipped', filter: 'hflip' },
+        { kind: 'combined', filter: 'crop=256:144:32:18,scale=200:112,eq=brightness=0.05:saturation=0.7,gblur=sigma=1', extension: 'jpg', extra: ['-q:v', '20'] }
+      ]
+      for (const { kind, filter, extension, extra } of extended) {
+        const id = `${videoId}-${kind}`
+        addQuery(id, transform(id, base, filter, extension, extra), videoId, expectedTime, kind)
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const width = i % 2 === 0 ? 256 : 224
+        const height = i % 2 === 0 ? 144 : 126
+        const x = Math.floor(random() * (320 - width + 1))
+        const y = Math.floor(random() * (180 - height + 1))
+        const brightness = (random() * 0.12 - 0.06).toFixed(3)
+        const saturation = (0.5 + random() * 0.8).toFixed(3)
+        const quality = 12 + Math.floor(random() * 18)
+        const filter = `crop=${width}:${height}:${x}:${y},scale=240:135,eq=brightness=${brightness}:saturation=${saturation},drawbox=x=25:y=20:w=35:h=20:color=white@0.7:t=fill`
+        const id = `${videoId}-mixed-${i + 1}`
+        addQuery(id, transform(id, base, filter, 'jpg', ['-q:v', String(quality)]), videoId, expectedTime, 'mixed-seed', 'stress', { filter, quality })
+      }
+    }
   }
 
   for (const [id, color] of [['absent-magenta', 'magenta'], ['absent-cyan', 'cyan']]) {
@@ -86,7 +135,7 @@ export function generateSearchDataset(ffmpeg, runDir) {
   ffmpegRun(ffmpeg, ['-f', 'lavfi', '-i', 'cellauto=rule=30:size=320x180:rate=1:seed=42:start_full=1', '-frames:v', '1', '-y', patternPath])
   addQuery('absent-pattern', patternPath, null, null, 'negative', 'negative')
 
-  const manifest = { version: 3, videos, queries }
+  const manifest = { version: 4, profile, seed, videos, queries }
   const manifestPath = join(datasetDir, 'manifest.json')
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
   return manifestPath
