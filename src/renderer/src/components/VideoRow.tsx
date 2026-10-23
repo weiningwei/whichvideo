@@ -157,7 +157,10 @@ export function VideoRow({
               <RowMenu label={`按${sampling === 'uniform' ? '场景' : '均匀'}模式重建`} onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling === 'uniform' ? 'scene' : 'uniform') }} />
               <RowMenu label="重新索引" onClick={() => { onCloseMenu(); onSamplingChange(video.id, sampling) }} />
               <div className="my-1 border-t border-line" />
-              <RowMenu label="从视频库移除" danger onClick={() => { onCloseMenu(); onRemove(video.id) }} />
+              <RowMenu label="从视频库移除" danger onClick={() => {
+                onCloseMenu()
+                if (window.confirm(`从视频库移除「${video.name}」？\n不会删除磁盘文件。`)) onRemove(video.id)
+              }} />
             </div>
           })(), document.body)}
         </div>
