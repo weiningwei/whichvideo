@@ -14,6 +14,16 @@ async function loadTypeScript(path) {
 
 const { loadLibrarySnapshot, loadVideoPages } = await loadTypeScript('src/renderer/src/lib/libraryRefresh.ts')
 const { urlInputAfterSearch } = await loadTypeScript('src/renderer/src/lib/searchUrlInput.ts')
+const { RequestGate } = await loadTypeScript('src/renderer/src/lib/requestGate.ts')
+
+const gate = new RequestGate()
+const firstRequest = gate.begin()
+const secondRequest = gate.begin()
+assert.equal(gate.isCurrent(firstRequest), false)
+assert.equal(gate.isCurrent(secondRequest), true)
+gate.invalidate()
+assert.equal(gate.isCurrent(secondRequest), false)
+console.log('  ✓ 统一请求门只允许最新请求更新并支持主动失效')
 
 let failStats = true
 const api = {

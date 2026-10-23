@@ -1,6 +1,7 @@
 import { errorMessage } from '../lib/errors'
 import { useCallback, useRef, useState } from 'react'
 import { type SearchResponse } from '@shared/types'
+import { useRequestGate } from './useRequestGate'
 
 export interface UseSearchReturn {
   search: SearchResponse | null
@@ -33,10 +34,10 @@ export function useSearch(): UseSearchReturn {
   const [queryImage, setQueryImage] = useState<string | null>(null)
   const [queryLabel, setQueryLabel] = useState<string | null>(null)
   const lastSearchInput = useRef<SearchInput | null>(null)
-  const requestId = useRef(0)
+  const requests = useRequestGate()
 
   const runSearch = useCallback(async (input: SearchInput): Promise<SearchOutcome> => {
-    const currentRequest = ++requestId.current
+    const request = requests.begin()
     lastSearchInput.current = input
     setSearching(true)
     setSearch(null)
@@ -46,35 +47,35 @@ export function useSearch(): UseSearchReturn {
     // 四条输入路径的失败都以 error/errorCode 返回（而非抛异常），
     // 必须统一接住——否则文件/拖入/粘贴失败会静默变成"没有结果"。
     const applyResponse = (response: SearchResponse): void => {
-      if (currentRequest !== requestId.current) return
+      if (!requests.isCurrent(request)) return
       setSearch(response)
       if (response.error) setSearchError(response.error)
     }
     try {
       if (input.path) {
         const response = await window.whichvideo.search.byPath(input.path)
-        if (currentRequest !== requestId.current) return { ok: false, error: null }
+        if (!requests.isCurrent(request)) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(`file://${input.path}`)
         setQueryLabel(input.label ?? input.path)
         return { ok: !response.error, error: response.error ?? null }
       } else if (input.dataUrl) {
         const response = await window.whichvideo.search.byDataUrl(input.dataUrl)
-        if (currentRequest !== requestId.current) return { ok: false, error: null }
+        if (!requests.isCurrent(request)) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(input.dataUrlPreview ?? input.dataUrl)
         setQueryLabel(input.label ?? '图片')
         return { ok: !response.error, error: response.error ?? null }
       } else if (input.url) {
         const response = await window.whichvideo.search.byUrl(input.url)
-        if (currentRequest !== requestId.current) return { ok: false, error: null }
+        if (!requests.isCurrent(request)) return { ok: false, error: null }
         applyResponse(response)
         setQueryImage(null)
         setQueryLabel(response.queryImageUrl ?? input.label ?? input.url)
         return { ok: !response.error, error: response.error ?? null }
       } else {
         const clipboard = await window.whichvideo.search.byClipboard()
-        if (currentRequest !== requestId.current) return { ok: false, error: null }
+        if (!requests.isCurrent(request)) return { ok: false, error: null }
         if (!clipboard) {
           setSearchError('剪贴板里没有图片，请先复制一张图片再点这个按钮')
           return { ok: false, error: '剪贴板里没有图片，请先复制一张图片再点这个按钮' }
@@ -87,14 +88,14 @@ export function useSearch(): UseSearchReturn {
         return { ok: !clipboard.response.error, error: clipboard.response.error ?? null }
       }
     } catch (err) {
-      if (currentRequest !== requestId.current) return { ok: false, error: null }
+      if (!requests.isCurrent(request)) return { ok: false, error: null }
       const message = errorMessage(err)
       setSearchError(message)
       return { ok: false, error: message }
     } finally {
-      if (currentRequest === requestId.current) setSearching(false)
+      if (requests.isCurrent(request)) setSearching(false)
     }
-  }, [])
+  }, [requests])
 
   const reSearch = useCallback(async () => {
     if (lastSearchInput.current) {
@@ -103,14 +104,14 @@ export function useSearch(): UseSearchReturn {
   }, [runSearch])
 
   const clearSearch = useCallback(() => {
-    requestId.current++
+    requests.invalidate()
     setSearch(null)
     setSearchError(null)
     setQueryImage(null)
     setQueryLabel(null)
     lastSearchInput.current = null
     setSearching(false)
-  }, [])
+  }, [requests])
 
   return {
     search,

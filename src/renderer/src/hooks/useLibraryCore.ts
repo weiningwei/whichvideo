@@ -1,5 +1,5 @@
 import { errorMessage } from '../lib/errors'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   type AppSettings,
   type DataDirInfo,
@@ -11,6 +11,7 @@ import {
 } from '@shared/types'
 import { applyImportProgress, type ImportProgressEvent } from '../lib/importProgress'
 import { loadLibrarySnapshot } from '../lib/libraryRefresh'
+import { useRequestGate } from './useRequestGate'
 
 const EMPTY_STATS: LibraryStats = {
   videos: 0,
@@ -54,17 +55,17 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
   const [mediaTools, setMediaTools] = useState<MediaToolsStatus | null>(null)
   const [importProgress, setImportProgress] = useState<ImportProgressEvent | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const refreshId = useRef(0)
+  const refreshRequests = useRequestGate()
 
   const refreshFolders = useCallback(async () => {
     setFolders(await window.whichvideo.folders.list())
   }, [])
 
   const refreshAll = useCallback(async () => {
-    const currentRefresh = ++refreshId.current
+    const request = refreshRequests.begin()
     try {
       const snapshot = await loadLibrarySnapshot(window.whichvideo)
-      if (currentRefresh !== refreshId.current) return
+      if (!refreshRequests.isCurrent(request)) return
       setStats(snapshot.stats)
       setStatus(snapshot.status)
       setFolders(snapshot.folders)
@@ -73,10 +74,10 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
       setMediaTools(snapshot.mediaTools)
       setRefreshError(null)
     } catch (error) {
-      if (currentRefresh === refreshId.current) setRefreshError(`资料库状态加载失败：${errorMessage(error)}`)
+      if (refreshRequests.isCurrent(request)) setRefreshError(`资料库状态加载失败：${errorMessage(error)}`)
       throw error
     }
-  }, [])
+  }, [refreshRequests])
 
   useEffect(() => {
     void refreshAll().catch(() => { /* 错误由 refreshError 持续展示 */ })

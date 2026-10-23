@@ -2,6 +2,7 @@ import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type VideoQuery, type VideoRecord, type VideoPage, type LibraryEvent } from '@shared/types'
 import { loadVideoPages } from '../lib/libraryRefresh'
+import { useRequestGate } from './useRequestGate'
 
 export interface UseVideoListReturn {
   videos: VideoRecord[]
@@ -167,7 +168,7 @@ export function useVideoList(): UseVideoListReturn {
    * 可能后返回，用过期关键词的结果覆盖新结果（列表内容与筛选框对不上、
    * 或闪回旧数据）。序号守卫让晚到的旧响应直接丢弃。
    */
-  const seqRef = useRef(0)
+  const fetchRequests = useRequestGate()
   const eventRevisionRef = useRef(0)
   const eventLogRef = useRef<Array<{ revision: number; event: VideoListEvent }>>([])
   const activeFetchesRef = useRef(0)
@@ -178,12 +179,12 @@ export function useVideoList(): UseVideoListReturn {
 
   const refreshVideos = useCallback(async (query?: VideoQuery) => {
     const q = query ?? queryRef.current
-    const seq = ++seqRef.current
+    const request = fetchRequests.begin()
     const startedAtRevision = eventRevisionRef.current
     activeFetchesRef.current++
     try {
       // 文件夹视图需要完整目录内容；单页 500 条会让后面的目录和视频凭空消失。
-      const page = await loadVideoPages(window.whichvideo.videos.list, q, () => seq === seqRef.current)
+      const page = await loadVideoPages(window.whichvideo.videos.list, q, () => fetchRequests.isCurrent(request))
       if (!page) return
       const events = eventLogRef.current
         .filter((entry) => entry.revision > startedAtRevision)
@@ -191,13 +192,13 @@ export function useVideoList(): UseVideoListReturn {
       setList(reconcileFetchedPage(page, events, q))
       setRefreshError(null)
     } catch (error) {
-      if (seq === seqRef.current) setRefreshError(`视频列表加载失败：${errorMessage(error)}`)
+      if (fetchRequests.isCurrent(request)) setRefreshError(`视频列表加载失败：${errorMessage(error)}`)
       throw error
     } finally {
       activeFetchesRef.current--
       if (activeFetchesRef.current === 0) eventLogRef.current = []
     }
-  }, [])
+  }, [fetchRequests])
 
   const setVideoQuery = useCallback((next: VideoQuery) => {
     queryRef.current = next
