@@ -413,7 +413,7 @@ function ResultCard({
             }`}
           >
             {available
-              ? '已下载 · 本地库中'
+              ? '本地视频库中'
               : video.status === 'failed'
                 ? '索引失败'
                 : video.status === 'indexing'
