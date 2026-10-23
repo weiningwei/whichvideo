@@ -11,6 +11,7 @@ const rustMain = readSource('src-tauri', 'src', 'main.rs')
 const commandsSource = readSource('src-tauri', 'src', 'commands.rs')
 const searchServiceSource = readSource('src-tauri', 'src', 'search_service.rs')
 const eventsSource = readSource('src-tauri', 'src', 'events.rs')
+const errorSource = readSource('src-tauri', 'src', 'error.rs')
 const indexerSource = readSource('src-tauri', 'src', 'indexer.rs')
 const mediaSource = readSource('src-tauri', 'src', 'media.rs')
 const dbSource = readSource('src-tauri', 'src', 'db.rs')
@@ -257,7 +258,7 @@ check(
   ['search_path', 'search_data_url', 'search_clipboard', 'search_url'].every((name) =>
     commandsSource.includes(`pub async fn ${name}`)
   ) &&
-    (commandsSource.match(/spawn_blocking\(/g) ?? []).length >= 5 &&
+    (commandsSource.match(/error::blocking\(/g) ?? []).length >= 5 &&
     searchServiceSource.includes('let videos: HashMap<i64, db::VideoRecord>') &&
     searchServiceSource.indexOf('let videos: HashMap<i64, db::VideoRecord>') < searchServiceSource.indexOf('let decoded = rerank_matches')
 )
@@ -266,7 +267,7 @@ check(
   ['library_stats', 'folders_list', 'videos_list'].every((name) => {
     const start = commandsSource.indexOf(`pub async fn ${name}(`)
     if (start < 0) return false
-    return commandsSource.slice(start, start + 700).includes('spawn_blocking')
+    return commandsSource.slice(start, start + 700).includes('error::blocking')
   }),
   '同步命令在窗口主线程执行，等数据库锁时整窗会卡住'
 )
@@ -280,7 +281,7 @@ check(
   ['folders_remove', 'videos_reindex'].every((name) => {
     const start = commandsSource.indexOf(`pub async fn ${name}(`)
     if (start < 0) return false
-    return commandsSource.slice(start, start + 500).includes('spawn_blocking')
+    return commandsSource.slice(start, start + 500).includes('error::blocking')
   }),
   '这两个动作会在主线程删几千条记录/发上万条事件'
 )
@@ -301,7 +302,7 @@ check(
   ['videos_remove_many', 'library_reset', 'library_update_settings'].every((name) => {
     const start = commandsSource.indexOf(`pub async fn ${name}`)
     if (start < 0) return false
-    return commandsSource.slice(start, start + 500).includes('spawn_blocking')
+    return commandsSource.slice(start, start + 500).includes('error::blocking')
   }) && commandsSource.includes('db::remove_video_ids(conn, &video_ids)'),
   '删除帧目录与递归删 frames 可能持续几十秒'
 )
@@ -321,6 +322,13 @@ check(
     indexerSource.includes('broadcast_stats_now') &&
     indexerSource.includes('idx.concurrency.max(1)'),
   '逐条 enqueue 会为每个视频发两条事件并读一次设置'
+)
+check(
+  '阻塞命令统一处理线程异常',
+  errorSource.includes('pub async fn blocking') &&
+    errorSource.includes('spawn_blocking(task)') &&
+    !commandsSource.includes('spawn_blocking('),
+  '命令模块只调用 error::blocking'
 )
 const commandStarts = (processSources.match(/Command::new\(/g) ?? []).length
 const hiddenStarts = (processSources.match(/\.no_window\(\)/g) ?? []).length

@@ -7,6 +7,17 @@ pub struct AppError {
     pub operation: &'static str,
 }
 
+/// 在 Tauri 阻塞线程池执行同步工作，并统一把线程 panic/取消转换成可传播错误。
+pub async fn blocking<T, F>(task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("后台任务异常结束：{error}"))
+}
+
 pub fn command_result<T>(operation: &'static str, result: Result<T, String>) -> Result<T, AppError> {
     result.map_err(|message| {
         let message = if message.trim().is_empty() { "操作失败，请重试".into() } else { message };
@@ -41,5 +52,11 @@ mod tests {
         assert_eq!(command_module("videos_import_paths"), crate::logger::Module::Import);
         assert_eq!(command_module("library_select_media_tools_dir"), crate::logger::Module::Media);
         assert_eq!(command_module("videos_list"), crate::logger::Module::Library);
+    }
+
+    #[test]
+    fn blocking_converts_worker_panic_to_error() {
+        let result = tauri::async_runtime::block_on(blocking(|| panic!("worker failed")));
+        assert!(result.unwrap_err().starts_with("后台任务异常结束："));
     }
 }

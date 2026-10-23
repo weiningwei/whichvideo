@@ -66,6 +66,8 @@ src/shared                    前端共享类型、指纹和 IPC 频道名
 - 基础错误层不弹通知、不自动重试。普通操作用 `useBusy`，搜索和刷新保留页面内错误与重试，
   预览保留局部回退，避免重复提示。搜索响应中的 `error/errorCode`、批量操作的部分失败与
   后台任务状态属于业务结果，保留各自契约，不当作整个 IPC 调用失败。
+- IPC 命令需要运行同步 I/O 或 CPU 工作时统一调用 `error::blocking`，由它转换阻塞线程 panic/取消；
+  命令模块不得直接调用 `spawn_blocking`。
 - `pnpm test:errors` 验证错误规范化与桥接失败行为，并纳入完整 `pnpm test`。
 
 ## 日志

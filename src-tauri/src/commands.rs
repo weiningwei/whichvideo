@@ -31,14 +31,13 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[tauri::command]
 pub async fn library_stats(app: AppHandle) -> Result<db::LibraryStats, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || {
+        crate::error::blocking(move || {
             let state = app.state::<AppState>();
             let guard = state.db()?;
             let conn = &*guard;
             db::stats(conn).map_err(|e| e.to_string())
         })
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     }
     .await;
     crate::error::command_result("library_stats", result)
@@ -58,14 +57,13 @@ pub fn library_status(state: State<AppState>) -> Result<db::IndexerStatus, crate
 #[tauri::command]
 pub async fn folders_list(app: AppHandle) -> Result<Vec<db::WatchedFolder>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || {
+        crate::error::blocking(move || {
             let state = app.state::<AppState>();
             let guard = state.db()?;
             let conn = &*guard;
             db::list_folders(conn).map_err(|e| e.to_string())
         })
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     }
     .await;
     crate::error::command_result("folders_list", result)
@@ -78,9 +76,8 @@ pub async fn folders_add_path(
     dir_path: String,
 ) -> Result<db::WatchedFolder, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || add_folder_path_sync(&app, dir_path))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || add_folder_path_sync(&app, dir_path))
+            .await?
     }
     .await;
     crate::error::command_result("folders_add_path", result)
@@ -102,9 +99,8 @@ fn add_folder_path_sync(app: &AppHandle, dir_path: String) -> Result<db::Watched
 #[tauri::command]
 pub async fn folders_add_dialog(app: AppHandle) -> Result<Vec<db::WatchedFolder>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || add_folders_from_dialog_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || add_folders_from_dialog_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("folders_add_dialog", result)
@@ -134,9 +130,8 @@ fn add_folders_from_dialog_sync(app: &AppHandle) -> Result<Vec<db::WatchedFolder
 #[tauri::command]
 pub async fn folders_remove(app: AppHandle, folder_id: i64) -> Result<(), crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || remove_folder_sync(&app, folder_id))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || remove_folder_sync(&app, folder_id))
+            .await?
     }
     .await;
     crate::error::command_result("folders_remove", result)
@@ -189,9 +184,8 @@ pub async fn folders_rescan(
     folder_id: Option<i64>,
 ) -> Result<events::ImportResult, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || rescan_folders_sync(&app, folder_id))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || rescan_folders_sync(&app, folder_id))
+            .await?
     }
     .await;
     crate::error::command_result("folders_rescan", result)
@@ -310,9 +304,8 @@ pub fn videos_remove(app: AppHandle, video_id: i64) -> Result<(), crate::error::
 #[tauri::command]
 pub async fn videos_remove_many(app: AppHandle, video_ids: Vec<i64>) -> Result<(), crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || remove_videos_sync(&app, video_ids))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || remove_videos_sync(&app, video_ids))
+            .await?
     }
     .await;
     crate::error::command_result("videos_remove_many", result)
@@ -590,9 +583,8 @@ pub async fn videos_find_duplicates(
     min_score: Option<f64>,
 ) -> Result<Vec<DuplicatePair>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || find_duplicates_sync(&app, min_score))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || find_duplicates_sync(&app, min_score))
+            .await?
     }
     .await;
     crate::error::command_result("videos_find_duplicates", result)
@@ -609,9 +601,8 @@ pub async fn videos_match_frame(
     time_ms: i64,
 ) -> Result<Option<String>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || match_frame_sync(&app, video_id, time_ms))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || match_frame_sync(&app, video_id, time_ms))
+            .await?
     }
     .await;
     crate::error::command_result("videos_match_frame", result)
@@ -637,14 +628,13 @@ fn match_frame_sync(app: &AppHandle, video_id: i64, time_ms: i64) -> Result<Opti
 #[tauri::command]
 pub async fn videos_list(app: AppHandle, query: db::VideoQuery) -> Result<db::VideoPage, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || {
+        crate::error::blocking(move || {
             let state = app.state::<AppState>();
             let guard = state.db()?;
             let conn = &*guard;
             db::list_videos(conn, &query).map_err(|e| e.to_string())
         })
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     }
     .await;
     crate::error::command_result("videos_list", result)
@@ -694,9 +684,8 @@ pub fn videos_frame_progress(
 #[tauri::command]
 pub async fn videos_import(app: AppHandle) -> Result<events::ImportResult, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || import_videos_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || import_videos_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("videos_import", result)
@@ -710,9 +699,8 @@ pub async fn videos_import_paths(
     watch_folders: bool,
 ) -> Result<events::ImportResult, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || import_paths_sync(&app, paths, watch_folders))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || import_paths_sync(&app, paths, watch_folders))
+            .await?
     }
     .await;
     crate::error::command_result("videos_import_paths", result)
@@ -797,9 +785,8 @@ fn import_videos_sync(app: &AppHandle) -> Result<events::ImportResult, String> {
 #[tauri::command]
 pub async fn videos_import_folder_once(app: AppHandle) -> Result<events::ImportResult, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || import_folder_once_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || import_folder_once_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("videos_import_folder_once", result)
@@ -825,9 +812,8 @@ fn import_folder_once_sync(app: &AppHandle) -> Result<events::ImportResult, Stri
 #[tauri::command]
 pub async fn videos_import_images(app: AppHandle) -> Result<Vec<String>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || pick_search_images_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || pick_search_images_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("videos_import_images", result)
@@ -855,9 +841,8 @@ pub async fn videos_reindex(
 ) -> Result<events::ReindexResult, crate::error::AppError> {
     let result: Result<_, String> = async {
         // 整库重建要读一遍视频表再批量入队，别占着窗口主线程。
-        let count = tauri::async_runtime::spawn_blocking(move || indexer::reindex(app, video_ids, mode))
-            .await
-            .map_err(|e| e.to_string())?;
+        let count = crate::error::blocking(move || indexer::reindex(app, video_ids, mode))
+            .await?;
         Ok(events::ReindexResult { count })
     }
     .await;
@@ -891,9 +876,8 @@ pub async fn library_update_settings(
     patch: db::SettingsPatch,
 ) -> Result<db::AppSettings, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || update_settings_sync(&app, patch))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || update_settings_sync(&app, patch))
+            .await?
     }
     .await;
     crate::error::command_result("library_update_settings", result)
@@ -943,9 +927,8 @@ fn update_settings_sync(app: &AppHandle, patch: db::SettingsPatch) -> Result<db:
 #[tauri::command]
 pub async fn library_reset(app: AppHandle) -> Result<(), crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || reset_library_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || reset_library_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("library_reset", result)
@@ -992,9 +975,8 @@ pub fn library_open_ffmpeg_download() -> Result<(), crate::error::AppError> {
 #[tauri::command]
 pub async fn library_export_diagnostics(app: AppHandle) -> Result<Option<String>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || export_diagnostics_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || export_diagnostics_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("library_export_diagnostics", result)
@@ -1033,7 +1015,7 @@ pub fn library_media_tools() -> Result<media::MediaToolsStatus, crate::error::Ap
 #[tauri::command]
 pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaToolsStatus, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || {
+        crate::error::blocking(move || {
             let was_ready = media::tools_ready();
             let status = media::refresh_tools();
             if !was_ready && status.ready {
@@ -1041,8 +1023,7 @@ pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaT
             }
             Ok(status)
         })
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     }
     .await;
     crate::error::command_result("library_refresh_media_tools", result)
@@ -1052,9 +1033,8 @@ pub async fn library_refresh_media_tools(app: AppHandle) -> Result<media::MediaT
 #[tauri::command]
 pub async fn library_select_media_tools_dir(app: AppHandle) -> Result<media::MediaToolsStatus, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || select_media_tools_dir_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || select_media_tools_dir_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("library_select_media_tools_dir", result)
@@ -1103,9 +1083,8 @@ pub fn library_clear_media_tools_dir(state: State<AppState>) -> Result<media::Me
 #[tauri::command]
 pub async fn search_path(app: AppHandle, file_path: String) -> Result<SearchResponse, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || search_path_sync(&app, file_path))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || search_path_sync(&app, file_path))
+            .await?
     }
     .await;
     crate::error::command_result("search_path", result)
@@ -1143,9 +1122,8 @@ fn search_path_sync(app: &AppHandle, file_path: String) -> Result<SearchResponse
 #[tauri::command]
 pub async fn search_data_url(app: AppHandle, data_url: String) -> Result<SearchResponse, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || search_data_url_sync(&app, data_url))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || search_data_url_sync(&app, data_url))
+            .await?
     }
     .await;
     crate::error::command_result("search_data_url", result)
@@ -1187,9 +1165,8 @@ fn search_data_url_sync(app: &AppHandle, data_url: String) -> Result<SearchRespo
 #[tauri::command]
 pub async fn search_clipboard(app: AppHandle) -> Result<Option<ClipboardSearchResult>, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || search_clipboard_sync(&app))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || search_clipboard_sync(&app))
+            .await?
     }
     .await;
     crate::error::command_result("search_clipboard", result)
@@ -1245,9 +1222,8 @@ fn search_clipboard_sync(app: &AppHandle) -> Result<Option<ClipboardSearchResult
 #[tauri::command]
 pub async fn search_url(app: AppHandle, url: String) -> Result<SearchResponse, crate::error::AppError> {
     let result: Result<_, String> = async {
-        tauri::async_runtime::spawn_blocking(move || search_url_sync(&app, url))
-            .await
-            .map_err(|e| e.to_string())?
+        crate::error::blocking(move || search_url_sync(&app, url))
+            .await?
     }
     .await;
     crate::error::command_result("search_url", result)
@@ -1372,7 +1348,7 @@ fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
 
 /// 读取系统剪贴板里的图片，编码为 PNG。无图片返回 None。
 fn read_clipboard_image_png(app: &AppHandle) -> Option<Vec<u8>> {
-    // 插件读取必须在工作线程中运行；search_clipboard 已通过 spawn_blocking 隔离。
+    // 插件读取必须在工作线程中运行；search_clipboard 已通过 error::blocking 隔离。
     let clipboard = app.clipboard().read_image().ok()?;
     let rgba = image::RgbaImage::from_raw(
         clipboard.width(), clipboard.height(), clipboard.rgba().to_vec()
