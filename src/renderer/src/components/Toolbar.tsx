@@ -4,6 +4,7 @@ import type { ImportProgressEvent } from '../lib/importProgress'
 import { reverseVideoSort, sortVideoQuery } from '../lib/videoSort'
 import { useConfirm } from './ConfirmDialog'
 import { PopoverItem, PopoverMenu, usePopoverDismiss } from './PopoverMenu'
+import { useAsyncAction } from '../hooks/useAsyncAction'
 
 interface ToolbarProps {
   busy: string | null
@@ -42,8 +43,8 @@ export function Toolbar(props: ToolbarProps) {
   } = props
   const [addOpen, setAddOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const [scanningDuplicates, setScanningDuplicates] = useState(false)
-  const [removingVideos, setRemovingVideos] = useState(false)
+  const duplicateScan = useAsyncAction()
+  const videoRemoval = useAsyncAction()
   const importing = Boolean(importProgress || busy?.includes('导入') || busy?.includes('扫描') || busy?.includes('监视目录'))
   const processing = Boolean(busy || importProgress)
   const indexing = Boolean(indexStatus?.running)
@@ -57,12 +58,11 @@ export function Toolbar(props: ToolbarProps) {
   usePopoverDismiss(addOpen || moreOpen, '[data-toolbar-menu]', closeMenus)
 
   const runDuplicateScan = () => {
-    if (scanningDuplicates) return
     setMoreOpen(false)
-    setScanningDuplicates(true)
-    void onFindDuplicates()
-      .then((pairs) => { if (pairs !== null) onDuplicatesResolved(pairs) })
-      .finally(() => setScanningDuplicates(false))
+    void duplicateScan.run(async () => {
+      const pairs = await onFindDuplicates()
+      if (pairs !== null) onDuplicatesResolved(pairs)
+    })
   }
 
   return (
@@ -105,7 +105,7 @@ export function Toolbar(props: ToolbarProps) {
             </button>
             {moreOpen && (
               <PopoverMenu className="absolute right-0 top-full z-40 mt-2 w-56">
-                <PopoverItem label={scanningDuplicates ? '查重中…' : '查找重复视频'} disabled={scanningDuplicates || processing} onClick={runDuplicateScan} />
+                <PopoverItem label={duplicateScan.running ? '查重中…' : '查找重复视频'} disabled={duplicateScan.running || processing} onClick={runDuplicateScan} />
                 <PopoverItem label="重新扫描所有文件夹" disabled={processing} onClick={() => { setMoreOpen(false); onRescan() }} />
                 <PopoverItem label="重建全部索引" disabled={processing || indexing} onClick={() => { setMoreOpen(false); onReindex() }} />
               </PopoverMenu>
@@ -159,16 +159,13 @@ export function Toolbar(props: ToolbarProps) {
               <div className="flex items-center gap-2 border-l border-line pl-2">
                 <span className="whitespace-nowrap text-[11.5px] font-medium text-accent">已选 {selectedVideoIds.size}</span>
                 <button className="btn py-1.5 text-[11.5px]" disabled={processing || indexing} onClick={() => onReindex([...selectedVideoIds])}>重建索引</button>
-                <button className="btn btn-danger py-1.5 text-[11.5px]" disabled={removingVideos} onClick={async () => {
+                <button className="btn btn-danger py-1.5 text-[11.5px]" disabled={videoRemoval.running} onClick={async () => {
                   const ids = [...selectedVideoIds]
                   if (!await confirm({ title: '移除所选视频', message: `从索引库移除选中的 ${ids.length} 个视频？\n不会删除磁盘文件。`, confirmLabel: `移除 ${ids.length} 个`, danger: true })) return
-                  setRemovingVideos(true)
-                  try {
+                  await videoRemoval.run(async () => {
                     const removedIds = await onRemoveVideos(ids)
                     if (removedIds.length === ids.length) clearSelection()
-                  } finally {
-                    setRemovingVideos(false)
-                  }
+                  })
                 }}>移除</button>
                 <button className="text-[11.5px] text-tertiary hover:text-primary" onClick={clearSelection}>取消</button>
               </div>

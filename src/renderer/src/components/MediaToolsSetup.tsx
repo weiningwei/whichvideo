@@ -2,6 +2,7 @@ import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useState } from 'react'
 import type { MediaToolsStatus } from '@shared/types'
 import { useModalFocus } from '../hooks/useModalFocus'
+import { useAsyncAction } from '../hooks/useAsyncAction'
 
 interface Props {
   status: MediaToolsStatus | null
@@ -27,7 +28,7 @@ function currentPlatform(): Platform {
 export function MediaToolsSetup({ status, onSelect, onRefresh, onOpenDownload }: Props) {
   const [dismissed, setDismissed] = useState(false)
   const [platform, setPlatform] = useState<Platform>(currentPlatform)
-  const [refreshing, setRefreshing] = useState(false)
+  const refresh = useAsyncAction()
   const [openError, setOpenError] = useState('')
   const open = Boolean(status && !status.ready && !dismissed)
   const dismiss = useCallback(() => setDismissed(true), [])
@@ -63,7 +64,7 @@ export function MediaToolsSetup({ status, onSelect, onRefresh, onOpenDownload }:
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn" onClick={() => setDismissed(true)}>稍后设置</button>
-          <button className="btn" disabled={refreshing} onClick={() => { setRefreshing(true); void onRefresh().finally(() => setRefreshing(false)) }}>{refreshing ? '检测中…' : '重新检测'}</button>
+          <button className="btn" disabled={refresh.running} onClick={() => void refresh.run(onRefresh)}>{refresh.running ? '检测中…' : '重新检测'}</button>
           <button className="btn border-accent bg-accent text-surface-0 hover:bg-accent-strong" onClick={onSelect}>选择 bin 目录</button>
         </div>
       </div>

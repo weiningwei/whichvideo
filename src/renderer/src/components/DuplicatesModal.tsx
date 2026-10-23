@@ -4,6 +4,7 @@ import { buildDuplicateGroups, keptInGroup } from '../lib/duplicates'
 import { formatBytes, formatDuration, formatPercent } from '../lib/format'
 import { useModalFocus } from '../hooks/useModalFocus'
 import { useConfirm } from './ConfirmDialog'
+import { useKeyedAsyncAction } from '../hooks/useAsyncAction'
 
 interface DuplicatesModalProps {
   duplicates: DuplicatePair[]
@@ -26,7 +27,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
   // 每组用户指定的保留项（videoId）；未指定时用组默认（体积最大）。
   // 移除后对应 id 自动清除。
   const [keptIds, setKeptIds] = useState<Set<number>>(new Set())
-  const [removingGroupId, setRemovingGroupId] = useState<string | null>(null)
+  const removal = useKeyedAsyncAction<string>()
 
   return (
     <div
@@ -122,7 +123,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       className="btn btn-danger px-2 py-1 text-[11px] hover:bg-bad/10"
-                      disabled={removingGroupId !== null}
+                      disabled={removal.running}
                       onClick={async () => {
                         const ids = toRemove.map((m) => m.id)
                         if (
@@ -130,8 +131,7 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                         ) {
                           return
                         }
-                        setRemovingGroupId(group.id)
-                        try {
+                        await removal.run(group.id, async () => {
                           const removedIds = await onRemoveVideos(ids)
                           if (removedIds.length > 0) {
                             onPrune(removedIds)
@@ -141,12 +141,10 @@ export function DuplicatesModal({ duplicates, onClose, onRemoveVideos, onPrune }
                               return next
                             })
                           }
-                        } finally {
-                          setRemovingGroupId(null)
-                        }
+                        })
                       }}
                     >
-                      {removingGroupId === group.id ? '正在移除…' : `移除其余 ${toRemove.length} 个（保留 ${keep.name}）`}
+                      {removal.runningKey === group.id ? '正在移除…' : `移除其余 ${toRemove.length} 个（保留 ${keep.name}）`}
                     </button>
                   </div>
                 )}
