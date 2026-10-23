@@ -10,6 +10,8 @@
 
 直接搜索评测用固定种子生成八类画面：色块、条纹、圆环、棋盘、风景、城市轮廓、波纹和斑点。常规模式有 96 张图库基础图、704 张查询图；扩展模式有 192 张图库基础图、2336 张查询图。每张图都生成 JPEG、缩略、裁剪、黑边、遮挡及叠加变换查询；扩展模式再加重裁剪、灰度、模糊和镜像。每类还生成四张未入库的相似画面，用来统计误报。所有样本与标准答案保存在 `tmp/search-benchmark/run-*/dataset/manifest.json`；同目录 `report.json` 给出逐条排名、Top-1/Top-5、误报、耗时和按画面类别、变换类型分组的指标。原图必须全部排首位；变换图和负例只记录结果，积累跨平台基线后再定回归门槛。
 
+GitHub Actions 中的 `Extended search benchmark` 可手动触发，在 Windows、macOS Apple Silicon、macOS Intel 和 Linux 分别运行 `pnpm test:search:extended`。每个平台完成后都会上传本次 `manifest.json` 和 `report.json`；如果在报告生成前失败，则在作业日志中查看错误。该工作流只运行直接搜索评测，不需要桌面图形会话。
+
 这项评测针对单帧指纹与内存检索，不覆盖视频采样、SQLite、重排及时间精修。合成画面能稳定比较算法版本，仍不能代表真实视频内容；真实截图、字幕和编码差异需要另建获授权的真实样本集。
 
 失败时保留 `tmp/e2e/run-*` 中的桌面样本、`data/logs` 和截图，以及 `tmp/search-benchmark/run-*` 中的评测报告；Windows、macOS、Linux CI 会上传失败证据。测试只使用临时数据目录，不会读取或修改用户现有的视频库。测试不会访问远程图片，版本检查的联网结果不参与判定。
