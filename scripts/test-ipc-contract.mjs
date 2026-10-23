@@ -46,9 +46,10 @@ check('重新索引要求 count 对象，数字与缺失字段会报错', () => 
   rejects(() => decodeResponse('videos_reindex', {}))
 })
 check('导入结果字段缺失时立即报错', () => {
-  const result = { added: 1, duplicates: 0, skipped: 0, failed: 0, scanned: 1, folders: 0 }
+  const result = { added: 1, duplicates: 0, skipped: 0, failed: 0, scanned: 1, folders: 0, failures: [] }
   if (decodeResponse('videos_import', result).added !== 1) throw new Error('正确值被拒绝')
   rejects(() => decodeResponse('videos_import', { ...result, failed: undefined }))
+  rejects(() => decodeResponse('videos_import', { ...result, failures: [{ path: 'a.mp4', reason: 3, folderId: null }] }))
 })
 check('视频列表和事件共用完整视频记录校验', () => {
   decodeResponse('videos_list', { total: 1, items: [video] })

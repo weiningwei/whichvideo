@@ -1078,12 +1078,12 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
             Some(c) => match db::find_by_path(c, &path) {
                 Ok(video) => video,
                 Err(error) => {
-                    record_import_failure(result, &path, "读取已有记录", &error.to_string());
+                    record_import_failure(result, &path, "读取已有记录", &error.to_string(), folder_id);
                     return;
                 }
             },
             None => {
-                record_import_failure(result, &path, "读取数据库", "数据库未初始化");
+                record_import_failure(result, &path, "读取数据库", "数据库未初始化", folder_id);
                 return;
             }
         }
@@ -1102,7 +1102,7 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
         }) {
             Ok(p) => (p.duration, p.width, p.height, p.video_codec),
             Err(error) => {
-                record_import_failure(result, &path, "探测媒体", &error);
+                record_import_failure(result, &path, "探测媒体", &error, folder_id);
                 return;
             }
         },
@@ -1131,12 +1131,12 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
             Some(c) => match db::upsert_video(c, &input) {
                 Ok(r) => r,
                 Err(error) => {
-                    record_import_failure(result, &path, "保存资料库记录", &error.to_string());
+                    record_import_failure(result, &path, "保存资料库记录", &error.to_string(), folder_id);
                     return;
                 }
             },
             None => {
-                record_import_failure(result, &path, "保存资料库记录", "数据库未初始化");
+                record_import_failure(result, &path, "保存资料库记录", "数据库未初始化", folder_id);
                 return;
             }
         }
@@ -1152,18 +1152,14 @@ fn register_and_enqueue(app: &AppHandle, path: String, folder_id: Option<i64>, r
     enqueue(app.clone(), video.id, changed && !created);
 }
 
-/// 导入失败需和用户主动跳过的文件分开统计；详细路径只写本地日志，
-/// 避免在批量导入提示中泄露文件名，同时保留诊断线索。
-fn record_import_failure(result: &mut ImportResult, path: &str, step: &str, error: &str) {
+/// 导入失败与主动跳过分开统计；详细原因保留在本次报告与本地日志。
+fn record_import_failure(result: &mut ImportResult, path: &str, step: &str, error: &str, folder_id: Option<i64>) {
     result.failed += 1;
-    if result.first_error.is_none() {
-        result.first_error = Some(if step == "探测媒体" {
-            if error.starts_with("ffprobe 失败") { "FFmpeg 无法读取该文件或其片段".to_string() }
-            else { error.to_string() }
-        } else {
-            format!("{step}失败，请查看日志")
-        });
-    }
+    let reason = if step == "探测媒体" && error.starts_with("ffprobe 失败") {
+        "FFmpeg 无法读取该文件或其片段".to_string()
+    } else { format!("{step}失败：{error}") };
+    if result.first_error.is_none() { result.first_error = Some(reason.clone()); }
+    result.failures.push(crate::events::ImportFailure { path: path.to_string(), reason, folder_id });
     log(&format!("导入失败（{step}）：{path}：{error}"));
 }
 
@@ -1574,9 +1570,10 @@ mod tests {
     fn import_failures_are_distinct_from_skipped_files() {
         let mut result = ImportResult::default();
         result.skipped += 1;
-        record_import_failure(&mut result, "private-video.mp4", "探测媒体", "ffprobe 失败");
+        record_import_failure(&mut result, "private-video.mp4", "探测媒体", "ffprobe 失败", None);
         assert_eq!(result.skipped, 1);
         assert_eq!(result.failed, 1);
+        assert_eq!(result.failures[0].path, "private-video.mp4");
     }
 
     #[test]

@@ -105,6 +105,8 @@ export default function App() {
               folders={state.folders}
               videos={state.videos}
               total={state.total}
+              lastImportResult={state.lastImportResult}
+              onRetryImportFailures={() => void actions.retryImportFailures()}
               query={videoQuery}
               onSetQuery={actions.setVideoQuery}
               onAddFolder={() => void actions.watchFolder()}

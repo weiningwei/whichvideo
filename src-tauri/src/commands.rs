@@ -193,6 +193,11 @@ fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events
     let mut total = events::ImportResult::default();
     for folder in &targets {
         if !std::path::Path::new(&folder.path).exists() {
+            total.failed += 1;
+            total.failures.push(events::ImportFailure {
+                path: folder.path.clone(), reason: "目录不存在".to_string(), folder_id: Some(folder.id),
+            });
+            if total.first_error.is_none() { total.first_error = Some("目录不存在".to_string()); }
             let state = app.state::<AppState>();
             let g = state.db.lock().map_err(|e| e.to_string())?;
             if let Some(c) = g.as_ref() {
@@ -211,6 +216,8 @@ fn rescan_folders_sync(app: &AppHandle, folder_id: Option<i64>) -> Result<events
         total.failed += result.failed;
         total.scanned += result.scanned;
         total.folders += result.folders;
+        if total.first_error.is_none() { total.first_error = result.first_error.clone(); }
+        total.failures.extend(result.failures);
     }
     watcher::sync_all(&app)?;
     Ok(total)
@@ -681,9 +688,9 @@ fn import_paths_sync(app: &AppHandle, paths: Vec<String>, watch_folders: bool) -
             files.push(path);
         } else if entry.is_dir() {
             let imported = if watch_folders {
-                indexer::import_folder(app.clone(), path, true, true).map(|(result, _)| result)
+                indexer::import_folder(app.clone(), path.clone(), true, true).map(|(result, _)| result)
             } else {
-                indexer::import_folder_once(app.clone(), path, true)
+                indexer::import_folder_once(app.clone(), path.clone(), true)
             };
             match imported {
                 Ok(imported) => {
@@ -694,16 +701,19 @@ fn import_paths_sync(app: &AppHandle, paths: Vec<String>, watch_folders: bool) -
                     result.scanned += imported.scanned;
                     result.folders += imported.folders.max(1);
                     if result.first_error.is_none() { result.first_error = imported.first_error; }
+                    result.failures.extend(imported.failures);
                     watching_added |= watch_folders;
                 }
                 Err(error) => {
                     result.failed += 1;
-                    if result.first_error.is_none() { result.first_error = Some(error); }
+                    if result.first_error.is_none() { result.first_error = Some(error.clone()); }
+                    result.failures.push(events::ImportFailure { path, reason: error, folder_id: None });
                 }
             }
         } else {
             result.failed += 1;
             if result.first_error.is_none() { result.first_error = Some("拖入的文件或文件夹不存在或无法读取".to_string()); }
+            result.failures.push(events::ImportFailure { path, reason: "文件或文件夹不存在或无法读取".to_string(), folder_id: None });
         }
     }
     if !files.is_empty() {
@@ -714,6 +724,7 @@ fn import_paths_sync(app: &AppHandle, paths: Vec<String>, watch_folders: bool) -
         result.failed += imported.failed;
         result.scanned += imported.scanned;
         if result.first_error.is_none() { result.first_error = imported.first_error; }
+        result.failures.extend(imported.failures);
     }
     if watching_added { watcher::sync_all(app)?; }
     Ok(result)

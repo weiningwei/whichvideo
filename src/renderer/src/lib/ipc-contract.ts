@@ -62,7 +62,8 @@ const settings = shape({
 })
 const importResult = shape({
   added: number, duplicates: number, skipped: number, failed: number,
-  scanned: number, folders: number, firstError: optional(text)
+  scanned: number, folders: number, firstError: optional(text),
+  failures: array(shape({ path: text, reason: text, folderId: nullable(number) }))
 })
 const mediaTools = shape({
   ready: boolean, source: oneOf('environment', 'configured', 'path', 'system', 'development', 'missing'),

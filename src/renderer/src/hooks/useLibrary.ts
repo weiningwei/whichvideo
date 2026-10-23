@@ -10,6 +10,7 @@ import {
   type AppSettings,
   type DataDirInfo,
   type DuplicatePair,
+  type ImportResult,
   type SamplingMode,
   type IndexerStatus,
   type LibraryStats,
@@ -61,6 +62,7 @@ export interface LibraryState {
   dataDir: DataDirInfo | null
   mediaTools: MediaToolsStatus | null
   importProgress: ImportProgressEvent | null
+  lastImportResult: ImportResult | null
   videos: VideoRecord[]
   total: number
   notices: Notice[]
@@ -234,6 +236,7 @@ export function useLibrary() {
     dataDir: core.dataDir,
     mediaTools: core.mediaTools,
     importProgress: core.importProgress,
+    lastImportResult: imports.lastImportResult,
     videos: videoList.videos,
     total: videoList.total,
     notices: notices.notices,

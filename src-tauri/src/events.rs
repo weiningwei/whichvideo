@@ -29,6 +29,15 @@ pub struct ImportResult {
     pub folders: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_error: Option<String>,
+    pub failures: Vec<ImportFailure>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportFailure {
+    pub path: String,
+    pub reason: String,
+    pub folder_id: Option<i64>,
 }
 
 /// 重建索引返回（镜像 videos.reindex 的 { count }）。
@@ -75,7 +84,7 @@ pub enum LibraryEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::LibraryEvent;
+    use super::{ImportFailure, ImportResult, LibraryEvent};
 
     /// 事件字段名必须与 shared/types.ts 的 LibraryEvent 一致。枚举上的
     /// rename_all 只改变体名，结构体变体的字段要靠 rename_all_fields 才会驼峰；
@@ -106,5 +115,19 @@ mod tests {
         assert_eq!(progress["processed"], 5);
         assert_eq!(progress["total"], 10);
         assert_eq!(progress["finished"], false);
+    }
+
+    #[test]
+    fn import_report_serializes_retry_context() {
+        let result = ImportResult {
+            failed: 1,
+            failures: vec![ImportFailure {
+                path: "video.mp4".into(), reason: "探测失败".into(), folder_id: Some(7),
+            }],
+            ..Default::default()
+        };
+        let json = serde_json::to_value(result).unwrap();
+        assert_eq!(json["failures"][0]["folderId"], 7);
+        assert_eq!(json["failures"][0]["reason"], "探测失败");
     }
 }

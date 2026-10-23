@@ -261,6 +261,13 @@ export interface ImportResult {
   folders: number
   /** 单个文件导入失败时向用户显示的简短原因。 */
   firstError?: string
+  failures: ImportFailure[]
+}
+
+export interface ImportFailure {
+  path: string
+  reason: string
+  folderId: number | null
 }
 
 export interface VideoProbeInfo {

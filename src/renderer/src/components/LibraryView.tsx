@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import type { DuplicatePair, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
+import type { DuplicatePair, ImportResult, SamplingMode, VideoQuery, VideoRecord, WatchedFolder } from '@shared/types'
 import { blockModifierTextSelection } from '../lib/selection'
 import { useVideoCursor } from '../hooks/useVideoCursor'
 import { useLibraryShortcuts } from '../hooks/useLibraryShortcuts'
@@ -20,6 +20,8 @@ interface Props {
   /** 当前可见视频（已按地址栏目录过滤） */
   videos: VideoRecord[]
   total: number
+  lastImportResult: ImportResult | null
+  onRetryImportFailures: () => void
   query: VideoQuery
   onSetQuery: (query: VideoQuery) => void
   onAddFolder: () => void
@@ -64,6 +66,7 @@ export function LibraryView(props: Props) {
   const [folderDrop, setFolderDrop] = useState(false)
   const [libraryDrop, setLibraryDrop] = useState(false)
   const [drawer, setDrawer] = useState<'folders' | 'settings' | null>(null)
+  const [reportExpanded, setReportExpanded] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [closedFilteredPaths, setClosedFilteredPaths] = useState<Set<string>>(new Set())
   const [selectedFolderPath, setSelectedFolderPath] = useState<string | null>(null)
@@ -266,6 +269,26 @@ export function LibraryView(props: Props) {
           clearSelection={clearSelection}
           filterInputRef={filterInputRef}
         />
+
+        {props.lastImportResult && (
+          <div className="border-b border-line bg-surface-2 px-4 py-2 text-[12px] text-secondary">
+            <div className="flex flex-wrap items-center gap-2">
+              <span>上次导入：新增 {props.lastImportResult.added}，已存在 {props.lastImportResult.duplicates}，跳过 {props.lastImportResult.skipped}，失败 {props.lastImportResult.failed}</span>
+              {props.lastImportResult.failed > 0 && <button className="btn" onClick={() => setReportExpanded((open) => !open)}>{reportExpanded ? '收起详情' : '查看失败详情'}</button>}
+              {props.lastImportResult.failures.length > 0 && <button className="btn" onClick={props.onRetryImportFailures}>重试失败项</button>}
+            </div>
+            {reportExpanded && props.lastImportResult.failures.length > 0 && (
+              <ul className="mt-2 max-h-44 space-y-1 overflow-auto" aria-label="导入失败详情">
+                {props.lastImportResult.failures.map((failure, index) => (
+                  <li key={`${failure.path}:${index}`} className="rounded border border-line bg-surface-1 px-2 py-1">
+                    <div className="break-all text-primary">{failure.path}</div>
+                    <div className="text-warn">{failure.reason}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <div
           ref={scrollRef}
