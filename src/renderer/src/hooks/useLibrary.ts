@@ -162,10 +162,12 @@ export function useLibrary() {
         return withBusy('正在查找相似视频…', () => window.whichvideo.videos.findDuplicates(minScore))
       },
       async openVideo(videoId: number, atSeconds?: number): Promise<void> {
-        await window.whichvideo.videos.openFile(videoId, atSeconds)
+        try { await window.whichvideo.videos.openFile(videoId, atSeconds) }
+        catch (error) { notices.pushNotice('error', `无法打开视频：${String(error)}`) }
       },
       async revealVideo(videoId: number): Promise<void> {
-        await window.whichvideo.videos.revealFile(videoId)
+        try { await window.whichvideo.videos.revealFile(videoId) }
+        catch (error) { notices.pushNotice('error', `无法定位文件：${String(error)}`) }
       },
       async updateSettings(patch: Partial<AppSettings>): Promise<void> {
         const prev = core.settings

@@ -164,7 +164,7 @@ ${hooks.map((name) => `export const ${name}=mod.${name}`).join('\n')}`)
   check('命中态给出简短结论', hitHtml.includes('找到了') && hitHtml.includes(video.name))
   check('结果保留相似度、时间与播放定位', hitHtml.includes('96%') && hitHtml.includes('2:00') && hitHtml.includes('处播放') && hitHtml.includes('定位文件'))
   check('相似度不表示确定概率', hitHtml.includes('画面相似度 · 很相似') && !hitHtml.includes('几乎确定'))
-  check('本地结果不暗示视频来自下载', hitHtml.includes('本地视频库中') && !hitHtml.includes('已下载'))
+  check('结果状态说明索引进度且不误报文件位置', hitHtml.includes('已索引') && !hitHtml.includes('视频不在本地'))
   check('搜图结果直接显示视频目录而不重复文件名', hitHtml.includes(`title="${video.dir}">${video.dir}</div>`))
   const miss = { ...hit, matchCount: 0, found: false, matches: [] }
   check('未命中态文案简洁', render(jsx(SearchView, { ...searchBase, search: miss })).includes('没有找到相似画面'))

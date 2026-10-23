@@ -367,7 +367,9 @@ function ResultCard({
     return bits.join(' · ')
   }, [video])
 
-  const available = video.status === 'ready' && video.frameCount > 0
+  const indexed = video.status === 'ready' && video.frameCount > 0
+  const needsReindex = video.status === 'failed' || (video.status === 'ready' && video.frameCount === 0)
+  const statusLabel = indexed ? '已索引' : video.status === 'failed' ? '索引失败' : video.status === 'indexing' ? '索引中' : video.status === 'pending' ? '待索引' : '没有索引帧'
   return (
     <div className="card group flex gap-3 overflow-hidden p-3 transition hover:border-accent/40">
       <div className="relative h-[86px] w-[150px] shrink-0 overflow-hidden rounded-lg border border-line bg-surface-inset">
@@ -422,32 +424,26 @@ function ResultCard({
         <div className="mt-2 flex items-center gap-2">
           <span
             className={`rounded-md border px-1.5 py-0.5 text-[10.5px] ${
-              available
+              indexed
                 ? 'border-ok/40 bg-ok/10 text-ok'
                 : video.status === 'failed'
                   ? 'border-bad/40 bg-bad/10 text-bad'
                   : 'border-warn/40 bg-warn/10 text-warn'
             }`}
           >
-            {available
-              ? '本地视频库中'
-              : video.status === 'failed'
-                ? '索引失败'
-                : video.status === 'indexing'
-                  ? '索引中'
-                  : '待索引'}
+            {statusLabel}
           </span>
           <button
             className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70"
             onClick={() => onOpen(video.id, match.timeSeconds)}
-            title={available ? '优先用 mpv / PotPlayer / VLC 从命中位置起播；未安装则用系统默认播放器' : '视频不在本地'}
+            title="打开原视频；支持定位的播放器会从命中位置起播。若源文件已移动，会显示错误。"
           >
             {formatDuration(match.timeSeconds)} 处播放
           </button>
           <button className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70" onClick={() => onReveal(video.id)}>
             定位文件
           </button>
-          {!available && (
+          {needsReindex && (
             <button
               className="btn px-2 py-1 text-[11px] hover:bg-ink-700/70"
               onClick={() => onReindex(video.id)}
@@ -455,12 +451,8 @@ function ResultCard({
               重新索引
             </button>
           )}
-          {video.error && (
-            <span className="truncate text-[10.5px] text-bad" title={video.error}>
-              {video.error}
-            </span>
-          )}
         </div>
+        {video.error && <div className="mt-1 break-words text-[10.5px] text-bad">索引失败原因：{video.error}</div>}
       </div>
     </div>
   )
