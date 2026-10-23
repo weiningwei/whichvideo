@@ -152,11 +152,10 @@ pub fn score_raw_frame(qv: &QueryVector, ild: &hash::ImageDataLike) -> f64 {
 
 /// 全量常驻内存的帧指纹索引。
 ///
-/// buffer 按 256 字节/帧紧凑排列；words 是其小端 u32 视图，热循环里免算偏移。
+/// buffer 按 256 字节/帧紧凑排列；整数从字节切片直接按小端读取，无重复词表。
 pub struct FrameSearchIndex {
     buffer: Vec<u8>,
     video_ids: Vec<i64>,
-    words: Vec<u32>,
     built_at: i64,
 }
 
@@ -172,13 +171,18 @@ struct HitAgg {
     second_best: Option<f64>,
 }
 
+/// 安全地读取未必对齐的小端整数；不依赖主机字节序，也不分配内存。
+#[inline]
+fn read_u32(buffer: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(buffer[offset..offset + 4].try_into().expect("four-byte field"))
+}
+
 impl FrameSearchIndex {
     /// 空索引。
     pub fn new() -> Self {
         FrameSearchIndex {
             buffer: Vec::new(),
             video_ids: Vec::new(),
-            words: Vec::new(),
             built_at: 0,
         }
     }
@@ -186,17 +190,11 @@ impl FrameSearchIndex {
     /// 全量重建（启动或增量更新失败时调用）。
 
     /// 用数据库快照构建索引。调用方应先在锁内读出快照再调用，
-    /// 这样构建过程（复制 + 分词）不必占着全局数据库连接。
+    /// 直接接管快照缓冲区，不复制帧数据。
     pub fn from_matrix(matrix: db::FrameMatrix) -> Self {
-        let words = matrix
-            .buffer
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
         FrameSearchIndex {
             buffer: matrix.buffer,
             video_ids: matrix.video_ids,
-            words,
             built_at: db::now_ms(),
         }
     }
@@ -219,10 +217,10 @@ impl FrameSearchIndex {
         }
         self.buffer = buffer;
         self.video_ids = video_ids;
-        self.rebuild_words();
+        self.built_at = db::now_ms();
     }
 
-    /// 批量移除（删除整个文件夹时用）：只遍历一遍、只重建一次词表，
+    /// 批量移除（删除整个文件夹时用）：只遍历一遍、压实一次缓冲区，
     /// 避免逐个 remove_video 造成 O(视频数 × 总帧数)。
     pub fn remove_videos(&mut self, ids: &[i64]) {
         if ids.is_empty() {
@@ -245,7 +243,7 @@ impl FrameSearchIndex {
         }
         self.buffer = buffer;
         self.video_ids = video_ids;
-        self.rebuild_words();
+        self.built_at = db::now_ms();
     }
 
     /// 索引完成时只更新对应视频的帧，避免批量导入中反复从 SQLite 重建全库索引。
@@ -271,27 +269,12 @@ impl FrameSearchIndex {
         video_ids.extend(frames.video_ids);
         self.buffer = buffer;
         self.video_ids = video_ids;
-        self.rebuild_words();
-    }
-
-    fn append_frames(&mut self, frames: db::FrameMatrix) {
-        self.words.extend(
-            frames
-                .buffer
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
-        );
-        self.buffer.extend(frames.buffer);
-        self.video_ids.extend(frames.video_ids);
         self.built_at = db::now_ms();
     }
 
-    fn rebuild_words(&mut self) {
-        self.words = self
-            .buffer
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
+    fn append_frames(&mut self, frames: db::FrameMatrix) {
+        self.buffer.extend(frames.buffer);
+        self.video_ids.extend(frames.video_ids);
         self.built_at = db::now_ms();
     }
 
@@ -333,7 +316,7 @@ impl FrameSearchIndex {
     /// 某视频的均匀采样帧向量（最多 maxCount 个，覆盖该视频在索引中的整个区间）。
     #[allow(dead_code)]
     pub fn video_frame_vectors(&self, video_id: i64, max_count: usize) -> Vec<QueryVector> {
-        if self.words.is_empty() || max_count < 1 {
+        if self.buffer.is_empty() || max_count < 1 {
             return Vec::new();
         }
         let indices: Vec<usize> = self.video_ids.iter().enumerate()
@@ -352,9 +335,8 @@ impl FrameSearchIndex {
             let color = self.buffer[off + framepack::COLOR_OFFSET
                 ..off + framepack::COLOR_OFFSET + framepack::COLOR_BYTES]
                 .to_vec();
-            let w_base = (mid * framepack::FRAME_STRIDE) >> 2;
-            let d_lo = self.words[w_base];
-            let d_hi = self.words[w_base + 1];
+            let d_lo = read_u32(&self.buffer, off);
+            let d_hi = read_u32(&self.buffer, off + 4);
             let dhash = ((d_hi as u64) << 32) | (d_lo as u64);
             let struct_hash = self.buffer[off + framepack::STRUCT_OFFSET
                 ..off + framepack::STRUCT_OFFSET + framepack::STRUCT_BYTES]
@@ -377,7 +359,7 @@ impl FrameSearchIndex {
     /// 视频级结果：score = 最佳帧(0.75) + 次佳帧(0.25)。
     pub fn search(&self, qv: &QueryVector, options: &SearchOptions) -> (Vec<IndexedHit>, usize) {
         let count = self.video_ids.len();
-        if self.buffer.is_empty() || self.words.is_empty() || count == 0 {
+        if self.buffer.is_empty() || count == 0 {
             return (Vec::new(), 0);
         }
         let weight = hash::COLOR_WEIGHT_MIN
@@ -395,18 +377,18 @@ impl FrameSearchIndex {
         let mut best: std::collections::HashMap<i64, HitAgg> = std::collections::HashMap::new();
 
         for i in 0..count {
-            let w_base = (i * framepack::FRAME_STRIDE) >> 2;
-            let d_lo = self.words[w_base];
-            let d_hi = self.words[w_base + 1];
+            let off = i * framepack::FRAME_STRIDE;
+            let d_lo = read_u32(&self.buffer, off);
+            let d_hi = read_u32(&self.buffer, off + 4);
             let dist_d = (d_lo ^ q_dhash_lo).count_ones() as usize
                 + (d_hi ^ q_dhash_hi).count_ones() as usize;
             if dist_d > DHASH_PRUNE_BITS {
                 continue;
             }
-            let s_base = w_base + (framepack::STRUCT_OFFSET >> 2);
+            let s_base = off + framepack::STRUCT_OFFSET;
             let mut struct_distance = 0usize;
             for (j, &query_word) in q_struct_u32.iter().enumerate() {
-                struct_distance += (self.words[s_base + j] ^ query_word).count_ones() as usize;
+                struct_distance += (read_u32(&self.buffer, s_base + j * 4) ^ query_word).count_ones() as usize;
             }
             if struct_distance > STRUCT_PRUNE_BITS {
                 continue;
@@ -416,7 +398,6 @@ impl FrameSearchIndex {
                 continue;
             }
 
-            let off = i * framepack::FRAME_STRIDE;
             let hist = framepack::quantized_histogram_similarity(
                 &qv.color,
                 &self.buffer,
@@ -430,8 +411,8 @@ impl FrameSearchIndex {
             let color_score = hist * (1.0 - hash::SPATIAL_WEIGHT) + spatial * hash::SPATIAL_WEIGHT;
             let score = hash_score * struct_weight + color_score * weight;
 
-            let frame_index = self.words[w_base + (framepack::META_OFFSET >> 2)];
-            let time_ms = self.words[w_base + (framepack::META_OFFSET >> 2) + 1];
+            let frame_index = read_u32(&self.buffer, off + framepack::META_OFFSET);
+            let time_ms = read_u32(&self.buffer, off + framepack::META_OFFSET + 4);
             let time_seconds = time_ms as f64 / 1000.0;
             let video_id = self.video_ids[i];
 
@@ -531,6 +512,34 @@ mod tests {
     }
 
     #[test]
+    fn packed_index_preserves_nonzero_hashes_and_metadata_without_copying() {
+        let mut buffer = Vec::new();
+        let mut video_ids = Vec::new();
+        let structure: Vec<u8> = (0..framepack::STRUCT_BYTES).map(|i| (i * 17) as u8).collect();
+        let color = [4; framepack::COLOR_BYTES];
+        let spatial = [123; framepack::SPATIAL_BYTES];
+        append_frame(&mut buffer, &mut video_ids, 17, 0x01020304, 0x05060708,
+            &structure, &color, &spatial);
+        let dhash = 0xFEDCBA9876543210_u64;
+        buffer[..8].copy_from_slice(&dhash.to_le_bytes());
+        let original_ptr = buffer.as_ptr();
+        let index = FrameSearchIndex::from_matrix(db::FrameMatrix { buffer, video_ids });
+        assert_eq!(index.buffer.as_ptr(), original_ptr);
+        let query = index.video_query_vector(17).unwrap();
+        assert_eq!(query.dhash, dhash);
+        assert_eq!(query.struct_hash, structure);
+        assert_eq!(query.color, color);
+        assert_eq!(query.spatial, spatial);
+        let (hits, _) = index.search(&query, &SearchOptions { min_hash_score: 0.99, max_results: 10 });
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].frame_index, 0x01020304);
+        assert_eq!(hits[0].time_seconds, 0x05060708_u32 as f64 / 1000.0);
+        assert_eq!(hits[0].score, 1.0);
+        let different = QueryVector { dhash: !dhash, ..query };
+        assert!(index.search(&different, &SearchOptions { min_hash_score: 0.99, max_results: 10 }).0.is_empty());
+    }
+
+    #[test]
     fn representative_vectors_only_sample_the_requested_video() {
         let mut buffer = Vec::new();
         let mut video_ids = Vec::new();
@@ -540,8 +549,6 @@ mod tests {
                 &[0; framepack::COLOR_BYTES], &[0; framepack::SPATIAL_BYTES]);
         }
         let index = FrameSearchIndex {
-            words: buffer.chunks_exact(4)
-                .map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect(),
             buffer, video_ids, built_at: 0,
         };
         let markers = |limit| index.video_frame_vectors(1, limit).iter()
@@ -564,10 +571,6 @@ mod tests {
         append_frame(&mut buffer, &mut video_ids, 2, 0, 2000, &struct_hash, &color, &spatial);
         append_frame(&mut buffer, &mut video_ids, 1, 1, 3000, &struct_hash, &color, &spatial);
         let mut index = FrameSearchIndex {
-            words: buffer
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect(),
             buffer,
             video_ids,
             built_at: 0,
@@ -576,14 +579,13 @@ mod tests {
         index.remove_video(1);
         assert_eq!(index.video_ids, vec![2]);
         assert_eq!(index.buffer.len(), framepack::FRAME_STRIDE);
-        assert_eq!(index.words.len(), framepack::FRAME_STRIDE / 4);
 
         let before = index.buffer.clone();
         index.remove_video(99);
         assert_eq!(index.buffer, before);
     }
 
-    /// 删除整个文件夹时一次摘掉一批视频：剩余帧顺序、词表长度都要同步。
+    /// 删除整个文件夹时一次摘掉一批视频：剩余帧顺序与缓冲区长度都要同步。
     #[test]
     fn removing_many_videos_keeps_the_remaining_frames_in_order() {
         let struct_hash = vec![0_u8; framepack::STRUCT_BYTES];
@@ -596,10 +598,6 @@ mod tests {
         append_frame(&mut buffer, &mut video_ids, 3, 0, 3000, &struct_hash, &color, &spatial);
         append_frame(&mut buffer, &mut video_ids, 2, 1, 4000, &struct_hash, &color, &spatial);
         let mut index = FrameSearchIndex {
-            words: buffer
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect(),
             buffer,
             video_ids,
             built_at: 0,
@@ -608,7 +606,6 @@ mod tests {
         index.remove_videos(&[1, 2]);
         assert_eq!(index.video_ids, vec![3]);
         assert_eq!(index.buffer.len(), framepack::FRAME_STRIDE);
-        assert_eq!(index.words.len(), framepack::FRAME_STRIDE / 4);
 
         let before = index.buffer.clone();
         index.remove_videos(&[99]);
@@ -625,10 +622,6 @@ mod tests {
         append_frame(&mut buffer, &mut video_ids, 1, 0, 1000, &struct_hash, &color, &spatial);
         append_frame(&mut buffer, &mut video_ids, 2, 0, 2000, &struct_hash, &color, &spatial);
         let mut index = FrameSearchIndex {
-            words: buffer
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect(),
             buffer,
             video_ids,
             built_at: 0,
@@ -653,7 +646,6 @@ mod tests {
 
         assert_eq!(index.video_ids, vec![2, 1]);
         assert_eq!(index.buffer.len(), 2 * framepack::FRAME_STRIDE);
-        assert_eq!(index.words.len(), index.buffer.len() / 4);
         let replacement_offset = framepack::FRAME_STRIDE + framepack::META_OFFSET;
         assert_eq!(
             u32::from_le_bytes(index.buffer[replacement_offset..replacement_offset + 4].try_into().unwrap()),
@@ -715,14 +707,9 @@ mod tests {
             &[0; framepack::COLOR_BYTES],
             &[255; framepack::SPATIAL_BYTES],
         );
-        let words = buffer
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
         let index = FrameSearchIndex {
             buffer,
             video_ids,
-            words,
             built_at: 0,
         };
 
@@ -757,11 +744,7 @@ mod tests {
         let mut buffer = Vec::new();
         let mut video_ids = Vec::new();
         append_frame(&mut buffer, &mut video_ids, 10, 0, 1000, &struct_hash, &color, &spatial);
-        let words = buffer
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
-        let index = FrameSearchIndex { buffer, video_ids, words, built_at: 0 };
+        let index = FrameSearchIndex { buffer, video_ids, built_at: 0 };
         let (hits, _) = index.search(&query, &SearchOptions { min_hash_score: 0.6, max_results: 10 });
         assert_eq!(hits.len(), 1);
         assert!((hits[0].score - 1.0).abs() < f64::EPSILON);
