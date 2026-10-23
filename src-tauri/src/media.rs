@@ -1231,60 +1231,47 @@ fn extract_frames_full_scan(
         args.splice(4..4, ["-nostats", "-stats_period", "0.5", "-progress", "pipe:2"].map(str::to_string));
     }
     let out = run_ffmpeg_cancellable(&args, progress, cancelled)?;
-    if !out.success && out.stdout.is_empty() {
+    if !out.success {
         return Err(format!("ffmpeg 抽帧失败：{}", out.stderr.trim()));
     }
-
-    let (real_times, parsed_width, parsed_height) = parse_showinfo(&out.stderr);
-
-    let (mut output_width, mut output_height) = (parsed_width, parsed_height);
-    if output_width == 0 || output_height == 0 {
-        // 回退：所有帧尺寸一致，按 stdout 总字节数反推；候选宽度上限必须使用
-        // 调用方给定的抽帧宽度，不能使用解析失败后的 0。
-        let total = out.stdout.len();
-        let mut found = false;
-        for candidate_width in (2..=width.max(2)).rev().step_by(2) {
-            let pixels_per_frame = total / 3 / count;
-            let candidate_height = pixels_per_frame / candidate_width as usize;
-            let even_height = (candidate_height / 2) * 2;
-            if even_height > 0
-                && candidate_width as usize * even_height * 3 * count == total
-            {
-                output_width = candidate_width;
-                output_height = even_height as u32;
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            return Err(format!(
-                "ffmpeg 抽帧尺寸无法识别：收到 {} 字节，计划 {} 帧",
-                total, count
-            ));
-        }
-    }
-
-    let frame_size = (output_width as usize) * (output_height as usize) * 3;
-    if frame_size == 0 || out.stdout.len() < frame_size {
-        return Err(format!(
-            "ffmpeg 未输出完整视频帧：收到 {} 字节",
-            out.stdout.len()
-        ));
-    }
-    let available = (out.stdout.len() / frame_size).min(count);
+    let (frame_size, output_height, real_times) =
+        validate_full_scan_output(out.stdout.len(), &out.stderr, count, width)?;
     let pixels = Arc::new(out.stdout);
-    let mut frames = Vec::with_capacity(available);
-    for (i, &timestamp) in timestamps.iter().take(available).enumerate() {
+    let mut frames = Vec::with_capacity(count);
+    for i in 0..count {
         let rgb = FramePixels { buffer: pixels.clone(), start: i * frame_size, end: (i + 1) * frame_size };
-        let time = real_times.get(i).copied().unwrap_or(timestamp);
+        let time = real_times[i];
         frames.push(RawFrame {
             time,
-            width: output_width,
+            width,
             height: output_height,
             rgb,
         });
     }
     Ok(frames)
+}
+
+fn validate_full_scan_output(
+    bytes: usize,
+    stderr: &str,
+    count: usize,
+    width: u32,
+) -> Result<(usize, u32, Vec<f64>), String> {
+    let (times, actual_width, height) = parse_showinfo(stderr);
+    let frame_size = (actual_width as usize).checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(3))
+        .ok_or_else(|| "全片抽帧尺寸溢出".to_string())?;
+    let expected_bytes = frame_size.checked_mul(count)
+        .ok_or_else(|| "全片抽帧输出大小溢出".to_string())?;
+    if count == 0 || actual_width != width || height == 0 || times.len() != count
+        || frame_size == 0 || expected_bytes != bytes
+    {
+        return Err(format!(
+            "全片抽帧不完整：计划 {count} 帧，实际 {} 帧，尺寸 {actual_width}x{height}，收到 {bytes} 字节",
+            times.len()
+        ));
+    }
+    Ok((frame_size, height, times))
 }
 
 /// showinfo 的尺寸字段是 `s:320x180`（不是 w:/h:）。返回最后一次看到的
@@ -1572,6 +1559,20 @@ mod tests {
         assert!(super::validate_seek_output(320 * 180 * 3 * 2, "", 2, 320).is_err());
         assert!(super::unsupported_fps_mode("Unrecognized option 'fps_mode'."));
         assert!(!super::unsupported_fps_mode("Error while decoding stream"));
+    }
+
+    #[test]
+    fn full_scan_output_requires_exact_frames_dimensions_and_bytes() {
+        let one = "[Parsed_showinfo_2 @ x] n:0 pts_time:0 s:320x180\n";
+        let two = format!("{one}[Parsed_showinfo_2 @ x] n:1 pts_time:1 s:320x180\n");
+        let bytes = 320 * 180 * 3 * 2;
+        let valid = super::validate_full_scan_output(bytes, &two, 2, 320).unwrap();
+        assert_eq!((valid.0, valid.1, valid.2), (320 * 180 * 3, 180, vec![0.0, 1.0]));
+        assert!(super::validate_full_scan_output(bytes, one, 2, 320).is_err());
+        assert!(super::validate_full_scan_output(bytes - 1, &two, 2, 320).is_err());
+        assert!(super::validate_full_scan_output(bytes + 1, &two, 2, 320).is_err());
+        assert!(super::validate_full_scan_output(bytes, &two, 2, 640).is_err());
+        assert!(super::validate_full_scan_output(bytes, "", 2, 320).is_err());
     }
 
     #[test]
