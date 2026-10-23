@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type VideoQuery, type VideoRecord, type VideoPage, type LibraryEvent } from '@shared/types'
+import { loadVideoPages } from '../lib/libraryRefresh'
 
 export interface UseVideoListReturn {
   videos: VideoRecord[]
@@ -181,19 +182,12 @@ export function useVideoList(): UseVideoListReturn {
     activeFetchesRef.current++
     try {
       // 文件夹视图需要完整目录内容；单页 500 条会让后面的目录和视频凭空消失。
-      const limit = 500
-      const first: VideoPage = await window.whichvideo.videos.list({ ...q, offset: 0, limit })
-      const items = [...first.items]
-      while (items.length < first.total && seq === seqRef.current) {
-        const next: VideoPage = await window.whichvideo.videos.list({ ...q, offset: items.length, limit })
-        if (next.items.length === 0) break
-        items.push(...next.items)
-      }
-      if (seq !== seqRef.current) return
+      const page = await loadVideoPages(window.whichvideo.videos.list, q, () => seq === seqRef.current)
+      if (!page) return
       const events = eventLogRef.current
         .filter((entry) => entry.revision > startedAtRevision)
         .map((entry) => entry.event)
-      setList(reconcileFetchedPage({ items, total: first.total }, events, q))
+      setList(reconcileFetchedPage(page, events, q))
       setRefreshError(null)
     } catch (error) {
       if (seq === seqRef.current) setRefreshError(`视频列表加载失败：${error instanceof Error ? error.message : String(error)}`)

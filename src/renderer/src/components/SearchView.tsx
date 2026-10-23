@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { SearchMatch, SearchResponse, VideoRecord } from '@shared/types'
 import type { SearchOutcome } from '../hooks/useSearch'
+import { urlInputAfterSearch } from '../lib/searchUrlInput'
 import { formatBytes, formatDuration, formatPercent, scoreColor, scoreLabel } from '../lib/format'
 
 interface Props {
@@ -58,7 +59,7 @@ export function SearchView(props: Props) {
     if (!url || searching) return
     setUrlError(null)
     const outcome = await props.onSearchUrl(url)
-    if (outcome.ok) setUrlInput((current) => current.trim() === url ? '' : current)
+    if (outcome.ok) setUrlInput((current) => urlInputAfterSearch(current, url, outcome))
     else if (outcome.error) setUrlError(outcome.error)
   }
 

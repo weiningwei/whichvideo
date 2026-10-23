@@ -53,7 +53,9 @@ function transpile() {
   mkdirSync(join(js, 'shims'), { recursive: true })
   writeFileSync(shim, 'export const useCallback = () => {}\nexport const useEffect = () => {}\nexport const useRef = () => {}\nexport const useState = () => []\n')
   const url = pathToFileURL(shim).href
-  const source = readFileSync(target, 'utf8').replace(/(["'])react\1/g, `$1${url}$1`)
+  const source = readFileSync(target, 'utf8')
+    .replace(/(["'])react\1/g, `$1${url}$1`)
+    .replace(/(["'])\.\.\/lib\/libraryRefresh\1/g, '$1../lib/libraryRefresh.js$1')
   writeFileSync(target, source)
   return target
 }

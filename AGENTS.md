@@ -99,6 +99,7 @@ pnpm test:range       # Shift/Ctrl 连选
 pnpm test:path        # 路径展示
 pnpm test:ui          # UI 静态与行为回归
 pnpm test:events      # 后端事件消费
+pnpm test:async       # 刷新失败、分页取消和链接输入恢复
 ```
 
 Windows MSVC 如果在 Cargo 编译时报告 `c1.dll` 或 `/Z7` 环境问题，可临时设置

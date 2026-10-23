@@ -9,6 +9,7 @@ import {
   type WatchedFolder
 } from '@shared/types'
 import { applyImportProgress, type ImportProgressEvent } from '../lib/importProgress'
+import { loadLibrarySnapshot } from '../lib/libraryRefresh'
 
 const EMPTY_STATS: LibraryStats = {
   videos: 0,
@@ -61,21 +62,14 @@ export function useLibraryCore(options: UseLibraryCoreOptions = {}): UseLibraryC
   const refreshAll = useCallback(async () => {
     const currentRefresh = ++refreshId.current
     try {
-      const [s, st, f, cfg, dirInfo, tools] = await Promise.all([
-        window.whichvideo.library.stats(),
-        window.whichvideo.library.status(),
-        window.whichvideo.folders.list(),
-        window.whichvideo.library.settings(),
-        window.whichvideo.library.dataDir(),
-        window.whichvideo.library.mediaTools()
-      ])
+      const snapshot = await loadLibrarySnapshot(window.whichvideo)
       if (currentRefresh !== refreshId.current) return
-      setStats(s)
-      setStatus(st)
-      setFolders(f)
-      setSettings(cfg)
-      setDataDir(dirInfo)
-      setMediaTools(tools)
+      setStats(snapshot.stats)
+      setStatus(snapshot.status)
+      setFolders(snapshot.folders)
+      setSettings(snapshot.settings)
+      setDataDir(snapshot.dataDir)
+      setMediaTools(snapshot.mediaTools)
       setRefreshError(null)
     } catch (error) {
       if (currentRefresh === refreshId.current) setRefreshError(`资料库状态加载失败：${error instanceof Error ? error.message : String(error)}`)
